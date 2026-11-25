@@ -102,6 +102,7 @@ export interface UseCanvasWhiteboardOptions {
   userColor?: string;
   userId?: string;
   userAvatar?: string;
+  throttleIntervalMs?: number;
 }
 
 export const PARTYKIT_HOST =
@@ -468,9 +469,16 @@ export function useStrokeBuffer({
 
     const now = Date.now();
     const elapsed = now - lastDispatchTimeRef.current;
-    const remaining = Math.max(0, throttleIntervalMs - elapsed);
+    const interval = Math.max(0, throttleIntervalMs);
+    const remaining = Math.max(0, interval - elapsed);
 
-    if (typeof requestAnimationFrame !== "undefined" && remaining === 0) {
+    // If interval is standard 60fps (<=16.67ms) and elapsed, use requestAnimationFrame.
+    // If throttled (e.g. low-power mode 200ms = 5Hz), schedule via setTimeout.
+    if (
+      typeof requestAnimationFrame !== "undefined" &&
+      interval <= THROTTLE_INTERVAL_MS &&
+      remaining === 0
+    ) {
       rafIdRef.current = requestAnimationFrame(() => {
         rafIdRef.current = null;
         flushStrokeBuffer();
@@ -479,7 +487,7 @@ export function useStrokeBuffer({
       throttleTimerRef.current = setTimeout(() => {
         throttleTimerRef.current = null;
         flushStrokeBuffer();
-      }, remaining || throttleIntervalMs);
+      }, remaining || interval);
     }
   }, [flushStrokeBuffer, throttleIntervalMs]);
 

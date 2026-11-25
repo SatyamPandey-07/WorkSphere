@@ -1,11 +1,17 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import BookmarkVenueButtonDefault, {
   BookmarkVenueButton,
 } from "@/components/venues/BookmarkVenueButton";
+import { SoundProvider } from "@/components/SoundProvider";
 import {
-  isVenueFavoritedLocally,
   toggleVenueFavorite,
   subscribeToFavoriteChanges,
 } from "@/lib/venues/favoriteStorage";
@@ -39,7 +45,9 @@ describe("BookmarkVenueButton Component", () => {
 
   describe("Rendering & Icon Types", () => {
     it("renders default icon-only bookmark button with default test id and aria attributes", () => {
-      render(<BookmarkVenueButton venueId="venue-101" venueName="Hub Central" />);
+      render(
+        <BookmarkVenueButton venueId="venue-101" venueName="Hub Central" />,
+      );
 
       const button = screen.getByTestId("bookmark-toggle-btn-venue-101");
       expect(button).toBeInTheDocument();
@@ -54,7 +62,7 @@ describe("BookmarkVenueButton Component", () => {
           venueId="venue-102"
           iconType="heart"
           initialIsFavorited={true}
-        />
+        />,
       );
 
       const svg = container.querySelector("svg");
@@ -68,7 +76,7 @@ describe("BookmarkVenueButton Component", () => {
           venueId="venue-103"
           iconType="star"
           initialIsFavorited={true}
-        />
+        />,
       );
 
       const svg = container.querySelector("svg");
@@ -84,7 +92,7 @@ describe("BookmarkVenueButton Component", () => {
           venueId="venue-201"
           variant="button"
           initialIsFavorited={false}
-        />
+        />,
       );
 
       expect(screen.getByText("Save Venue")).toBeInTheDocument();
@@ -98,7 +106,7 @@ describe("BookmarkVenueButton Component", () => {
           venueId="venue-202"
           variant="pill"
           initialIsFavorited={true}
-        />
+        />,
       );
 
       expect(screen.getByText("Saved")).toBeInTheDocument();
@@ -108,15 +116,21 @@ describe("BookmarkVenueButton Component", () => {
 
     it("applies size classes for sm, md, and lg", () => {
       const { rerender } = render(
-        <BookmarkVenueButton venueId="v-size" size="sm" />
+        <BookmarkVenueButton venueId="v-size" size="sm" />,
       );
-      expect(screen.getByTestId("bookmark-toggle-btn-v-size")).toHaveClass("p-1.5");
+      expect(screen.getByTestId("bookmark-toggle-btn-v-size")).toHaveClass(
+        "p-1.5",
+      );
 
       rerender(<BookmarkVenueButton venueId="v-size" size="md" />);
-      expect(screen.getByTestId("bookmark-toggle-btn-v-size")).toHaveClass("p-2");
+      expect(screen.getByTestId("bookmark-toggle-btn-v-size")).toHaveClass(
+        "p-2",
+      );
 
       rerender(<BookmarkVenueButton venueId="v-size" size="lg" />);
-      expect(screen.getByTestId("bookmark-toggle-btn-v-size")).toHaveClass("p-2.5");
+      expect(screen.getByTestId("bookmark-toggle-btn-v-size")).toHaveClass(
+        "p-2.5",
+      );
     });
   });
 
@@ -127,7 +141,7 @@ describe("BookmarkVenueButton Component", () => {
           venueId="venue-custom"
           data-testid="custom-bookmark-button"
           className="my-custom-class"
-        />
+        />,
       );
 
       const btn = screen.getByTestId("custom-bookmark-button");
@@ -137,10 +151,7 @@ describe("BookmarkVenueButton Component", () => {
 
     it("omits title tooltip when showTooltip is false", () => {
       render(
-        <BookmarkVenueButton
-          venueId="venue-no-tooltip"
-          showTooltip={false}
-        />
+        <BookmarkVenueButton venueId="venue-no-tooltip" showTooltip={false} />,
       );
 
       const btn = screen.getByTestId("bookmark-toggle-btn-venue-no-tooltip");
@@ -159,7 +170,7 @@ describe("BookmarkVenueButton Component", () => {
           venueName="Workspace Hub"
           onToggle={onToggle}
           initialIsFavorited={false}
-        />
+        />,
       );
 
       const btn = screen.getByTestId("bookmark-toggle-btn-venue-301");
@@ -179,7 +190,7 @@ describe("BookmarkVenueButton Component", () => {
           venueId="venue-disabled"
           disabled={true}
           onToggle={onToggle}
-        />
+        />,
       );
 
       const btn = screen.getByTestId("bookmark-toggle-btn-venue-disabled");
@@ -200,7 +211,7 @@ describe("BookmarkVenueButton Component", () => {
           onPersist={customPersist}
           onToggle={onToggle}
           initialIsFavorited={false}
-        />
+        />,
       );
 
       const btn = screen.getByTestId("bookmark-toggle-btn-venue-persist");
@@ -211,7 +222,9 @@ describe("BookmarkVenueButton Component", () => {
     });
 
     it("rolls back optimistic update and displays toast when onPersist rejects", async () => {
-      const customPersist = jest.fn().mockRejectedValue(new Error("Network failed"));
+      const customPersist = jest
+        .fn()
+        .mockRejectedValue(new Error("Network failed"));
       const onToggle = jest.fn();
 
       render(
@@ -221,7 +234,7 @@ describe("BookmarkVenueButton Component", () => {
           onPersist={customPersist}
           onToggle={onToggle}
           initialIsFavorited={false}
-        />
+        />,
       );
 
       const btn = screen.getByTestId("bookmark-toggle-btn-venue-rollback");
@@ -239,13 +252,139 @@ describe("BookmarkVenueButton Component", () => {
       const unsubscribe = jest.fn();
       (subscribeToFavoriteChanges as jest.Mock).mockReturnValue(unsubscribe);
 
-      const { unmount } = render(
-        <BookmarkVenueButton venueId="venue-sub" />
-      );
+      const { unmount } = render(<BookmarkVenueButton venueId="venue-sub" />);
 
       expect(subscribeToFavoriteChanges).toHaveBeenCalled();
       unmount();
       expect(unsubscribe).toHaveBeenCalled();
+    });
+  });
+
+  describe("Tactile Audio Feedback (#7203)", () => {
+    let mockOscillator: any;
+    let mockGain: any;
+    let mockContext: any;
+
+    beforeEach(() => {
+      (toggleVenueFavorite as jest.Mock).mockReset();
+      (toggleVenueFavorite as jest.Mock).mockResolvedValue(undefined);
+      mockOscillator = {
+        type: "sine",
+        frequency: {
+          setValueAtTime: jest.fn(),
+          exponentialRampToValueAtTime: jest.fn(),
+        },
+        connect: jest.fn(),
+        start: jest.fn(),
+        stop: jest.fn(),
+      };
+      mockGain = {
+        gain: {
+          setValueAtTime: jest.fn(),
+          linearRampToValueAtTime: jest.fn(),
+          exponentialRampToValueAtTime: jest.fn(),
+        },
+        connect: jest.fn(),
+      };
+      mockContext = {
+        currentTime: 0,
+        state: "running",
+        destination: {},
+        createOscillator: jest.fn(() => mockOscillator),
+        createGain: jest.fn(() => mockGain),
+        resume: jest.fn().mockResolvedValue(undefined),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (window as any).AudioContext = jest.fn(() => mockContext);
+    });
+
+    afterEach(() => {
+      delete (window as any).AudioContext;
+      delete (window as any).webkitAudioContext;
+    });
+
+    it("triggers tactile chime when bookmarking a venue inside SoundProvider", async () => {
+      render(
+        <SoundProvider defaultEnabled={true}>
+          <BookmarkVenueButton
+            venueId="venue-sound-1"
+            initialIsFavorited={false}
+          />
+        </SoundProvider>,
+      );
+
+      const btn = screen.getByTestId("bookmark-toggle-btn-venue-sound-1");
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      // Optimistic update happens immediately
+      expect(btn).toHaveAttribute("aria-pressed", "true");
+      // Chime synthesized (2 oscillators: fundamental + harmonic shimmer)
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(2);
+    });
+
+    it("triggers tactile tone when unbookmarking a venue inside SoundProvider", async () => {
+      render(
+        <SoundProvider defaultEnabled={true}>
+          <BookmarkVenueButton
+            venueId="venue-sound-2"
+            initialIsFavorited={true}
+          />
+        </SoundProvider>,
+      );
+
+      const btn = screen.getByTestId("bookmark-toggle-btn-venue-sound-2");
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      // Optimistic update happens immediately
+      expect(btn).toHaveAttribute("aria-pressed", "false");
+      // Tone synthesized (1 oscillator)
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(1);
+    });
+
+    it("silences audio feedback immediately when global sound is muted", async () => {
+      render(
+        <SoundProvider defaultEnabled={false}>
+          <BookmarkVenueButton
+            venueId="venue-sound-3"
+            initialIsFavorited={false}
+          />
+        </SoundProvider>,
+      );
+
+      const btn = screen.getByTestId("bookmark-toggle-btn-venue-sound-3");
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      // Still updates optimistically
+      expect(btn).toHaveAttribute("aria-pressed", "true");
+      // No audio synthesized
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+    });
+
+    it("suppresses audio when disableSound prop is true", async () => {
+      render(
+        <SoundProvider defaultEnabled={true}>
+          <BookmarkVenueButton
+            venueId="venue-sound-4"
+            initialIsFavorited={false}
+            disableSound={true}
+          />
+        </SoundProvider>,
+      );
+
+      const btn = screen.getByTestId("bookmark-toggle-btn-venue-sound-4");
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      expect(btn).toHaveAttribute("aria-pressed", "true");
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
     });
   });
 });

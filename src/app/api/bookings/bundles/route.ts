@@ -12,6 +12,10 @@ import {
   type WorkHopLeg,
   type WorkHopBundle,
 } from "@/lib/bundles/workHopEngine";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 export async function GET(req: NextRequest) {
   try {
@@ -28,7 +32,8 @@ export async function GET(req: NextRequest) {
         currency: "USD",
         originalPrice: 42,
         savingsPercent: 33,
-        description: "Morning artisan espresso & warm-up, afternoon acoustic pod for calls, evening rooftop networking lounge.",
+        description:
+          "Morning artisan espresso & warm-up, afternoon acoustic pod for calls, evening rooftop networking lounge.",
         legs: [
           {
             legIndex: 1,
@@ -61,7 +66,8 @@ export async function GET(req: NextRequest) {
         currency: "USD",
         originalPrice: 22,
         savingsPercent: 36,
-        description: "Zero-distraction quiet study zones paired with high-speed campus-adjacent cafe seating.",
+        description:
+          "Zero-distraction quiet study zones paired with high-speed campus-adjacent cafe seating.",
         legs: [
           {
             legIndex: 1,
@@ -89,7 +95,7 @@ export async function GET(req: NextRequest) {
     console.error("[GET /api/bookings/bundles] Error:", error);
     return NextResponse.json(
       { error: "Failed to fetch bundle options" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -110,14 +116,14 @@ export async function POST(req: NextRequest) {
     if (!legs || !Array.isArray(legs) || legs.length < 2) {
       return NextResponse.json(
         { error: "A Work-Hop bundle requires at least 2 itinerary legs" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!date) {
       return NextResponse.json(
         { error: "Booking date (YYYY-MM-DD) is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -134,11 +140,13 @@ export async function POST(req: NextRequest) {
     const baseRatePerHour = 5.0;
     const totalHours = legs.reduce(
       (sum: number, leg: any) => sum + (Number(leg.durationHours) || 2),
-      0
+      0,
     );
     const rawPrice = totalHours * baseRatePerHour;
     const discountPercentage = 25;
-    const totalPrice = Number((rawPrice * (1 - discountPercentage / 100)).toFixed(2));
+    const totalPrice = Number(
+      (rawPrice * (1 - discountPercentage / 100)).toFixed(2),
+    );
 
     // Calculate revenue attribution across venues
     const legWeights = legs.map((l: any) => {
@@ -151,7 +159,9 @@ export async function POST(req: NextRequest) {
     });
 
     const attributions = calculateRevenueAttribution(totalPrice, legWeights);
-    const attributionMap = new Map(attributions.map((a) => [a.venueId, a.allocatedRevenue]));
+    const attributionMap = new Map(
+      attributions.map((a) => [a.venueId, a.allocatedRevenue]),
+    );
 
     const bundleId = `whop-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6)}`;
     const qrToken = generateWorkHopPassToken(bundleId, userId, date);
@@ -179,7 +189,7 @@ export async function POST(req: NextRequest) {
     // Create atomic individual Booking records in DB to secure seats
     const createdBookings = await Promise.all(
       enrichedLegs.map(async (leg) => {
-        return prisma.booking.create({
+        const booking = await prisma.booking.create({
           data: {
             userId,
             venueId: leg.venueId,
@@ -195,7 +205,13 @@ export async function POST(req: NextRequest) {
             projectBillingCode: `WORKHOP-PASS-${bundleId}`,
           },
         });
-      })
+        if (leg.seatId) {
+          await invalidateVenueAvailability(
+            venueAvailabilityCacheKey(leg.venueId),
+          );
+        }
+        return booking;
+      }),
     );
 
     const bundle: WorkHopBundle = {
@@ -222,8 +238,11 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("[POST /api/bookings/bundles] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create Work-Hop bundle pass", details: error.message },
-      { status: 500 }
+      {
+        error: "Failed to create Work-Hop bundle pass",
+        details: error.message,
+      },
+      { status: 500 },
     );
   }
 }

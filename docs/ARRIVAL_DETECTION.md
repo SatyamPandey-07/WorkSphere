@@ -1,12 +1,12 @@
 # Arrival Detection & Bluetooth Beacon Integration
 
-Technical documentation for the arrival detection and proximity verification system implemented in [`src/hooks/useArrivalDetection.ts`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts).
+Technical documentation for the arrival detection and proximity verification system implemented in [`src/hooks/useArrivalDetection.ts`](../src/hooks/useArrivalDetection.ts).
 
 ---
 
 ## 1. Overview
 
-WorkSphere integrates macro-proximity and micro-proximity verification to streamline member workspace arrivals. The [`useArrivalDetection`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts) React hook manages this lifecycle by pairing standard browser **Geolocation API** tracking with **Web Bluetooth Low Energy (BLE)** beacon detection.
+WorkSphere integrates macro-proximity and micro-proximity verification to streamline member workspace arrivals. The [`useArrivalDetection`](../src/hooks/useArrivalDetection.ts) React hook manages this lifecycle by pairing standard browser **Geolocation API** tracking with **Web Bluetooth Low Energy (BLE)** beacon detection.
 
 ### Dual Operating Modes
 
@@ -18,7 +18,7 @@ The hook provides two distinct overload signatures to support different layers o
    - Performs on-demand Bluetooth Low Energy (BLE) scanning for verified indoor presence.
    - Coordinates check-in requests with the backend API.
 2. **Vector Mode** (`useArrivalDetection(currentPosition: Vector3 | null, targetPosition: Vector3 | undefined, threshold?: number)`):
-   - Used within Augmented Reality (AR) components such as [`ARDeskNavigator.tsx`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/app/workspace/ARDeskNavigator.tsx).
+   - Used within Augmented Reality (AR) components such as [`ARDeskNavigator.tsx`](../src/app/workspace/ARDeskNavigator.tsx).
    - Computes 3D Euclidean distances between camera position and anchor vectors in AR space.
 
 ### Why Dual-Tier Arrival Detection?
@@ -63,7 +63,7 @@ flowchart TD
 
 ### State Return Structure
 
-The hook returns an [`ArrivalDetectionResult`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts#L23) object containing:
+The hook returns an [`ArrivalDetectionResult`](../src/hooks/useArrivalDetection.ts#L23) object containing:
 
 ```ts
 export interface ArrivalDetectionResult {
@@ -89,7 +89,7 @@ The outdoor geofencing engine continuously observes user movement relative to ta
 
 ### Coordinates and Configuration Options
 
-Target venue coordinates are supplied via [`UseArrivalDetectionOptions`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts#L11):
+Target venue coordinates are supplied via [`UseArrivalDetectionOptions`](../src/hooks/useArrivalDetection.ts#L11):
 
 ```ts
 export interface UseArrivalDetectionOptions {
@@ -146,7 +146,7 @@ In urban centers, users frequently pass near venues without intending to enter (
 
 ### Repository Implementation Architecture
 
-In [`src/hooks/useArrivalDetection.ts`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts), arrival awareness and check-in confirmation are intentionally decoupled:
+In [`src/hooks/useArrivalDetection.ts`](../src/hooks/useArrivalDetection.ts), arrival awareness and check-in confirmation are intentionally decoupled:
 
 1. **Immediate Arrival Notification**: Crossing into `dist <= geofenceRadius` sets `arrived = true` immediately so the UI can adapt (e.g., show an "Arrived at Venue" notification or display a "Check In" button).
 2. **Explicit Confirmation Guard**: The hook does not execute an automated check-in network call upon entering the geofence. The actual booking check-in requires calling `confirmCheckIn()`.
@@ -222,7 +222,7 @@ Scanning is initiated on-demand by calling `scanBluetooth()` from user interacti
 
 ### Configuration Schema: `VenueBeaconConfig`
 
-Beacons are associated with venues using [`VenueBeaconConfig`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts#L5):
+Beacons are associated with venues using [`VenueBeaconConfig`](../src/hooks/useArrivalDetection.ts#L5):
 
 ```ts
 export interface VenueBeaconConfig {
@@ -267,7 +267,7 @@ const venueArrivalConfig: UseArrivalDetectionOptions = {
 
 ## 7. Battery Consumption & Performance
 
-Continuous location monitoring and radio scanning can drain mobile battery reserves. [`useArrivalDetection.ts`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useArrivalDetection.ts) implements several key optimizations:
+Continuous location monitoring and radio scanning can drain mobile battery reserves. [`useArrivalDetection.ts`](../src/hooks/useArrivalDetection.ts) implements several key optimizations:
 
 1. **Native Location Watching**:
    - Uses `navigator.geolocation.watchPosition` instead of high-frequency polling intervals (`setInterval`).

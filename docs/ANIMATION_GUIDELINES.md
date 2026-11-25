@@ -747,6 +747,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
 - [Official Framer Motion Documentation](https://www.framer.com/motion/)
 - [Next.js App Router Template Transitions](https://nextjs.org/docs/app/building-your-application/routing/pages-and-layouts#templates)
-- [WorkSphere Design System Guidelines](file:///c:/Users/HP/Downloads/WorkSphere-main%20%283%29/WorkSphere-main/docs/DESIGN_SYSTEM_GUIDE.md)
-- [WorkSphere Animation Standards](file:///c:/Users/HP/Downloads/WorkSphere-main%20%283%29/WorkSphere-main/docs/ANIMATION_STANDARDS.md)
-- [WorkSphere Framer Motion Guide](file:///c:/Users/HP/Downloads/WorkSphere-main%20%283%29/WorkSphere-main/docs/FRAMER_MOTION_GUIDE.md)
+- [WorkSphere Design System Guidelines](DESIGN_SYSTEM_GUIDE.md)
+- [WorkSphere Animation Standards](ANIMATION_STANDARDS.md)
+- [WorkSphere Framer Motion Guide](FRAMER_MOTION_GUIDE.md)

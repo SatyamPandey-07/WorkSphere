@@ -18,7 +18,7 @@ export function TestPilotWingBadge({
   const tooltipId = useId();
 
   return (
-    <div className="relative inline-flex">
+    <div className="relative inline-flex shrink-0">
       <span
         role="img"
         aria-label="Test Pilot Wings badge"
@@ -29,21 +29,33 @@ export function TestPilotWingBadge({
         onMouseLeave={() => setIsTooltipVisible(false)}
         onFocus={() => setIsTooltipVisible(true)}
         onBlur={() => setIsTooltipVisible(false)}
-        className={`inline-flex items-center gap-2 rounded-full border border-emerald-600/30 bg-gradient-to-r from-zinc-100 via-white to-emerald-50 px-3 py-2 text-emerald-900 shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:border-emerald-400/30 dark:from-zinc-800 dark:via-zinc-900 dark:to-emerald-950 dark:text-emerald-200 dark:focus-visible:ring-offset-zinc-900 ${className}`.trim()}
+        className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-emerald-600/30 bg-gradient-to-r from-zinc-100 via-white to-emerald-50 px-2 py-1.5 sm:px-3 sm:py-2 text-emerald-900 shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:border-emerald-400/30 dark:from-zinc-800 dark:via-zinc-900 dark:to-emerald-950 dark:text-emerald-200 dark:focus-visible:ring-offset-zinc-900 ${className}`.trim()}
       >
         <svg
           viewBox="0 0 120 52"
-          className="h-7 w-16 shrink-0"
+          className="h-6 w-12 sm:h-7 sm:w-16 shrink-0"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
         >
           <defs>
-            <linearGradient id={`${tooltipId}-silver`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient
+              id={`${tooltipId}-silver`}
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
               <stop offset="0%" stopColor="#F8FAFC" />
               <stop offset="100%" stopColor="#94A3B8" />
             </linearGradient>
-            <linearGradient id={`${tooltipId}-emerald`} x1="0" y1="0" x2="1" y2="1">
+            <linearGradient
+              id={`${tooltipId}-emerald`}
+              x1="0"
+              y1="0"
+              x2="1"
+              y2="1"
+            >
               <stop offset="0%" stopColor="#34D399" />
               <stop offset="100%" stopColor="#047857" />
             </linearGradient>
@@ -64,11 +76,26 @@ export function TestPilotWingBadge({
           />
 
           {/* Feather detailing */}
-          <path d="M13 9 L48 24 M20 18 L47 28 M30 25 L48 31" stroke="#64748B" strokeWidth="1" />
-          <path d="M107 9 L72 24 M100 18 L73 28 M90 25 L72 31" stroke="#64748B" strokeWidth="1" />
+          <path
+            d="M13 9 L48 24 M20 18 L47 28 M30 25 L48 31"
+            stroke="#64748B"
+            strokeWidth="1"
+          />
+          <path
+            d="M107 9 L72 24 M100 18 L73 28 M90 25 L72 31"
+            stroke="#64748B"
+            strokeWidth="1"
+          />
 
           {/* Central emerald flight insignia */}
-          <circle cx="60" cy="25" r="14" fill={`url(#${tooltipId}-emerald)`} stroke="#A7F3D0" strokeWidth="2" />
+          <circle
+            cx="60"
+            cy="25"
+            r="14"
+            fill={`url(#${tooltipId}-emerald)`}
+            stroke="#A7F3D0"
+            strokeWidth="2"
+          />
           <path
             d="M60 15 L64 22 L71 25 L64 28 L60 35 L56 28 L49 25 L56 22 Z"
             fill="#ECFDF5"

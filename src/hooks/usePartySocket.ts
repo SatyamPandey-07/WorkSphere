@@ -8,6 +8,7 @@ import {
   PARTY_SOCKET_RECONNECT_OPTIONS,
 } from "@/lib/partySocketReconnect";
 import {
+  calculateFullJitterBackoff,
   calculateJitteredBackoff,
   type CalculateJitteredBackoffOptions,
 } from "@/lib/utils/backoff";
@@ -17,6 +18,7 @@ import {
 } from "@/lib/realtime/connectionState";
 
 export {
+  calculateFullJitterBackoff,
   calculateJitteredBackoff,
   type CalculateJitteredBackoffOptions,
   ConnectionLifecycleState,
@@ -87,7 +89,7 @@ const HEARTBEAT_TIMEOUT_MS = 2500;
 /**
  * Custom PartySocket hook with:
  * 1. Multi-tab leadership coordination via BroadcastChannel (only 1 active WebSocket connection) (#3767).
- * 2. Full-jitter exponential backoff on disconnection up to a 30s cap (#3769).
+ * 2. Full-jitter exponential backoff on disconnection with a 10s default cap (#3769).
  * 3. Connection status indicator support ("Reconnecting...").
  * 4. Message handshake retry counter resets.
  * 5. Automatic leader election and smooth transfer on tab close.
@@ -121,7 +123,7 @@ export function usePartySocket(options: PartySocketOptions) {
 
   const {
     baseDelay = PARTY_SOCKET_RECONNECT_OPTIONS.minReconnectionDelay,
-    maxDelay = PARTY_SOCKET_RECONNECT_OPTIONS.maxReconnectionDelay,
+    maxDelay = 10_000,
     onConnectionStatusChange,
     ...socketOptions
   } = options;
@@ -354,7 +356,7 @@ export function usePartySocket(options: PartySocketOptions) {
     if (s) {
       (s as any)._getNextDelay = function () {
         const attempt = (this._retryCount ?? 0) + 1;
-        return calculateJitteredBackoff(attempt, { baseDelay, maxDelay });
+        return calculateFullJitterBackoff(attempt, { baseDelay, maxDelay });
       };
     }
     return s;

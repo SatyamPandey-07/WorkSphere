@@ -5,21 +5,29 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { jest } from "@jest/globals";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { StudentDiscountVerification } from "@/components/student/StudentDiscountVerification";
 import { computeMembershipCommit } from "@/lib/zkp/commitment";
 import { storeProof, _resetProofCacheForTesting } from "@/lib/zkp/proofCache";
 
 const posted: Array<Record<string, unknown>> = [];
+const workers: FakeWorker[] = [];
 
 let terminatedCount = 0;
 
 class FakeWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   onerror: (() => void) | null = null;
+  constructor() {
+    workers.push(this);
+  }
   postMessage(msg: Record<string, unknown>) {
     posted.push(msg);
+  }
+  emit(data: Record<string, unknown>) {
+    this.onmessage?.({ data });
   }
   terminate() {
     terminatedCount++;
@@ -34,8 +42,14 @@ const fetchMock = jest.fn(async (url: string) =>
 
 beforeEach(async () => {
   posted.length = 0;
+  workers.length = 0;
   terminatedCount = 0;
-  fetchMock.mockClear();
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async (url: string) =>
+    url === "/zkp/verification_key.json"
+      ? new Response('{"protocol":"groth16"}', { status: 200 })
+      : new Response(JSON.stringify({ verified: true }), { status: 200 }),
+  );
   localStorage.clear();
   await _resetProofCacheForTesting();
   globalThis.indexedDB = new IDBFactory();
@@ -49,10 +63,16 @@ function submit(studentId: string) {
   fireEvent.click(screen.getByRole("button", { name: /verify/i }));
 }
 
+function currentWorker() {
+  const worker = workers[workers.length - 1];
+  if (!worker) throw new Error("Expected a worker instance");
+  return worker;
+}
+
 it("asks the worker to prove with type 'prove'", async () => {
   submit("12345678");
-  await waitFor(() => expect(posted).toHaveLength(1));
-  expect(posted[0]).toMatchObject({
+  await waitFor(() => expect(posted.some((message) => message.type === "prove")).toBe(true));
+  expect(posted.find((message) => message.type === "prove")).toMatchObject({
     type: "prove",
     identityToken: "12345678",
     expectedCommit: computeMembershipCommit(BigInt(12345678)),
@@ -70,8 +90,8 @@ it("re-submits a cached proof instead of proving again", async () => {
   await waitFor(() =>
     expect(fetchMock).toHaveBeenCalledWith("/api/user/verify-student", expect.anything()),
   );
-  expect(posted).toHaveLength(0);
-  await screen.findByText(/student status verified/i);
+  expect(posted.some((message) => message.type === "prove")).toBe(false);
+  await screen.findByText(/student discount unlocked/i);
 });
 
 it("aborts and terminates worker upon component unmount (#3938)", async () => {
@@ -86,4 +106,118 @@ it("aborts and terminates worker upon component unmount (#3938)", async () => {
   // Worker should receive abort/terminate message and terminate() should be called
   expect(posted.some((p) => p.type === "abort" || p.type === "terminate")).toBe(true);
   expect(terminatedCount).toBeGreaterThanOrEqual(1);
+  expect(currentWorker().onmessage).toBeNull();
+  expect(currentWorker().onerror).toBeNull();
+});
+
+it("renders accessible monotonic progress updates and phase labels from the worker", async () => {
+  submit("12345678");
+  await waitFor(() => expect(posted.some((message) => message.type === "prove")).toBe(true));
+
+  const worker = currentWorker();
+  act(() => worker.emit({ type: "progress", stage: "generating", phase: "witness", percent: 0 }));
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+  expect(screen.getByText("Calculating witness constraints...")).toBeInTheDocument();
+
+  act(() => worker.emit({ type: "progress", stage: "generating", phase: "proving", percent: 50 }));
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+  expect(screen.getByText("Synthesizing cryptographic proof...")).toBeInTheDocument();
+
+  act(() => worker.emit({ type: "progress", stage: "generating", phase: "finalizing", percent: 90 }));
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "90");
+  expect(screen.getByText("Finalizing verification...")).toBeInTheDocument();
+
+  act(() => worker.emit({ type: "progress", stage: "generating", phase: "witness", percent: 40 }));
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "90");
+  expect(screen.getByText("Finalizing verification...")).toBeInTheDocument();
+  expect(screen.getAllByRole("progressbar")).toHaveLength(1);
+});
+
+it("sets progress to 100 only after worker proof and server verification succeed", async () => {
+  submit("12345678");
+  await waitFor(() => expect(posted.some((message) => message.type === "prove")).toBe(true));
+
+  const worker = currentWorker();
+  act(() => worker.emit({ type: "progress", stage: "generating", phase: "finalizing", percent: 90 }));
+  act(() =>
+    worker.emit({
+      type: "success",
+      proof: { pi_a: ["1"] },
+      publicSignals: ["123"],
+    }),
+  );
+  act(() =>
+    worker.emit({
+      type: "success",
+      proof: { pi_a: ["1"] },
+      publicSignals: ["123"],
+    }),
+  );
+
+  await screen.findByTestId("student-verification-success-card");
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
+  expect(screen.getByText("100%")).toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.filter(([url]) => url === "/api/user/verify-student"),
+  ).toHaveLength(1);
+});
+
+it("clears progress when the server rejects the generated proof", async () => {
+  fetchMock.mockImplementation(
+    async (url: string) =>
+      url === "/api/user/verify-student"
+        ? new Response(JSON.stringify({ error: "Proof rejected" }), { status: 400 })
+        : new Response('{"protocol":"groth16"}', { status: 200 }),
+  );
+  submit("12345678");
+  await waitFor(() => expect(posted.some((message) => message.type === "prove")).toBe(true));
+
+  const worker = currentWorker();
+  act(() => worker.emit({ type: "progress", stage: "generating", phase: "finalizing", percent: 90 }));
+  act(() =>
+    worker.emit({
+      type: "success",
+      proof: { pi_a: ["1"] },
+      publicSignals: ["123"],
+    }),
+  );
+
+  expect(await screen.findByText("Proof rejected")).toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("student-verification-success-card")).not.toBeInTheDocument();
+});
+
+it("clears progress on worker error and resets it for a new attempt", async () => {
+  submit("12345678");
+  await waitFor(() => expect(posted.some((message) => message.type === "prove")).toBe(true));
+
+  act(() =>
+    currentWorker().emit({
+      type: "progress",
+      stage: "generating",
+      phase: "proving",
+      percent: 50,
+    }),
+  );
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+
+  act(() => currentWorker().emit({ type: "error", error: "Proof generation failed" }));
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.getByText("Proof generation failed")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /verify/i }));
+  await waitFor(() => expect(workers.length).toBeGreaterThan(1));
+  await waitFor(() =>
+    expect(posted.filter((message) => message.type === "prove")).toHaveLength(2),
+  );
+
+  act(() =>
+    currentWorker().emit({
+      type: "progress",
+      stage: "generating",
+      phase: "witness",
+      percent: 0,
+    }),
+  );
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
 });

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySplitPaymentToken } from "@/lib/billing/splitPayment";
 import { eventBus } from "@/core/events";
+import { auth } from "@clerk/nextjs/server";
+import { rateLimit } from "@/lib/rateLimit";
 
 type RouteContext = { params: Promise<{ token: string }> };
 
@@ -19,14 +21,34 @@ function isInactiveGuest(status: string): boolean {
 /**
  * GET /api/payments/split/[token]
  * Verifies split payment token and returns details for the guest checkout.
+ * Operates under the Bearer Token Capability model (accessible to external guests)
+ * with optional dual-mode Clerk session detection and rate limiting.
  */
-export async function GET(_req: NextRequest, context: RouteContext) {
+export async function GET(req: NextRequest, context: RouteContext) {
   try {
+    const ip =
+      req?.headers?.get?.("x-forwarded-for")?.split(",")[0].trim() ||
+      req?.headers?.get?.("x-real-ip") ||
+      "anonymous";
+    const allowed = await rateLimit(`split-pay:${ip}`, 30, 60_000);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 },
+      );
+    }
+
+    // Optional Clerk session detection for dual-mode authorization
+    await auth().catch(() => ({ userId: null }));
+
     const { token } = await context.params;
     const payload = verifySplitPaymentToken(token);
 
     if (!payload) {
-      return NextResponse.json({ error: "Invalid or expired payment link" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid or expired payment link" },
+        { status: 400 },
+      );
     }
 
     const booking = await prisma.booking.findUnique({
@@ -59,13 +81,19 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
     const guest = booking.guests[0];
     if (!guest) {
-      return NextResponse.json({ error: "Invalid payment link" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Invalid payment link" },
+        { status: 404 },
+      );
     }
 
     const isPaid = guest.paidAt != null;
 
     if (!isPaid) {
-      if (booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") {
+      if (
+        booking.status === "CANCELLED" ||
+        booking.status === "CANCELLED_BY_OPERATOR"
+      ) {
         return NextResponse.json(
           { error: "This booking was cancelled, so there is nothing to pay." },
           { status: 410 },
@@ -80,7 +108,9 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     }
 
     const hostName = booking.user
-      ? [booking.user.firstName, booking.user.lastName].filter(Boolean).join(" ") || "Host"
+      ? [booking.user.firstName, booking.user.lastName]
+          .filter(Boolean)
+          .join(" ") || "Host"
       : "Host";
 
     return NextResponse.json({
@@ -119,17 +149,35 @@ type PaymentOutcome =
  * POST /api/payments/split/[token]
  * Processes guest payment and issues digital guest pass.
  *
- * The state check and the paid transition run in one transaction, and the
- * transition is a compare-and-set on `paidAt IS NULL`, so concurrent or
- * repeated submissions can only ever record (and announce) one payment.
+ * Operates under the Bearer Token Capability model (accessible to external guests)
+ * with optional dual-mode Clerk session detection, rate limiting, and atomic
+ * compare-and-set idempotency on `paidAt IS NULL`.
  */
 export async function POST(req: NextRequest, context: RouteContext) {
   try {
+    const ip =
+      req?.headers?.get?.("x-forwarded-for")?.split(",")[0].trim() ||
+      req?.headers?.get?.("x-real-ip") ||
+      "anonymous";
+    const allowed = await rateLimit(`split-pay:${ip}`, 30, 60_000);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 },
+      );
+    }
+
+    // Optional Clerk session detection for dual-mode authorization
+    await auth().catch(() => ({ userId: null }));
+
     const { token } = await context.params;
     const payload = verifySplitPaymentToken(token);
 
     if (!payload) {
-      return NextResponse.json({ error: "Invalid or expired payment token" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid or expired payment token" },
+        { status: 400 },
+      );
     }
 
     const outcome: PaymentOutcome = await prisma.$transaction(async (tx) => {
@@ -153,7 +201,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
       if (guest.paidAt != null) {
         return { kind: "already_paid" } as const;
       }
-      if (guest.booking.status === "CANCELLED" || guest.booking.status === "CANCELLED_BY_OPERATOR") {
+      if (
+        guest.booking.status === "CANCELLED" ||
+        guest.booking.status === "CANCELLED_BY_OPERATOR"
+      ) {
         return { kind: "booking_cancelled" } as const;
       }
       if (isInactiveGuest(guest.status)) {
@@ -191,7 +242,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     switch (outcome.kind) {
       case "invalid":
-        return NextResponse.json({ error: "Invalid payment link" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Invalid payment link" },
+          { status: 400 },
+        );
       case "booking_cancelled":
         return NextResponse.json(
           { error: "This booking was cancelled, so no payment is due." },
@@ -216,7 +270,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
         status: "ACCEPTED",
       });
     } catch (err) {
-      console.error("[POST /api/payments/split/[token]] guest-rsvp event failed:", err);
+      console.error(
+        "[POST /api/payments/split/[token]] guest-rsvp event failed:",
+        err,
+      );
     }
 
     const passCode = `GP-${payload.bookingId.slice(-4).toUpperCase()}-${payload.guestId.slice(-4).toUpperCase()}`;

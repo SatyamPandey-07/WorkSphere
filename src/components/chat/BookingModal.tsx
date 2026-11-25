@@ -29,7 +29,11 @@ import { useUser } from "@clerk/nextjs";
 import confetti from "canvas-confetti";
 import { Venue } from "@/types/venue";
 import { trackEvent } from "@/lib/analytics";
-import { getCalendarUrls, downloadICS } from "@/lib/calendar";
+import { getCalendarUrls } from "@/lib/calendar";
+import {
+  generateIcsFile,
+  type BookingDetails,
+} from "@/lib/booking/icsGenerator";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 import {
   handleModalBackdropClick,
@@ -42,6 +46,7 @@ import {
   type BookingSummary,
 } from "@/components/bookings/BookingList";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
+import { globalSyncQueue } from "@/worker/bookingSync";
 
 type _Step = "details" | "payment" | "processing" | "success" | "history";
 
@@ -170,6 +175,7 @@ export function BookingModal({
     bookingId: string | null;
     dates: string[];
     time: string;
+    isOfflineDraft?: boolean;
   } | null>(null);
   const [showCalendarDropdown, setShowCalendarDropdown] = useState(false);
   const [guestInviteStatus, setGuestInviteStatus] = useState<
@@ -328,25 +334,57 @@ export function BookingModal({
       action: "booking_started",
     });
 
+    const reservationPayload = {
+      venue: {
+        id: venue.id,
+        name: venue.name,
+        address: venue.address ?? null,
+        category: venue.category,
+        lat: venue.lat,
+        lng: venue.lng,
+      },
+      dates: plannedDates,
+      time: bookingTime,
+      timeZone: browserTimeZone(),
+      customerEmail: email.trim(),
+      projectBillingCode: billingCode.trim() || null,
+    };
+
+    const isOffline =
+      typeof navigator !== "undefined" && navigator.onLine === false;
+    if (isOffline) {
+      try {
+        const draft = await globalSyncQueue.getDraftStore().createDraft({
+          id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          venueId: venue.id,
+          userId: user?.id || "offline-user",
+          payload: reservationPayload,
+        });
+
+        setConfirmation({
+          ids: [draft.id],
+          bookingId: draft.id,
+          dates: plannedDates,
+          time: bookingTime,
+          isOfflineDraft: true,
+        });
+        setStep("success");
+        trackEvent("venue_rated", {
+          venueId: venue.id,
+          venueName: venue.name,
+          action: "booking_saved_offline",
+        });
+        return;
+      } catch (draftError) {
+        console.error("Failed to persist offline booking draft:", draftError);
+      }
+    }
+
     try {
       const response = await fetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          venue: {
-            id: venue.id,
-            name: venue.name,
-            address: venue.address ?? null,
-            category: venue.category,
-            lat: venue.lat,
-            lng: venue.lng,
-          },
-          dates: plannedDates,
-          time: bookingTime,
-          timeZone: browserTimeZone(),
-          customerEmail: email.trim(),
-          projectBillingCode: billingCode.trim() || null,
-        }),
+        body: JSON.stringify(reservationPayload),
       });
       const data = await response.json().catch(() => ({}));
 
@@ -364,6 +402,7 @@ export function BookingModal({
         bookingId: data.bookingId ?? null,
         dates: plannedDates,
         time: bookingTime,
+        isOfflineDraft: false,
       });
       setStep("success");
       trackEvent("venue_rated", {
@@ -391,6 +430,40 @@ export function BookingModal({
         }
       }
     } catch (err: any) {
+      const isNetworkError =
+        (typeof navigator !== "undefined" && navigator.onLine === false) ||
+        err?.name === "TypeError" ||
+        err?.message?.includes("Failed to fetch") ||
+        err?.message?.includes("NetworkError");
+
+      if (isNetworkError) {
+        try {
+          const draft = await globalSyncQueue.getDraftStore().createDraft({
+            id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            venueId: venue.id,
+            userId: user?.id || "offline-user",
+            payload: reservationPayload,
+          });
+
+          setConfirmation({
+            ids: [draft.id],
+            bookingId: draft.id,
+            dates: plannedDates,
+            time: bookingTime,
+            isOfflineDraft: true,
+          });
+          setStep("success");
+          trackEvent("venue_rated", {
+            venueId: venue.id,
+            venueName: venue.name,
+            action: "booking_saved_offline",
+          });
+          return;
+        } catch (draftError) {
+          console.error("Failed to save draft fallback:", draftError);
+        }
+      }
+
       setBookingError(err?.message || "Booking failed. Please try again.");
       setStep("details");
     } finally {
@@ -418,6 +491,34 @@ export function BookingModal({
     } else if (bookingError === "End time must be after start time.") {
       setBookingError(null);
     }
+  };
+
+  const downloadConfirmedBookingIcs = () => {
+    if (!venue || !confirmation) return;
+
+    const booking: BookingDetails = {
+      id: confirmation.bookingId ?? confirmation.ids[0],
+      confirmationId: confirmation.ids[0],
+      date: confirmation.dates[0],
+      time: confirmation.time,
+      timeZone: browserTimeZone(),
+      duration: calculateDurationMinutes(bookingTime, bookingEndTime) ?? 60,
+      venue: {
+        name: venue.name,
+        address: venue.address ?? null,
+      },
+    };
+    const file = new Blob([generateIcsFile(booking)], {
+      type: "text/calendar;charset=utf-8",
+    });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `booking-${booking.id}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const isTimeInvalid =
@@ -579,7 +680,10 @@ export function BookingModal({
                         onClick={() => {
                           const start = bookingTime || "09:00";
                           if (!bookingTime) setBookingTime(start);
-                          const newEnd = addMinutesToTime(start, preset.minutes);
+                          const newEnd = addMinutesToTime(
+                            start,
+                            preset.minutes,
+                          );
                           handleEndTimeChange(newEnd);
                         }}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
@@ -747,11 +851,25 @@ export function BookingModal({
 
           {step === "success" && venue && (
             <div className="py-6 flex flex-col items-center text-center gap-5">
-              <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
-                <CheckCircle2 className="w-12 h-12" />
+              <div
+                className={`w-20 h-20 rounded-full flex items-center justify-center ${
+                  confirmation?.isOfflineDraft
+                    ? "bg-amber-500/10 text-amber-500"
+                    : "bg-green-500/10 text-green-500"
+                }`}
+              >
+                {confirmation?.isOfflineDraft ? (
+                  <Clock className="w-12 h-12" />
+                ) : (
+                  <CheckCircle2 className="w-12 h-12" />
+                )}
               </div>
               <div>
-                <h3 className="text-2xl font-bold">You&apos;re booked!</h3>
+                <h3 className="text-2xl font-bold">
+                  {confirmation?.isOfflineDraft
+                    ? "Reservation saved offline!"
+                    : "You're booked!"}
+                </h3>
                 <p className="text-sm text-zinc-500 mt-1">
                   {venue.name}
                   {confirmation && (
@@ -765,14 +883,21 @@ export function BookingModal({
                     </>
                   )}
                 </p>
+                {confirmation?.isOfflineDraft && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 font-medium">
+                    ⚡ Offline Draft · Automatically synchronizes when network
+                    connects
+                  </p>
+                )}
               </div>
 
               {confirmation && (
                 <div className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-zinc-500">
-                      Confirmation{" "}
-                      {confirmation.ids.length > 1 ? "numbers" : "reference"}
+                      {confirmation.isOfflineDraft
+                        ? "Offline Draft Reference"
+                        : `Confirmation ${confirmation.ids.length > 1 ? "numbers" : "reference"}`}
                     </p>
                     {confirmation.ids.length === 1 && (
                       <CopyBookingReferenceButton
@@ -796,7 +921,9 @@ export function BookingModal({
                     )}
                   </div>
                   <p className="text-xs text-zinc-500 mt-2">
-                    A confirmation with your receipt is on its way to {email}.
+                    {confirmation.isOfflineDraft
+                      ? `Draft saved locally. A confirmation receipt will be sent to ${email} once synced.`
+                      : `A confirmation with your receipt is on its way to ${email}.`}
                   </p>
                 </div>
               )}
@@ -823,7 +950,7 @@ export function BookingModal({
                   venue.address ?? "",
                   confirmation.dates[0],
                   confirmation.time,
-                  60,
+                  calculateDurationMinutes(bookingTime, bookingEndTime) ?? 60,
                   browserTimeZone(),
                 );
 
@@ -844,10 +971,19 @@ export function BookingModal({
                         <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showCalendarDropdown ? "rotate-180" : ""}`} />
                       </button>
 
-                      {showCalendarDropdown && (
-                        <div
-                          data-testid="calendar-quick-add-dropdown"
-                          className="absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-56 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-150"
+                  return (
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {/* Add to Calendar Dropdown */}
+                      <div className="relative inline-block text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowCalendarDropdown((prev) => !prev)
+                          }
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                          aria-expanded={showCalendarDropdown}
+                          aria-haspopup="true"
+                          data-testid="calendar-quick-add-btn"
                         >
                           <a
                             href={calUrls.googleUrl}
@@ -885,14 +1021,7 @@ export function BookingModal({
                             type="button"
                             onClick={() => {
                               setShowCalendarDropdown(false);
-                              downloadICS(
-                                venue.name,
-                                venue.address ?? "",
-                                confirmation.dates[0],
-                                confirmation.time,
-                                60,
-                                confirmation.ids[0],
-                              );
+                              downloadConfirmedBookingIcs();
                             }}
                             data-testid="download-ics-button"
                             className="w-full flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors text-left"
@@ -900,24 +1029,14 @@ export function BookingModal({
                           >
                             <span className="flex items-center gap-2">
                               <Download className="w-4 h-4 text-zinc-500" />
-                              Download (.ics)
+                              Download .ics
                             </span>
                           </button>
                         </div>
                       )}
                     </div>
-
-                    {confirmation.bookingId && (
-                      <a
-                        href={`/api/bookings/${confirmation.bookingId}/download`}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                      >
-                        <Download className="w-4 h-4" /> Receipt
-                      </a>
-                    )}
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
               <div className="flex w-full gap-2">
                 <Link

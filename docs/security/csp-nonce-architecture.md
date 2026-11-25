@@ -55,7 +55,7 @@ To provide defense-in-depth without sacrificing performance or user experience, 
 
 ## 2. Cryptographic Nonce Generation Protocol
 
-File: [src/lib/security/csp.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/security/csp.ts#L32-L39)
+File: [src/lib/security/csp.ts](../../src/lib/security/csp.ts#L32-L39)
 
 ### Entropy & Randomness Standards
 
@@ -96,9 +96,9 @@ export function generateCryptographicNonce(): string {
 ## 3. Edge Middleware Pipeline Orchestration
 
 Files:
-- [src/middleware.ts](file:///c:/Users/admin/Desktop/workfere/src/middleware.ts#L13-L18)
-- [src/lib/middleware/chain.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/middleware/chain.ts#L37-L42)
-- [src/lib/middleware/handlers/securityHeadersHandler.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/middleware/handlers/securityHeadersHandler.ts#L5-L25)
+- [src/middleware.ts](../../src/middleware.ts#L13-L18)
+- [src/lib/middleware/chain.ts](../../src/lib/middleware/chain.ts#L37-L42)
+- [src/lib/middleware/handlers/securityHeadersHandler.ts](../../src/lib/middleware/handlers/securityHeadersHandler.ts#L5-L25)
 
 ### Middleware Execution Sequence
 
@@ -170,7 +170,7 @@ export const securityHeadersMiddleware: MiddlewareHandler = async (req, ctx, nex
 
 ## 4. Next.js App Router & Inline Script Isolation
 
-File: [src/app/layout.tsx](file:///c:/Users/admin/Desktop/workfere/src/app/layout.tsx#L78-L145)
+File: [src/app/layout.tsx](../../src/app/layout.tsx#L78-L145)
 
 ### Server-Side Header Ingestion in RootLayout
 
@@ -279,7 +279,7 @@ sequenceDiagram
 
 ## 6. CSP Directives & Whitelisted Domain Specification
 
-File: [src/lib/security/csp.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/security/csp.ts#L44-L76)
+File: [src/lib/security/csp.ts](../../src/lib/security/csp.ts#L44-L76)
 
 WorkSphere's CSP configuration follows strict principle-of-least-privilege defaults while enabling explicit domain access for essential ecosystem dependencies.
 
@@ -506,8 +506,8 @@ it("attaches CSP and x-csp-nonce headers on response", async () => {
 
 ## 10. Repository File Reference Map
 
-- [src/middleware.ts](file:///c:/Users/admin/Desktop/workfere/src/middleware.ts) — Main Edge Middleware entrypoint orchestrating pipeline execution.
-- [src/lib/security/csp.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/security/csp.ts) — Nonce generation algorithms (`generateCryptographicNonce`) and policy builder (`generateCsp`).
-- [src/lib/middleware/handlers/securityHeadersHandler.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/middleware/handlers/securityHeadersHandler.ts) — Middleware handler attaching `x-csp-nonce` and `Content-Security-Policy` headers.
-- [src/lib/middleware/chain.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/middleware/chain.ts) — Middleware pipeline composition engine.
-- [src/app/layout.tsx](file:///c:/Users/admin/Desktop/workfere/src/app/layout.tsx) — Root Layout component ingesting nonces via `headers()` for `<script nonce={nonce}>`.
+- [src/middleware.ts](../../src/middleware.ts) — Main Edge Middleware entrypoint orchestrating pipeline execution.
+- [src/lib/security/csp.ts](../../src/lib/security/csp.ts) — Nonce generation algorithms (`generateCryptographicNonce`) and policy builder (`generateCsp`).
+- [src/lib/middleware/handlers/securityHeadersHandler.ts](../../src/lib/middleware/handlers/securityHeadersHandler.ts) — Middleware handler attaching `x-csp-nonce` and `Content-Security-Policy` headers.
+- [src/lib/middleware/chain.ts](../../src/lib/middleware/chain.ts) — Middleware pipeline composition engine.
+- [src/app/layout.tsx](../../src/app/layout.tsx) — Root Layout component ingesting nonces via `headers()` for `<script nonce={nonce}>`.

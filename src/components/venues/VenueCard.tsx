@@ -12,6 +12,7 @@ export interface VenueCardProps {
   neighborhood?: string;
   openingHours: VenueOpeningHours;
   currentTime?: Date | string | number;
+  showCountdown?: boolean;
   onSelect?: (id: string) => void;
   className?: string;
   wifiSpeed?: number | null;
@@ -23,6 +24,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   neighborhood,
   openingHours,
   currentTime,
+  showCountdown = false,
   onSelect,
   className = "",
   wifiSpeed,

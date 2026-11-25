@@ -16,16 +16,8 @@ import {
   Zap,
 } from "lucide-react";
 import { computeMembershipCommit } from "@/lib/zkp/commitment";
-import {
-  getCachedProof,
-  invalidateProof,
-  storeProof,
-} from "@/lib/zkp/proofCache";
-import type {
-  WorkerRequest,
-  WorkerResponse,
-  WorkerProgressStep,
-} from "@/workers/zkpWorker";
+import { getCachedProof, invalidateProof, storeProof } from "@/lib/zkp/proofCache";
+import type { ZkpProofProgressPhase } from "@/workers/zkpWorker";
 
 interface StudentDiscountVerificationProps {
   /** Called after the proof is accepted and the user is verified server-side. */
@@ -43,6 +35,11 @@ const STUDENT_PROOF_SCOPE = "student-discount";
 
 const ZKP_CACHE_KEY = "worksphere-zkp-verified";
 const ZKP_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PROOF_PROGRESS_LABELS: Record<ZkpProofProgressPhase, string> = {
+  witness: "Calculating witness constraints...",
+  proving: "Synthesizing cryptographic proof...",
+  finalizing: "Finalizing verification...",
+};
 
 interface ZkpCacheEntry {
   studentIdHash: string;
@@ -114,6 +111,41 @@ function getProgressLabel(step: WorkerProgressStep | null): string {
   }
 }
 
+function isProofProgressPhase(value: unknown): value is ZkpProofProgressPhase {
+  return value === "witness" || value === "proving" || value === "finalizing";
+}
+
+function ProofProgressIndicator({
+  progress,
+  phase,
+}: {
+  progress: number;
+  phase: ZkpProofProgressPhase;
+}) {
+  return (
+    <div className="space-y-1.5" role="status" aria-live="polite">
+      <div className="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
+        <span>{PROOF_PROGRESS_LABELS[phase]}</span>
+        <span>{progress}%</span>
+      </div>
+      <div
+        className="h-2 w-full overflow-hidden rounded-full bg-purple-100 dark:bg-purple-950/60"
+        role="progressbar"
+        aria-label="Student discount proof generation progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress}
+        aria-valuetext={`${progress}% - ${PROOF_PROGRESS_LABELS[phase]}`}
+      >
+        <div
+          className="h-full rounded-full bg-purple-600 transition-[width] duration-300 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function StudentDiscountVerification({
   onVerified,
   onClose,
@@ -123,10 +155,10 @@ export function StudentDiscountVerification({
   const [qrPayloadInput, setQrPayloadInput] = useState("");
   const [isProving, setIsProving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [progressPercent, setProgressPercent] = useState<number>(0);
-  const [progressStep, setProgressStep] = useState<WorkerProgressStep | null>(
-    null,
-  );
+  const [proofProgress, setProofProgress] = useState<{
+    percent: number;
+    phase: ZkpProofProgressPhase;
+  } | null>(null);
   const [isSuccess, setIsSuccess] = useState(() => {
     const cached = loadZkpCache();
     return cached !== null;
@@ -210,39 +242,177 @@ export function StudentDiscountVerification({
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    if (workerRef.current) {
+    const worker = workerRef.current;
+    workerRef.current = null;
+    if (worker) {
+      worker.onmessage = null;
+      worker.onerror = null;
       try {
-        workerRef.current.onmessage = null;
-        workerRef.current.onerror = null;
-      } catch {
-        // Ignore listener removal errors
-      }
-      try {
-        workerRef.current.postMessage({ type: "abort" });
+        worker.postMessage({ type: "abort" });
       } catch {
         // Ignore if worker is already closed
       }
       try {
-        workerRef.current.terminate();
+        worker.terminate();
       } catch {
         // Ignore if worker is already terminated
       }
-      workerRef.current = null;
     }
   }, []);
 
   // Handle abort click safely
   const handleAbort = useCallback(() => {
     terminateWorker();
-    if (!isMountedRef.current) return;
-    setIsProving(false);
-    setIsVerifying(false);
-    setProgressPercent(0);
-    setProgressStep(null);
-    setError("Proof synthesis cancelled.");
-  }, [terminateWorker]);
+    const worker = createZkpWorker();
+    let terminalMessageHandled = false;
 
-  // Component unmount lifecycle cleanup
+    worker.onmessage = async (e) => {
+      if (workerRef.current !== worker) return;
+      if (terminalMessageHandled) return;
+      const { type, proof, publicSignals, error: workerError } = e.data;
+
+      if (type === "progress") {
+        const { phase, percent } = e.data;
+        if (
+          !isProofProgressPhase(phase) ||
+          typeof percent !== "number" ||
+          !Number.isFinite(percent)
+        ) {
+          return;
+        }
+
+        const boundedPercent = Math.min(99, Math.max(0, Math.round(percent)));
+        setProofProgress((current) => {
+          if (current && boundedPercent < current.percent) return current;
+          return {
+            percent: current
+              ? Math.max(current.percent, boundedPercent)
+              : boundedPercent,
+            phase,
+          };
+        });
+        return;
+      }
+
+      if (type === "error" || type === "success") terminalMessageHandled = true;
+
+      if (type === "error") {
+        setIsProving(false);
+        setProofProgress(null);
+        const { isOom, isTimeout } = e.data;
+        if (isTimeout || workerError === "VERIFICATION_TIMEOUT") {
+          setError("Verification timed out. Worker was reset.");
+          terminateWorker();
+          spawnWorkerRef.current?.();
+          return;
+        }
+        if (isOom) {
+          setError(
+            "Your device ran out of memory for local proof generation. Attempting server-side verification…",
+          );
+          setIsVerifying(true);
+          try {
+            const controller = abortControllerRef.current;
+            const response = await fetch("/api/user/verify-student", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ serverSideFallback: true, studentId }),
+              signal: controller?.signal,
+            });
+            if (workerRef.current !== worker || controller?.signal.aborted) return;
+            const data = await response.json();
+            if (response.ok) {
+              setError(null);
+              setIsSuccess(true);
+              setVerificationDetails({
+                badge: "Verified Student",
+                discountTier: "Tier 1: 50% Off Workspace",
+                latencyMs: 320,
+              });
+              saveZkpCache(hashStudentId(studentId.trim()));
+              onVerifiedRef.current?.();
+            } else {
+              setError(data.error || "Server-side verification failed");
+            }
+          } catch {
+            if (workerRef.current === worker) {
+              setError(
+                "Server-side verification unavailable. Please try on a device with more memory.",
+              );
+            }
+          } finally {
+            if (workerRef.current === worker) setIsVerifying(false);
+          }
+        } else {
+          setError(workerError || "Failed to generate zero-knowledge proof");
+        }
+        terminateWorker();
+        return;
+      }
+
+      if (type === "success") {
+        setIsVerifying(true);
+        const start = Date.now();
+        const controller = abortControllerRef.current;
+        try {
+          const response = await fetch("/api/user/verify-student", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ proof, publicSignals }),
+            signal: controller?.signal,
+          });
+
+          if (workerRef.current !== worker || controller?.signal.aborted) return;
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || "Verification failed");
+          }
+
+          const latencyMs = Date.now() - start;
+          setProofProgress({ percent: 100, phase: "finalizing" });
+          setIsSuccess(true);
+          setVerificationDetails({
+            badge: "Verified Student Pass",
+            discountTier: "Tier 1: 50% Off Workspace & Drinks",
+            latencyMs,
+          });
+          saveZkpCache(hashStudentId(studentId.trim()));
+          if (typeof publicSignals?.[0] === "string") {
+            void storeProof(STUDENT_PROOF_SCOPE, publicSignals[0], {
+              proof,
+              publicSignals,
+            });
+          }
+          onVerifiedRef.current?.();
+        } catch (err: any) {
+          if (workerRef.current === worker && !controller?.signal.aborted) {
+            setProofProgress(null);
+            setError(err.message);
+          }
+        } finally {
+          if (workerRef.current === worker) {
+            setIsProving(false);
+            setIsVerifying(false);
+            terminateWorker();
+          }
+        }
+      }
+    };
+
+    worker.onerror = () => {
+      if (workerRef.current !== worker) return;
+      setIsProving(false);
+      setProofProgress(null);
+      setError("Worker crashed during proof generation");
+      terminateWorker();
+    };
+
+    workerRef.current = worker;
+    return worker;
+  }, [terminateWorker, studentId]);
+  spawnWorkerRef.current = spawnWorker;
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -277,6 +447,7 @@ export function StudentDiscountVerification({
   const verifyQrPayload = async (rawPayload: string) => {
     if (!rawPayload || rawPayload.trim() === "") return;
     setError(null);
+    setProofProgress(null);
     setIsVerifying(true);
     const start = Date.now();
 
@@ -340,6 +511,7 @@ export function StudentDiscountVerification({
   const handleVerify = async () => {
     if (!studentId) return;
     setError(null);
+    setProofProgress(null);
 
     const cached = loadZkpCache();
     if (cached && cached.studentIdHash === hashStudentId(studentId.trim())) {
@@ -571,8 +743,7 @@ export function StudentDiscountVerification({
     } catch {
       setError("Invalid Student ID format");
       setIsProving(false);
-      setProgressPercent(0);
-      setProgressStep(null);
+      setProofProgress(null);
     }
   };
 
@@ -600,6 +771,13 @@ export function StudentDiscountVerification({
               private student ID.
             </p>
           </div>
+
+          {proofProgress?.percent === 100 && (
+            <ProofProgressIndicator
+              progress={proofProgress.percent}
+              phase={proofProgress.phase}
+            />
+          )}
 
           <div className="p-3.5 rounded-xl bg-white/80 dark:bg-zinc-900/80 border border-emerald-500/20 text-left space-y-1.5">
             <div className="flex items-center justify-between text-xs font-semibold text-zinc-900 dark:text-zinc-100">
@@ -764,7 +942,13 @@ export function StudentDiscountVerification({
                   Abort
                 </Button>
               )}
-            </div>
+            </Button>
+            {isProving && proofProgress !== null && (
+              <ProofProgressIndicator
+                progress={proofProgress.percent}
+                phase={proofProgress.phase}
+              />
+            )}
           </div>
         ) : (
           <div className="space-y-4">

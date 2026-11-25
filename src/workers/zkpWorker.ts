@@ -72,24 +72,46 @@ export function releaseZkpWasmMemory(): void {
   _activeWasmHeapRef = null;
 }
 
-export async function runGigabitWitnessAndProof(
-  requestId: string | undefined,
-  payload: ZkpProofRequest["payload"],
-  emit: (msg: ZkpWorkerOutgoingMessage) => void,
-): Promise<void> {
-  abortedRequestId = null;
-  _activeWasmHeapRef = new Uint8Array(1024);
+type WorkerMessage =
+  | PremiumProofRequest
+  | StudentProofRequest
+  | VerifyRequest
+  | CancelMessage
+  | TerminateMessage
+  | AbortMessage;
 
-  if (abortedRequestId === requestId) {
-    releaseZkpWasmMemory();
-    return;
-  }
+export type ZkpProofProgressPhase = "witness" | "proving" | "finalizing";
 
-  emit({
-    type: "PROOF_PROGRESS",
-    requestId,
-    stage: "witness",
-    progress: 25,
+interface ZkpProofProgressMessage {
+  type: "progress";
+  stage: "generating";
+  phase: ZkpProofProgressPhase;
+  percent: number;
+}
+
+type ZkpProofProgressReporter = (
+  phase: ZkpProofProgressPhase,
+  percent: number,
+) => void;
+
+let generation = 0;
+
+export const DEFAULT_VERIFICATION_TIMEOUT_MS = 15_000;
+export const DEFAULT_PROVING_TIMEOUT_MS = 30_000;
+
+// Setup unhandled rejection and uncaught exception listeners inside the worker
+if (typeof self !== "undefined") {
+  self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
+    event.preventDefault();
+    const reason = event.reason;
+    const errorType = classifyError(reason);
+    self.postMessage({
+      type: "error",
+      error: sanitizeError(reason),
+      code: errorType === "timeout" ? "PROVING_TIMEOUT" : "UNHANDLED_REJECTION",
+      isTimeout: errorType === "timeout",
+      details: reason instanceof Error ? reason.message : String(reason),
+    });
   });
 
   if (!payload || typeof payload !== "object") {
@@ -319,54 +341,64 @@ export async function terminateCurveBn128(): Promise<void> {
   }
 }
 
-export interface CalculateWitnessRequest {
-  type: "CALCULATE_WITNESS";
-  jobId: string;
-  circuitInputs: Record<string, unknown>;
-  wasmUrl?: string;
-  zkeyUrl?: string;
-}
-
-export interface CancelJobRequest {
-  type: "CANCEL_JOB";
-  jobId: string;
-}
-
-export interface ZkpWitnessTask {
-  id: string;
-  circuitInputs: Record<string, unknown>;
-  wasmUrl?: string;
-  zkeyUrl?: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-}
-
-export interface ZkpWitnessTaskResult {
-  jobId: string;
+/**
+ * Generate a proof using explicit witness/prover lifecycle control with WebAssembly SIMD acceleration.
+ *
+ * snarkjs.fullProve() creates the witness internally and uses the default
+ * multithreaded prover. For repeated browser-worker executions this can
+ * retain WASM/worker resources longer than desired.
+ *
+ * We therefore:
+ * 1. dynamically detect WebAssembly Fixed-width 128-bit SIMD vector support;
+ * 2. create a memory-backed witness with SIMD-aligned buffer pages;
+ * 3. pass SIMD acceleration flags to the Groth16 prover;
+ * 4. release references after the proof completes;
+ * 5. terminate the BN128 worker when snarkjs created one.
+ */
+async function generateProof(
+  identityToken: string,
+  expectedCommit: string,
+  reportProgress: ZkpProofProgressReporter,
+): Promise<{
   proof: unknown;
   publicSignals: string[];
   durationMs: number;
   simdAccelerated?: boolean;
 }
 
-export interface ZkpWorkerPoolOptions {
-  poolSize?: number;
-  maxQueueSize?: number;
-  workerFactory?: () => any;
-  timeoutMs?: number;
-}
+  try {
+    // The compiled circuit has no component-progress imports; report only
+    // phase boundaries rather than estimating in-phase progress.
+    reportProgress("witness", 0);
+    await (snarkjs as any).wtns.calculate(
+      { identityToken, expectedCommit },
+      "/zkp/premium_membership.wasm",
+      wtns,
+      zkpOptions.witnessOptions,
+    );
 
-interface InternalPoolWorker {
-  id: number;
-  worker: any;
-  activeJobId: string | null;
-  busy: boolean;
-}
+    reportProgress("proving", 50);
+    const proofResult = await (snarkjs.groth16 as any).prove(
+      "/zkp/premium_membership.zkey",
+      wtns,
+      undefined,
+      zkpOptions.proverOptions,
+    );
 
-interface QueuedTask {
-  task: ZkpWitnessTask;
-  resolve: (res: ZkpWitnessTaskResult) => void;
-  reject: (err: any) => void;
+    reportProgress("finalizing", 90);
+    return {
+      ...proofResult,
+      simdAccelerated: zkpOptions.simdEnabled,
+    };
+  } finally {
+    /*
+     * Drop the witness reference as soon as the proof operation finishes.
+     * This makes the WASM-backed witness eligible for garbage collection
+     * instead of keeping it alive across consecutive requests.
+     */
+    wtns = null;
+    await terminateCurveBn128();
+  }
 }
 
 export class ZkpWitnessWorkerPool {
@@ -571,25 +603,22 @@ export class ZkpWitnessWorkerPool {
       return;
     }
 
-    if (data.type === "WITNESS_ERROR" || data.type === "PROOF_ERROR") {
-      this.handleWorkerError(poolWorker, {
-        message: data.error || "Witness generation error",
-      });
-    }
-  }
-
-  public async executeTask(
-    task: ZkpWitnessTask,
-  ): Promise<ZkpWitnessTaskResult> {
-    if (this.isTerminated) {
-      throw new Error("ZkpWitnessWorkerPool has been terminated.");
-    }
-    if (task.signal?.aborted) {
-      throw new Error("Task was aborted before execution.");
-    }
-    if (this.taskQueue.length >= this.maxQueueSize) {
-      throw new Error(
-        `Worker pool task queue is full (max: ${this.maxQueueSize}).`,
+    try {
+      // Using the memory-optimized generateProof instead of fullProve
+      const { proof, publicSignals } = await withTimeout(
+        () =>
+          generateProof(identityToken, expectedCommit, (phase, percent) => {
+            if (myGeneration !== generation) return;
+            const progressMessage: ZkpProofProgressMessage = {
+              type: "progress",
+              stage: "generating",
+              phase,
+              percent,
+            };
+            self.postMessage(progressMessage);
+          }),
+        timeoutMs,
+        "Witness generation timed out after 30 seconds",
       );
     }
 
@@ -627,30 +656,8 @@ export class ZkpWitnessWorkerPool {
         task.signal.addEventListener("abort", onAbort, { once: true });
       }
 
-      const queued: QueuedTask = {
-        task,
-        resolve: (val) => {
-          if (task.signal) task.signal.removeEventListener("abort", onAbort);
-          resolve(val);
-        },
-        reject: (err) => {
-          if (task.signal) task.signal.removeEventListener("abort", onAbort);
-          reject(err);
-        },
-      };
-
-      this.taskQueue.push(queued);
-      this.pumpQueue();
-    });
-  }
-
-  private pumpQueue(): void {
-    if (this.isTerminated || this.taskQueue.length === 0) return;
-    const idleWorkerIndex = this.workers.findIndex((w) => !w.busy);
-    if (idleWorkerIndex === -1) return;
-
-    const queued = this.taskQueue.shift();
-    if (!queued) return;
+      generation++;
+      const errorType = classifyError(error);
 
     const poolWorker = this.workers[idleWorkerIndex];
     poolWorker.busy = true;

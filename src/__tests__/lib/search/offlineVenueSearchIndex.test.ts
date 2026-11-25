@@ -1,5 +1,7 @@
-﻿import {
+import {
   OfflineVenueSearchIndex,
+  normalizeSearchText,
+  tokenizeSearchText,
   type SearchableVenue,
 } from '@/lib/search/offlineVenueSearchIndex';
 
@@ -37,7 +39,124 @@ describe('OfflineVenueSearchIndex', () => {
     },
   ];
 
-  it('supports exact token, prefix, accent/punctuation normalization, and bounded typo fuzzy matching', () => {
+  const internationalVenues: SearchableVenue[] = [
+    {
+      id: 'v-zurich',
+      name: 'Zürich Altstadt Coworking',
+      neighborhood: 'Kreis 1',
+      amenities: ['espresso', 'quiet'],
+      tags: ['swiss-fintech'],
+      wifiMbps: 300,
+    },
+    {
+      id: 'v-saopaulo',
+      name: 'Espaço São Paulo Inovação',
+      neighborhood: 'Jardins',
+      amenities: ['café', 'ar-condicionado'],
+      tags: ['paulista', 'startup'],
+      wifiMbps: 250,
+    },
+    {
+      id: 'v-bogota',
+      name: 'Bogotá Emprendedores Café',
+      neighborhood: 'Chapinero',
+      amenities: ['café de origen', 'internet rápido'],
+      tags: ['colombia'],
+      wifiMbps: 150,
+    },
+    {
+      id: 'v-munchen',
+      name: 'München Kreativwerkstatt',
+      neighborhood: 'Schwabing',
+      amenities: ['ruhebereich', 'kaffee'],
+      tags: ['bavaria'],
+      wifiMbps: 200,
+    },
+    {
+      id: 'v-valparaiso',
+      name: 'Valparaíso Puerto Tech',
+      neighborhood: 'Cerro Alegre',
+      amenities: ['vistas al mar', 'café'],
+      tags: ['pacífico'],
+      wifiMbps: 120,
+    },
+    {
+      id: 'v-reykjavik',
+      name: 'Reykjavík Bryggjan Loft',
+      neighborhood: 'Vesturbær',
+      amenities: ['kaffi', 'hljóðlátt'],
+      tags: ['nordic'],
+      wifiMbps: 500,
+    },
+  ];
+
+  it('normalizes diacritics using Unicode NFD and strips combining marks', () => {
+    expect(normalizeSearchText('Café')).toBe('cafe');
+    expect(normalizeSearchText('Zürich')).toBe('zurich');
+    expect(normalizeSearchText('São Paulo')).toBe('sao paulo');
+    expect(normalizeSearchText('Bogotá')).toBe('bogota');
+    expect(normalizeSearchText('München')).toBe('munchen');
+    expect(normalizeSearchText('Valparaíso')).toBe('valparaiso');
+    expect(normalizeSearchText('Reykjavík')).toBe('reykjavik');
+  });
+
+  it('tokenizes search text into deduplicated normalized tokens', () => {
+    const tokens = tokenizeSearchText('Café Zürich café');
+    expect(tokens).toEqual(['cafe', 'zurich']);
+  });
+
+  it('matches accented and unaccented search queries bidirectionally', () => {
+    const index = new OfflineVenueSearchIndex(internationalVenues);
+
+    // Unaccented query matches accented indexed venue
+    const matchZurichUnaccented = index.search('zurich');
+    expect(matchZurichUnaccented.map((r) => r.venue.id)).toContain('v-zurich');
+
+    // Accented query matches accented indexed venue
+    const matchZurichAccented = index.search('Zürich');
+    expect(matchZurichAccented.map((r) => r.venue.id)).toContain('v-zurich');
+
+    // Query for "cafe" matches "Café" in name/amenities
+    const matchCafeUnaccented = index.search('cafe');
+    expect(matchCafeUnaccented.map((r) => r.venue.id)).toContain('v-saopaulo');
+    expect(matchCafeUnaccented.map((r) => r.venue.id)).toContain('v-bogota');
+    expect(matchCafeUnaccented.map((r) => r.venue.id)).toContain('v-valparaiso');
+
+    // Query for "café" matches unaccented / accented equivalently
+    const matchCafeAccented = index.search('café');
+    expect(matchCafeAccented.map((r) => r.venue.id)).toContain('v-saopaulo');
+    expect(matchCafeAccented.map((r) => r.venue.id)).toContain('v-bogota');
+
+    // Latin American names with tildes and acutes
+    const matchSaoPaulo = index.search('Sao Paulo');
+    expect(matchSaoPaulo.map((r) => r.venue.id)).toContain('v-saopaulo');
+
+    const matchBogota = index.search('bogota');
+    expect(matchBogota.map((r) => r.venue.id)).toContain('v-bogota');
+
+    const matchMunchen = index.search('Munchen');
+    expect(matchMunchen.map((r) => r.venue.id)).toContain('v-munchen');
+
+    const matchValparaiso = index.search('valparaiso');
+    expect(matchValparaiso.map((r) => r.venue.id)).toContain('v-valparaiso');
+  });
+
+  it('matches unaccented venue indexing with accented queries', () => {
+    const index = new OfflineVenueSearchIndex([
+      {
+        id: 'v-plain-cafe',
+        name: 'Cafe Central',
+        neighborhood: 'Downtown',
+      },
+    ]);
+
+    // Querying with accent "café" matches indexed "Cafe"
+    const results = index.search('café');
+    expect(results.length).toBe(1);
+    expect(results[0]?.venue.id).toBe('v-plain-cafe');
+  });
+
+  it('preserves existing token, prefix, typo tolerance, and punctuation normalization', () => {
     const index = new OfflineVenueSearchIndex(sampleVenues);
 
     const exact = index.search('fiber');
@@ -54,7 +173,7 @@ describe('OfflineVenueSearchIndex', () => {
     expect(specialChars).toEqual([]);
   });
 
-  it('applies facet filters for minimum WiFi Mbps, max noise dB, and minimum open seats', () => {
+  it('preserves facet filters and ranking order', () => {
     const index = new OfflineVenueSearchIndex(sampleVenues);
 
     const filtered = index.search('power', {
@@ -66,7 +185,7 @@ describe('OfflineVenueSearchIndex', () => {
     expect(filtered.map((r) => r.venue.id)).toEqual(['v-bandra', 'v-powai']);
   });
 
-  it('returns empty results for blank queries when no filters apply and breaks ties deterministically by venue id', () => {
+  it('returns empty results for blank queries without facets and breaks ties deterministically', () => {
     const index = new OfflineVenueSearchIndex([
       { id: 'venue-z', name: 'Quiet Desk', amenities: ['quiet'], wifiMbps: 100 },
       { id: 'venue-a', name: 'Quiet Desk', amenities: ['quiet'], wifiMbps: 100 },

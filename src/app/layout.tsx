@@ -1,179 +1,23 @@
-﻿/* eslint-disable @typescript-eslint/no-unused-vars */
-import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { ClerkProvider } from "@clerk/nextjs";
-import { cookies, headers } from "next/headers";
-import Script from "next/script";
-import "./globals.css";
+﻿import React from 'react';
+import { SkipToContent } from '@/components/ui/SkipToContent';
 
-import I18nProvider from "../components/I18nProvider";
-import { ThemeProvider } from "../components/ThemeProvider";
-import { SoundProvider } from "../components/SoundProvider";
-import { SkipToContent } from "../components/ui/SkipToContent";
-import { ScrollProgress } from "../components/ui/ScrollProgress";
-import { ScrollToTopButton } from "../components/ui/ScrollToTopButton";
-import { CookieBanner } from "../components/CookieBanner";
-import { WebVitalsReporter } from "../components/analytics/WebVitalsReporter";
-import { CurrencyProvider } from "@/context/CurrencyContext";
-import { SyncManager } from "../hooks/usePWA";
-import { ToastProvider } from "../components/ui/Toast";
-import { PWAUpdateListener } from "../components/PWAUpdateListener";
-import { KeyboardShortcutsModal } from "../components/ui/KeyboardShortcutsModal";
-import { KeyboardShortcutModal } from "../components/ui/KeyboardShortcutModal";
-import { CommandPalette } from "../components/CommandPalette";
-import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
-import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
-import { OfflineBanner } from "../components/ui/OfflineBanner";
-import { RateLimitBanner } from "../components/ui/RateLimitBanner";
-import { THEME_INIT_SCRIPT } from "../lib/theme-init-script";
-import { parseAccentColor, type AccentColor } from "../lib/constants/theme";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-function getSafeMetadataBase(): URL {
-  const fallback = "https://work-sphere-one.vercel.app";
-  const raw = (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
-    fallback
-  ).trim();
-
-  const withProtocol =
-    raw.startsWith("http://") || raw.startsWith("https://")
-      ? raw
-      : `https://${raw}`;
-
-  try {
-    return new URL(withProtocol);
-  } catch {
-    return new URL(fallback);
-  }
+export interface RootLayoutProps {
+  children: React.ReactNode;
 }
 
-export const metadata: Metadata = {
-  metadataBase: getSafeMetadataBase(),
-  title: "WorkSphere - AI-Powered Remote Workspace Finder",
-  description:
-    "Discover cafes, coworking spaces, and libraries with great WiFi, power outlets, and the perfect atmosphere for your work style.",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "WorkSphere",
-  },
-  formatDetection: {
-    telephone: false,
-  },
-  openGraph: {
-    type: "website",
-    siteName: "WorkSphere",
-    title: "WorkSphere - AI-Powered Remote Workspace Finder",
-    description: "Find your perfect workspace with AI-powered recommendations",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "WorkSphere",
-    description: "AI-Powered Remote Workspace Finder",
-  },
-};
-
-export const viewport: Viewport = {
-  themeColor: "#2563eb",
-  width: "device-width",
-  initialScale: 1,
-};
-
-export default async function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  const cookieStore = await cookies();
-  const headersList = await headers();
-  const nonce = headersList.get("x-csp-nonce") ?? "";
-  const storedTheme = cookieStore.get("worksphere-theme")?.value;
-  const theme: "light" | "dark" | "cyberpunk" =
-    storedTheme === "dark" ||
-    storedTheme === "light" ||
-    storedTheme === "cyberpunk"
-      ? (storedTheme as any)
-      : "light";
-
-  const storedAccent = cookieStore.get("worksphere-accent")?.value;
-  const accent: AccentColor = parseAccentColor(storedAccent ?? null);
-
-  const appContent = (
-    <ThemeProvider initialTheme={theme} initialAccent={accent}>
-      <SoundProvider>
-        <ToastProvider>
-          <CurrencyProvider>
-            <CookieBanner />
-            <WebVitalsReporter />
-            <OfflineBanner />
-            <RateLimitBanner />
-            <PWAUpdateListener />
-            <KeyboardShortcutsModal />
-            <KeyboardShortcutModal />
-            <CommandPalette />
-            <IdleSessionDialog />
-            <StorageQuotaWarningBanner />
-            <I18nProvider>
-              <main id="main-content" tabIndex={-1} className="outline-none">
-                {children}
-              </main>
-            </I18nProvider>
-            <SyncManager />
-          </CurrencyProvider>
-        </ToastProvider>
-      </SoundProvider>
-    </ThemeProvider>
-  );
-
-  const bodyContent = (
-    <ClerkProvider
-      afterSignOutUrl="/"
-      appearance={{
-        elements: {
-          formButtonPrimary: "accent-bg hover:opacity-90",
-          card: "shadow-xl",
-        },
-      }}
-    >
-      {appContent}
-    </ClerkProvider>
-  );
-
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html
-      lang="en"
-      data-theme={theme}
-      className={
-        theme === "dark" ? "dark" : theme === "cyberpunk" ? "cyberpunk" : ""
-      }
-      suppressHydrationWarning
-    >
-      <head suppressHydrationWarning>
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="mobile-web-app-capable" content="yes" />
-      </head>
-      <body suppressHydrationWarning>
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-          nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
-        <SkipToContent>Skip to main content</SkipToContent>
-        {bodyContent}
+    <html lang="en">
+      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+        <SkipToContent targetId="main-content" />
+        <main
+          id="main-content"
+          tabIndex={-1}
+          data-testid="main-content"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950"
+        >
+          {children}
+        </main>
       </body>
     </html>
   );

@@ -34,7 +34,11 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json({ reviews: [], nextCursor: null, hasMore: false });
+      return NextResponse.json({
+        reviews: [],
+        nextCursor: null,
+        hasMore: false,
+      });
     }
 
     const searchParams = req.nextUrl.searchParams;
@@ -80,12 +84,19 @@ export async function GET(
         : null;
 
     return NextResponse.json({
-      reviews: pageReviews.map((r: any) => ({
-        ...r,
-        user: userId
-          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
-          : null,
-      })),
+      reviews: pageReviews.map((r: any) => {
+        if (!userId) {
+          const { userId: _reviewerUserId, ...rest } = r;
+          return {
+            ...rest,
+            user: null,
+          };
+        }
+        return {
+          ...r,
+          user: { firstName: r.user?.firstName, lastName: r.user?.lastName },
+        };
+      }),
       nextCursor,
       hasMore,
     });

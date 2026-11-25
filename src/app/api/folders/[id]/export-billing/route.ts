@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { hasFolderAccess } from "@/lib/folders";
+import {
+  buildCsvContentDisposition,
+  sanitizeCsvFilename,
+  sanitizeCsvFilenameStem,
+} from "@/lib/export/csvFilename";
 
 // GET /api/folders/[id]/export-billing - Export billing CSV
 export async function GET(
@@ -89,12 +94,17 @@ export async function GET(
     ].join("\n");
 
     // 4. Return as dynamic CSV stream/file
-    const filename = `billing-export-${folder.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.csv`;
+    const safeFolderName = sanitizeCsvFilenameStem(
+      folder.name.toLowerCase(),
+    );
+    const filename = sanitizeCsvFilename(
+      `billing-export-${safeFolderName}-${new Date().toISOString().split("T")[0]}`,
+    );
 
     return new NextResponse(csvContent, {
       headers: {
         "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": buildCsvContentDisposition(filename),
         "Cache-Control": "no-cache",
       },
     });

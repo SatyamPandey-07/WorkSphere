@@ -14,17 +14,25 @@ jest.mock("@/lib/prisma", () => ({
 jest.mock("@/components/TopNav", () => ({
   TopNav: () => <div data-testid="top-nav" />,
 }));
-jest.mock("@/components/site-footer", () => function MockSiteFooter() {
-  return <div data-testid="site-footer" />;
-});
+jest.mock(
+  "@/components/site-footer",
+  () =>
+    function MockSiteFooter() {
+      return <div data-testid="site-footer" />;
+    },
+);
 jest.mock("@/components/venues/RecentlyViewedTracker", () => ({
   RecentlyViewedTracker: function MockRecentlyViewedTracker() {
     return null;
   },
 }));
-jest.mock("@/components/venues/PremiumZkpGate", () => function MockPremiumZkpGate() {
-  return null;
-});
+jest.mock(
+  "@/components/venues/PremiumZkpGate",
+  () =>
+    function MockPremiumZkpGate() {
+      return null;
+    },
+);
 jest.mock("@/components/WeatherCloudRenderer", () => ({
   WeatherCloudRenderer: () => null,
 }));
@@ -91,7 +99,9 @@ describe("VenuePage JSON-LD script tag injection", () => {
     const rootChildren = React.Children.toArray(jsx.props.children);
     const scriptChild = rootChildren.find(
       (child: any) =>
-        React.isValidElement(child) && child.type === "script" && (child.props as any).type === "application/ld+json"
+        React.isValidElement(child) &&
+        child.type === "script" &&
+        (child.props as any).type === "application/ld+json",
     ) as React.ReactElement<any> | undefined;
 
     expect(scriptChild).toBeDefined();
@@ -146,5 +156,49 @@ describe("VenuePage JSON-LD script tag injection", () => {
         },
       ],
     });
+  });
+
+  it("escapes untrusted venue fields to prevent script breakout", async () => {
+    const maliciousVenue = {
+      id: "venue-xss",
+      name: "</script><script>window.__venueInjectionTest=true</script>",
+      category: "cafe",
+      latitude: 40.7128,
+      longitude: -74.006,
+      address: "100 Broadway, New York, NY 10005",
+      rating: 4.5,
+      ratings: [],
+      imageUrl: "https://example.com/photo.jpg",
+    };
+
+    (prisma.venue.findUnique as jest.Mock).mockResolvedValue(maliciousVenue);
+
+    const jsx = await VenuePage({
+      params: Promise.resolve({ id: "venue-xss" }),
+    });
+
+    const rootChildren = React.Children.toArray(jsx.props.children);
+    const scriptChild = rootChildren.find(
+      (child: any) =>
+        React.isValidElement(child) &&
+        child.type === "script" &&
+        (child.props as any).type === "application/ld+json",
+    ) as React.ReactElement<any> | undefined;
+
+    expect(scriptChild).toBeDefined();
+    const rawHtml = scriptChild?.props.dangerouslySetInnerHTML?.__html;
+    expect(rawHtml).toBeDefined();
+
+    // Verify raw html string contains escaped sequence and no unescaped closing script tag
+    expect(rawHtml).not.toContain("</script>");
+    expect(rawHtml).not.toContain("<script>");
+    expect(rawHtml).toContain("\\u003c/script\\u003e");
+    expect(rawHtml).toContain("\\u003cscript\\u003e");
+
+    // Verify JSON parsing succeeds and preserves original value
+    const parsed = JSON.parse(rawHtml!);
+    expect(parsed.name).toBe(
+      "</script><script>window.__venueInjectionTest=true</script>",
+    );
   });
 });

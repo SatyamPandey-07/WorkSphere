@@ -1,22 +1,28 @@
 /**
  * route.ts
  * /api/cafe/orders
- * Handles order creation, dynamic queue wait-time estimation, and active order tracking.
+ * Handles persistent order creation, dynamic queue wait-time estimation, and authenticated order lifecycle.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import {
   SmartCafeEngine,
   SAMPLE_CAFE_MENU,
   OrderItemInput,
-  CafeOrder,
 } from "@/lib/cafe/smartCafeEngine";
 
-// In-memory active orders store for real-time tracking
-const activeOrdersStore = new Map<string, CafeOrder>();
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const itemsInput: OrderItemInput[] = body.items || [];
     const customerName = body.customerName || "Nomad Professional";
@@ -24,150 +30,207 @@ export async function POST(req: NextRequest) {
     const venueId = body.venueId || "venue-sf-01";
     const venueName = body.venueName || "SoMa Focus Hub & Artisan Roastery";
 
-    if (!itemsInput || itemsInput.length === 0) {
+    if (!Array.isArray(itemsInput) || itemsInput.length === 0) {
       return NextResponse.json(
         { error: "Order must contain at least one item." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const currentQueueLength = activeOrdersStore.size + 2; // simulated current queue load
+    // Determine current active orders in queue at venue
+    const activeQueueLength = await prisma.cafeOrder.count({
+      where: {
+        venueId,
+        status: { in: ["received", "brewing"] },
+      },
+    });
+
     const calculation = SmartCafeEngine.calculateOrderDetails(
       itemsInput,
       SAMPLE_CAFE_MENU,
-      currentQueueLength
+      activeQueueLength + 1,
     );
 
-    const orderId = `ord-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-    const { pickupCode, pickupToken } = SmartCafeEngine.generatePickupTokens(orderId);
+    const orderId = `ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const { pickupCode, pickupToken } =
+      SmartCafeEngine.generatePickupTokens(orderId);
 
-    const now = Date.now();
-    const estimatedReadyTime = now + calculation.estimatedPrepMinutes * 60 * 1000;
+    const estimatedReadyTime = new Date(
+      Date.now() + calculation.estimatedPrepMinutes * 60 * 1000,
+    );
 
-    const newOrder: CafeOrder = {
-      id: orderId,
-      venueId,
-      venueName,
-      customerName,
-      deskNumber,
-      items: calculation.calculatedItems,
-      subtotal: calculation.subtotal,
-      tax: calculation.tax,
-      total: calculation.total,
-      status: "received",
-      createdAt: now,
-      estimatedReadyTime,
-      pickupToken,
-      pickupCode,
-      activeQueuePosition: currentQueueLength,
-    };
-
-    activeOrdersStore.set(orderId, newOrder);
+    const newOrder = await prisma.cafeOrder.create({
+      data: {
+        id: orderId,
+        venueId,
+        venueName,
+        userId,
+        customerName,
+        deskNumber,
+        items: calculation.calculatedItems as unknown as Prisma.InputJsonValue,
+        subtotal: calculation.subtotal,
+        tax: calculation.tax,
+        total: calculation.total,
+        status: "received",
+        pickupCode,
+        pickupToken,
+        estimatedReadyTime,
+      },
+    });
 
     return NextResponse.json({
       success: true,
-      order: newOrder,
+      order: {
+        ...newOrder,
+        createdAt: newOrder.createdAt.getTime(),
+        estimatedReadyTime: newOrder.estimatedReadyTime.getTime(),
+        activeQueuePosition: activeQueueLength + 1,
+      },
       estimatedMinutes: calculation.estimatedPrepMinutes,
     });
   } catch (error: any) {
     console.error("[POST /api/cafe/orders] Error:", error);
     return NextResponse.json(
       { error: "Failed to place mobile barista order", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function GET(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const orderId = searchParams.get("orderId");
 
     if (!orderId) {
       return NextResponse.json(
         { error: "Missing required query parameter: orderId" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const order = activeOrdersStore.get(orderId);
+    const order = await prisma.cafeOrder.findUnique({
+      where: { id: orderId },
+    });
+
     if (!order) {
-      // Fallback demo order if refreshed
-      return NextResponse.json({
-        success: false,
-        error: "Order not found or expired from live queue.",
-      });
+      return NextResponse.json(
+        { error: "Order not found or expired from live queue." },
+        { status: 404 },
+      );
     }
 
-    const elapsedMs = Date.now() - order.createdAt;
-    const totalDurationMs = order.estimatedReadyTime - order.createdAt;
-
-    // Simulate auto status transitions
-    let updatedStatus = order.status;
-    if (elapsedMs > totalDurationMs) {
-      updatedStatus = "ready_for_pickup";
-    } else if (elapsedMs > 30000) {
-      updatedStatus = "brewing";
+    // Verify ownership
+    if (order.userId !== userId) {
+      return NextResponse.json(
+        {
+          error: "Forbidden: Cannot access an order belonging to another user",
+        },
+        { status: 403 },
+      );
     }
-    order.status = updatedStatus;
+
+    const remainingMinutes = Math.max(
+      0,
+      Math.ceil(
+        (new Date(order.estimatedReadyTime).getTime() - Date.now()) / 60000,
+      ),
+    );
 
     return NextResponse.json({
       success: true,
-      order,
-      remainingMinutes: Math.max(0, Math.ceil((order.estimatedReadyTime - Date.now()) / 60000)),
+      order: {
+        ...order,
+        createdAt: order.createdAt.getTime(),
+        estimatedReadyTime: order.estimatedReadyTime.getTime(),
+      },
+      remainingMinutes,
     });
   } catch (error: any) {
     console.error("[GET /api/cafe/orders] Error:", error);
     return NextResponse.json(
       { error: "Failed to query order status", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const orderId = searchParams.get("orderId");
 
     if (!orderId) {
       return NextResponse.json(
         { error: "Missing required query parameter: orderId" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const order = activeOrdersStore.get(orderId);
+    const order = await prisma.cafeOrder.findUnique({
+      where: { id: orderId },
+    });
+
     if (!order) {
       return NextResponse.json(
         { error: "Order not found or expired from live queue." },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
-    const elapsedMs = Date.now() - order.createdAt;
-    const totalDurationMs = order.estimatedReadyTime - order.createdAt;
-    if (elapsedMs > totalDurationMs) {
-      order.status = "ready_for_pickup";
-    } else if (elapsedMs > 15000 && order.status === "received") {
-      order.status = "brewing";
+    // Verify ownership
+    if (order.userId !== userId) {
+      return NextResponse.json(
+        {
+          error: "Forbidden: Cannot cancel an order belonging to another user",
+        },
+        { status: 403 },
+      );
     }
 
     if (order.status !== "received") {
       return NextResponse.json(
-        { success: false, error: "Only orders that have not started brewing can be cancelled.", order },
-        { status: 409 }
+        {
+          success: false,
+          error: "Only orders that have not started brewing can be cancelled.",
+          order: {
+            ...order,
+            createdAt: order.createdAt.getTime(),
+            estimatedReadyTime: order.estimatedReadyTime.getTime(),
+          },
+        },
+        { status: 409 },
       );
     }
 
-    order.status = "cancelled";
-    activeOrdersStore.delete(orderId);
-    return NextResponse.json({ success: true, order });
+    const updated = await prisma.cafeOrder.update({
+      where: { id: orderId },
+      data: { status: "cancelled" },
+    });
+
+    return NextResponse.json({
+      success: true,
+      order: {
+        ...updated,
+        createdAt: updated.createdAt.getTime(),
+        estimatedReadyTime: updated.estimatedReadyTime.getTime(),
+      },
+    });
   } catch (error: any) {
     console.error("[DELETE /api/cafe/orders] Error:", error);
     return NextResponse.json(
       { error: "Failed to cancel barista order", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

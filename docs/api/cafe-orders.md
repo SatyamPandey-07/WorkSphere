@@ -68,17 +68,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateCafeOrderRequest'
+              $ref: "#/components/schemas/CreateCafeOrderRequest"
       responses:
-        '201':
+        "201":
           description: Order successfully created and queued
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CafeOrderResponse'
-        '400':
+                $ref: "#/components/schemas/CafeOrderResponse"
+        "400":
           description: Invalid modifier combination or malformed payload
-        '409':
+        "409":
           description: Item out of stock or venue cafe offline
     get:
       summary: List user cafe orders
@@ -87,14 +87,14 @@ paths:
       tags:
         - Cafe Orders
       responses:
-        '200':
+        "200":
           description: List of cafe orders
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/CafeOrderResponse'
+                  $ref: "#/components/schemas/CafeOrderResponse"
 
   /api/cafe/orders/{orderId}/status:
     patch:
@@ -114,14 +114,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateOrderStatusRequest'
+              $ref: "#/components/schemas/UpdateOrderStatusRequest"
       responses:
-        '200':
+        "200":
           description: Order status updated successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CafeOrderResponse'
+                $ref: "#/components/schemas/CafeOrderResponse"
 ```
 
 ---
@@ -141,19 +141,9 @@ export type CafeOrderStatus =
   | "CANCELLED";
 
 export type MilkOption =
-  | "whole"
-  | "skim"
-  | "oat"
-  | "almond"
-  | "soy"
-  | "coconut"
-  | "none";
+  "whole" | "skim" | "oat" | "almond" | "soy" | "coconut" | "none";
 
-export type SweetenerLevel =
-  | "none"
-  | "light"
-  | "regular"
-  | "extra";
+export type SweetenerLevel = "none" | "light" | "regular" | "extra";
 
 export type TemperatureOption =
   | "hot"
@@ -165,10 +155,7 @@ export type TemperatureOption =
   | "cold_brew";
 
 export type EspressoRoast =
-  | "house_blend"
-  | "single_origin_ethiopia"
-  | "decaf_swiss_water"
-  | "half_caf";
+  "house_blend" | "single_origin_ethiopia" | "decaf_swiss_water" | "half_caf";
 
 export interface DietaryModifierFlags {
   isGlutenFreeRequired: boolean;
@@ -191,7 +178,8 @@ export interface CafeOrderItem {
   milk: MilkOption;
   sweetener: SweetenerLevel;
   flavorSyrups?: Array<{
-    flavor: "vanilla" | "caramel" | "hazelnut" | "sugar_free_vanilla" | "lavender";
+    flavor:
+      "vanilla" | "caramel" | "hazelnut" | "sugar_free_vanilla" | "lavender";
     pumps: number;
   }>;
   dietaryFlags: DietaryModifierFlags;
@@ -240,13 +228,13 @@ export interface CafeOrderResponse {
 
 To protect coworkers with severe food allergies and specific dietary regimens, every order payload includes structured boolean flags that highlight warnings directly on the Barista Kitchen Display:
 
-| Modifier Key | Permitted Values | Safety Impact & Kitchen Action |
-| :--- | :--- | :--- |
-| `isNutAllergyAlert` | `boolean` | **CRITICAL:** Barista must purge steam wand, sanitize milk pitcher, and ensure almond milk cross-contamination is eliminated. |
-| `isGlutenFreeRequired` | `boolean` | Bakery tongs sanitized; ensures gluten-free oat milk certified brand. |
-| `isVegan` | `boolean` | Verifies plant-based milk and excludes animal syrups (e.g. real honey, dairy caramel). |
-| `isKeto` | `boolean` | Replaces standard sugar syrups with heavy cream and monk fruit / stevia sweetening. |
-| `isDiabeticFriendly` | `boolean` | Hard blocks full-sugar cane syrups, defaults to unsweetened or sugar-free vanilla. |
+| Modifier Key           | Permitted Values | Safety Impact & Kitchen Action                                                                                                |
+| :--------------------- | :--------------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| `isNutAllergyAlert`    | `boolean`        | **CRITICAL:** Barista must purge steam wand, sanitize milk pitcher, and ensure almond milk cross-contamination is eliminated. |
+| `isGlutenFreeRequired` | `boolean`        | Bakery tongs sanitized; ensures gluten-free oat milk certified brand.                                                         |
+| `isVegan`              | `boolean`        | Verifies plant-based milk and excludes animal syrups (e.g. real honey, dairy caramel).                                        |
+| `isKeto`               | `boolean`        | Replaces standard sugar syrups with heavy cream and monk fruit / stevia sweetening.                                           |
+| `isDiabeticFriendly`   | `boolean`        | Hard blocks full-sugar cane syrups, defaults to unsweetened or sugar-free vanilla.                                            |
 
 ---
 
@@ -269,18 +257,21 @@ stateDiagram-v2
 ```
 
 ### Transition Permissions & Invariants
-1. **Cancellation Window:** Customers may cancel only while status is `PENDING` or `QUEUED`. Once status transitions to `BREWING`, cancellation is locked to prevent food waste.
-2. **Estimated Wait Calculation:**
+
+1. **Durable Database Persistence (#9583):** Cafe orders are durably persisted in PostgreSQL via Prisma (`CafeOrder` table), surviving server restarts and multi-instance concurrency. Process-local in-memory stores and timer-based artificial status mutations on GET polls are eliminated in favor of authoritative barista state updates.
+2. **Authentication & Ownership Validation:** All order placement, retrieval (`GET /api/cafe/orders`), and cancellation (`DELETE /api/cafe/orders`) endpoints require an authenticated Clerk session (`auth()`). Users may only access and cancel their own orders; cross-user access attempts are rejected with `403 Forbidden`.
+3. **Cancellation Window:** Customers may cancel only while status is `received` (or `QUEUED`/`PENDING`). Once status transitions to `brewing` (or beyond), cancellation is strictly rejected with `409 Conflict` to prevent kitchen waste.
+4. **Estimated Wait Calculation:**
    $$\text{Wait Time} = \text{Base Queue Latency} + \left(\sum \text{Active Items in Queue} \times 2.5\text{ mins}\right)$$
-3. **Idempotency Guarantee:** Requests containing the `Idempotency-Key` header prevent duplicate billing if network retries occur.
+5. **Idempotency Guarantee:** Requests containing the `Idempotency-Key` header prevent duplicate billing if network retries occur.
 
 ---
 
 ## 6. Error Codes & HTTP Responses
 
-| HTTP Status | Error Code | Description & Client Resolution |
-| :--- | :--- | :--- |
-| `400 Bad Request` | `INVALID_MODIFIERS` | Conflicting options (e.g., `iced_no_ice` selected with hot drink size). |
-| `403 Forbidden` | `NOT_CHECKED_IN` | Desk delivery requested, but user does not hold an active check-in for the venue. |
-| `409 Conflict` | `ITEM_DEPLETED` | Specialty milk or coffee roast ran out of stock during checkout. |
-| `422 Unprocessable`| `VENUE_CAFE_CLOSED` | Order submitted outside cafe operating hours. |
+| HTTP Status         | Error Code          | Description & Client Resolution                                                   |
+| :------------------ | :------------------ | :-------------------------------------------------------------------------------- |
+| `400 Bad Request`   | `INVALID_MODIFIERS` | Conflicting options (e.g., `iced_no_ice` selected with hot drink size).           |
+| `403 Forbidden`     | `NOT_CHECKED_IN`    | Desk delivery requested, but user does not hold an active check-in for the venue. |
+| `409 Conflict`      | `ITEM_DEPLETED`     | Specialty milk or coffee roast ran out of stock during checkout.                  |
+| `422 Unprocessable` | `VENUE_CAFE_CLOSED` | Order submitted outside cafe operating hours.                                     |

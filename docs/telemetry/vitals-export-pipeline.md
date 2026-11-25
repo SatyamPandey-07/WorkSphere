@@ -11,7 +11,7 @@ Administrators, data engineers, and site reliability engineers require programma
 3. **Database Connection Starvation:** Large monolithic SQL queries holding database cursors or reading massive tables simultaneously exhaust connection pool slots and cause query pipeline head-of-line blocking.
 4. **Formula Injection & Data Corruption:** Exporting raw strings directly to CSV without strict adherence to RFC 4180 and spreadsheet formula sanitization leaves administrators vulnerable to CSV injection attacks (DDE execution in Excel/Calc).
 
-To eliminate these vulnerabilities, WorkSphere implements a reactive, zero-buffer **CSV Streaming Export Pipeline** within [`src/app/api/admin/vitals/export/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/vitals/export/route.ts) and [`src/app/api/admin/system/partitions/export/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/export/route.ts), powered by [`src/lib/export/domain/systemVitalsExporter.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/export/domain/systemVitalsExporter.ts) and [`src/lib/export/csvBuilder.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/export/csvBuilder.ts).
+To eliminate these vulnerabilities, WorkSphere implements a reactive, zero-buffer **CSV Streaming Export Pipeline** within [`src/app/api/admin/vitals/export/route.ts`](../../src/app/api/admin/vitals/export/route.ts) and [`src/app/api/admin/system/partitions/export/route.ts`](../../src/app/api/admin/system/partitions/export/route.ts), powered by [`src/lib/export/domain/systemVitalsExporter.ts`](../../src/lib/export/domain/systemVitalsExporter.ts) and [`src/lib/export/csvBuilder.ts`](../../src/lib/export/csvBuilder.ts).
 
 ```mermaid
 flowchart TD
@@ -219,7 +219,7 @@ CSV is a deceptively complex format. Minor escaping oversights result in field m
 
 ### 4.1 RFC 4180 Grammar Specification
 
-RFC 4180 defines the following formal constraints enforced by [`src/lib/export/csvBuilder.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/export/csvBuilder.ts):
+RFC 4180 defines the following formal constraints enforced by [`src/lib/export/csvBuilder.ts`](../../src/lib/export/csvBuilder.ts):
 
 1. **Line Terminators:** Each record must be terminated by a CRLF sequence (`\r\n`). Standard LF (`\n`) is rejected because Windows versions of Microsoft Excel fail to segment rows correctly.
 2. **Field Separation:** Fields are separated by standard commas (`,`).

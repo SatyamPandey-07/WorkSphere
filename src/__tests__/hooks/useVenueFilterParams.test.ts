@@ -2,7 +2,6 @@ import {
   parseFiltersFromSearchParams,
   buildQueryStringWithFilters,
   DEFAULT_FILTER_STATE,
-  type VenueFilterState,
 } from "@/hooks/useVenueFilterParams";
 
 describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
@@ -52,6 +51,65 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       expect(parsed.maxDistance).toBe(5);
       expect(parsed.view).toBe("list");
     });
+
+    test("restores standing desk alongside other amenity filters", () => {
+      const parsed = parseFiltersFromSearchParams(
+        new URLSearchParams("standingDesk=true&wifi=true&amenities=outlets"),
+      );
+
+      expect(parsed.standingDesk).toBe(true);
+      expect(parsed.amenities).toEqual(
+        expect.arrayContaining(["standing_desk", "wifi", "outlets"]),
+      );
+    });
+
+    describe("whitespace normalization (#7727)", () => {
+      test("trims leading and trailing whitespace from q", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20%20quiet%20cafe%20%20"),
+        );
+        expect(parsed.query).toBe("quiet cafe");
+      });
+
+      test("treats a padded q and a clean q as the same state", () => {
+        const padded = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20cafe%20"),
+        );
+        const clean = parseFiltersFromSearchParams(
+          new URLSearchParams("q=cafe"),
+        );
+        expect(padded).toEqual(clean);
+      });
+
+      test("trims the query alias too", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("query=%09library%20"),
+        );
+        expect(parsed.query).toBe("library");
+      });
+
+      test("turns a whitespace-only q into an empty query", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20%20%20"),
+        );
+        expect(parsed.query).toBe("");
+        expect(parsed).toEqual(DEFAULT_FILTER_STATE);
+      });
+
+      test("falls back to the query alias when q is only whitespace", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20&query=coworking"),
+        );
+        expect(parsed.query).toBe("coworking");
+      });
+
+      test("keeps inner spaces untouched", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20blue%20%20bottle%20"),
+        );
+        expect(parsed.query).toBe("blue  bottle");
+      });
+    });
   });
 
   describe("buildQueryStringWithFilters & View Switching", () => {
@@ -66,8 +124,10 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
 
       const nextParams = new URLSearchParams(updatedQuery.replace(/^\?/, ""));
 
-      // View should be updated
-      expect(nextParams.get("view")).toBe("list");
+      // "list" is the default view, so buildQueryStringWithFilters canonicalizes it
+      // out of the URL; the parser resolves the absent param back to "list".
+      expect(nextParams.has("view")).toBe(false);
+      expect(parseFiltersFromSearchParams(nextParams).view).toBe("list");
 
       // All existing filters must remain completely intact
       expect(nextParams.get("q")).toBe("starbucks");
@@ -117,6 +177,29 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       expect(nextParams.get("quietHours")).toBe("true");
     });
 
+    test("serializes standing desk as its dedicated parameter and preserves other filters", () => {
+      const initialParams = new URLSearchParams(
+        "q=desk&session=abc&amenities=wifi",
+      );
+
+      const updatedQuery = buildQueryStringWithFilters(initialParams, {
+        amenities: ["wifi", "standing_desk"],
+      });
+      const nextParams = new URLSearchParams(updatedQuery.slice(1));
+
+      expect(nextParams.get("standingDesk")).toBe("true");
+      expect(nextParams.get("amenities")).toBe("wifi");
+      expect(nextParams.get("q")).toBe("desk");
+      expect(nextParams.get("session")).toBe("abc");
+
+      const clearedQuery = buildQueryStringWithFilters(nextParams, {
+        amenities: ["wifi"],
+      });
+      const clearedParams = new URLSearchParams(clearedQuery.slice(1));
+      expect(clearedParams.has("standingDesk")).toBe(false);
+      expect(clearedParams.get("amenities")).toBe("wifi");
+    });
+
     test("removes default or cleared filters from query string", () => {
       const initialParams = new URLSearchParams(
         "q=cafe&category=cafe&wifi=true&price=$$&view=map",
@@ -152,7 +235,9 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       const clearedQuery = buildQueryStringWithFilters(nextParams, {
         sortBy: "default",
       });
-      const clearedParams = new URLSearchParams(clearedQuery.replace(/^\?/, ""));
+      const clearedParams = new URLSearchParams(
+        clearedQuery.replace(/^\?/, ""),
+      );
       expect(clearedParams.has("sortBy")).toBe(false);
     });
   });

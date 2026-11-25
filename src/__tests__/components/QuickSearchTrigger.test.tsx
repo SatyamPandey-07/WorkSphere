@@ -10,7 +10,9 @@ describe("QuickSearchTrigger", () => {
     const button = screen.getByTestId("quick-search-trigger");
     expect(button).toBeInTheDocument();
     expect(button).toHaveAttribute("aria-keyshortcuts", "Control+K Meta+K");
-    expect(screen.getByTestId("keyboard-shortcut-badge")).toBeInTheDocument();
+    const shortcutBadge = screen.getByTestId("keyboard-shortcut-badge");
+    expect(shortcutBadge).toBeInTheDocument();
+    expect(shortcutBadge).toHaveClass("hidden", "md:inline-flex");
   });
 
   it("renders icon-only variant with aria-label", () => {
@@ -40,7 +42,38 @@ describe("QuickSearchTrigger", () => {
     unmount();
 
     render(<QuickSearchTrigger variant="icon-only" />);
-    expect(screen.getByTestId("quick-search-reticles-icon")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("quick-search-reticles-icon"),
+    ).toBeInTheDocument();
   });
 });
 
+describe("QuickSearchTrigger platform shortcut badge", () => {
+  const originalNavigator = window.navigator;
+
+  afterEach(() => {
+    Object.defineProperty(window, "navigator", {
+      value: originalNavigator,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it.each([
+    ["MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "⌘K"],
+    ["Win32", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Ctrl+K"],
+    ["Linux x86_64", "Mozilla/5.0 (X11; Linux x86_64)", "Ctrl+K"],
+  ])("shows %s platform shortcut", (platform, userAgent, expected) => {
+    Object.defineProperty(window, "navigator", {
+      value: { ...originalNavigator, platform, userAgent },
+      configurable: true,
+      writable: true,
+    });
+
+    render(<QuickSearchTrigger />);
+
+    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveTextContent(
+      expected,
+    );
+  });
+});

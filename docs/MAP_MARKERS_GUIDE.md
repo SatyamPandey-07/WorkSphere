@@ -293,7 +293,7 @@ To prevent map interactions from lagging (dropping frames), follow these optimiz
 
 Only import Leaflet and the marker cluster plugin on the client-side.
 
-- See [Leaflet.js Integration Patterns](file:///c:/Users/HP/Downloads/WorkSphere-main%20%283%29/WorkSphere-main/docs/LEAFLET_INTEGRATION.md) for loading patterns using `next/dynamic` and `require()`.
+- See [Leaflet.js Integration Patterns](LEAFLET_INTEGRATION.md) for loading patterns using `next/dynamic` and `require()`.
 
 ### Avoid Re-creating Icon Instances
 

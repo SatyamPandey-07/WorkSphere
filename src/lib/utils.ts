@@ -6,6 +6,28 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Validates an external link URL against a strict `http:` / `https:` protocol whitelist.
+ * Returns the trimmed URL when safe, or `null` for malformed URLs and dangerous schemes
+ * such as `javascript:`, `data:`, or `vbscript:`.
+ */
+export function sanitizeExternalHttpUrl(url?: string | null): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return trimmed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Clamps latitude to valid geographic bounds [-90, 90].
  */
 export function clampLatitude(lat: number): number {

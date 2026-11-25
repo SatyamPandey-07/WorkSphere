@@ -63,6 +63,19 @@ describe("CookieBanner", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe("declined");
   });
 
+  it("announces consent changes to client-side telemetry", () => {
+    const listener = jest.fn();
+    window.addEventListener("worksphere:cookie-consent", listener);
+
+    render(<CookieBanner />);
+    fireEvent.click(screen.getByRole("button", { name: /accept all/i }));
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: "granted" }),
+    );
+    window.removeEventListener("worksphere:cookie-consent", listener);
+  });
+
   it("renders a link to the Privacy Policy", () => {
     render(<CookieBanner />);
     const link = screen.getByRole("link", { name: /privacy policy/i });

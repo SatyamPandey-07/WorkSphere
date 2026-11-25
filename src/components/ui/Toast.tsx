@@ -127,7 +127,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               ...updated[existingIndex],
               message,
               type,
-              variant: variant !== "default" ? variant : updated[existingIndex].variant,
+              variant:
+                variant !== "default"
+                  ? variant
+                  : updated[existingIndex].variant,
               timestamp: effectiveTimestamp,
               action: action ?? updated[existingIndex].action,
               countdown:
@@ -251,9 +254,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleReviewSyncFailure = (event: Event) => {
-      const detail = "data" in event
-        ? (event as MessageEvent).data
-        : (event as CustomEvent).detail;
+      const detail =
+        "data" in event
+          ? (event as MessageEvent).data
+          : (event as CustomEvent).detail;
       const reviewId: string | undefined = detail?.id;
       if (detail?.type !== "REVIEW_SYNC_FAILED" || !reviewId) return;
 
@@ -277,6 +281,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 }),
               );
               if (detail.venueId) {
+                // eslint-disable-next-line @next/next/no-location-assign-relative-destination
                 window.location.assign(
                   `/venues/${encodeURIComponent(detail.venueId)}?reviewDraft=${encodeURIComponent(reviewId)}`,
                 );
@@ -547,10 +552,18 @@ function ToastItem({
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_#10b981]" />
         </span>
       ) : (
-        <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
+        <Icon
+          className={cn("w-4 h-4 shrink-0", iconColor)}
+          aria-hidden="true"
+        />
       )}
 
-      <div className={cn("flex-1 flex flex-col items-start text-sm", isHud ? "text-emerald-300" : "text-zinc-700 dark:text-zinc-300")}>
+      <div
+        className={cn(
+          "flex-1 flex flex-col items-start text-sm",
+          isHud ? "text-emerald-300" : "text-zinc-700 dark:text-zinc-300",
+        )}
+      >
         <div className="flex items-center flex-wrap gap-1 font-medium">
           {isHud && toast.timestamp && (
             <span
@@ -614,7 +627,7 @@ export interface TacticalHUDToastProps {
 export function TacticalHUDToast({
   message,
   timestamp,
-  type = "info",
+  type: _type = "info",
   action,
   onDismiss,
   className = "",
@@ -642,20 +655,48 @@ export function TacticalHUDToast({
       )}
     >
       {/* Corner brackets */}
-      <span className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌜</span>
-      <span className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌝</span>
-      <span className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌞</span>
-      <span className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌟</span>
+      <span
+        className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌜
+      </span>
+      <span
+        className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌝
+      </span>
+      <span
+        className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌞
+      </span>
+      <span
+        className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌟
+      </span>
 
       {/* Emerald status dot */}
-      <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true" data-testid="hud-emerald-status-dot">
+      <span
+        className="relative flex h-2.5 w-2.5 shrink-0"
+        aria-hidden="true"
+        data-testid="hud-emerald-status-dot"
+      >
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_#10b981]" />
       </span>
 
       <div className="flex-1 flex flex-col items-start text-sm text-emerald-300">
         <div className="flex items-center flex-wrap gap-1 font-medium">
-          <span className="text-[11px] font-mono text-emerald-400 font-bold tracking-wider select-none" aria-hidden="true" data-testid="hud-telemetry-timestamp">
+          <span
+            className="text-[11px] font-mono text-emerald-400 font-bold tracking-wider select-none"
+            aria-hidden="true"
+            data-testid="hud-telemetry-timestamp"
+          >
             [{currentTimestamp}]
           </span>
           <span>{message}</span>
@@ -684,3 +725,59 @@ export function TacticalHUDToast({
     </div>
   );
 }
+
+export interface ToastProps {
+  message: string | null;
+  onClose: () => void;
+  durationMs?: number;
+  variant?: "success" | "info" | "error";
+}
+
+export const Toast: React.FC<ToastProps> = ({
+  message,
+  onClose,
+  durationMs = 3000,
+  variant = "success",
+}) => {
+  useEffect(() => {
+    if (!message || durationMs <= 0) return;
+    const timer = window.setTimeout(() => {
+      onClose();
+    }, durationMs);
+    return () => window.clearTimeout(timer);
+  }, [message, durationMs, onClose]);
+
+  if (!message) return null;
+
+  const variantClasses =
+    variant === "error"
+      ? "border-rose-300 bg-rose-950 text-rose-100"
+      : variant === "info"
+        ? "border-indigo-300 bg-slate-900 text-slate-100"
+        : "border-emerald-400/50 bg-slate-900 text-white";
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="toast-notification"
+      className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border px-4 py-3 text-xs font-semibold shadow-xl sm:text-sm ${variantClasses}`}
+    >
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 rounded-full bg-emerald-400"
+      />
+      <span data-testid="toast-message">{message}</span>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Dismiss notification"
+        className="ml-1 rounded-md px-1.5 py-0.5 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white"
+      >
+        ✕
+      </button>
+    </div>
+  );
+};
+
+export default Toast;

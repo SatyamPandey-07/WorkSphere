@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { GET } from "@/app/api/venues/route";
 import { prisma } from "@/lib/prisma";
 import { resetRateLimit } from "@/lib/rateLimit";
+import { clearMemorySWRCache } from "@/lib/cache/swrCache";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -22,6 +23,7 @@ describe("GET /api/venues - Search and Pagination", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetRateLimit();
+    clearMemorySWRCache();
   });
 
   it("should return paginated venues with default values in fallback mode", async () => {
@@ -89,6 +91,29 @@ describe("GET /api/venues - Search and Pagination", () => {
     });
   });
 
+  it("should apply ergonomic presets in fallback mode", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?standingDesk=true&externalMonitor=1&ergonomic=true",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { hasErgonomic: true },
+            { hasStandingDesk: true },
+            { hasExternalMonitor: true },
+          ],
+        },
+      }),
+    );
+  });
+
   it("should enforce maximum limit of 100", async () => {
     const mockVenues = [{ id: "1", name: "Venue 1" }];
     (prisma.venue.count as jest.Mock).mockResolvedValue(150);
@@ -119,7 +144,9 @@ describe("GET /api/venues - Search and Pagination", () => {
     ];
     (prisma.venue.count as jest.Mock).mockResolvedValue(1);
     (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
-    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "1", score: 0.03 }]);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([
+      { id: "1", score: 0.03 },
+    ]);
 
     const req = new NextRequest("http://localhost/api/venues?q=coffee");
     const res = await GET(req);
@@ -134,11 +161,95 @@ describe("GET /api/venues - Search and Pagination", () => {
     expect(sql).toContain("WITH search_input");
     expect(sql).toContain("rank_bm25");
     expect(sql).toContain("rank_vector");
-    expect(sql).toContain("1.0 / (60 + rank_bm25)");
-    expect(sql).toContain("1.0 / (60 + rank_vector)");
+    // The RRF weights and k are query parameters, not literals in the SQL.
+    expect(sql).toContain("FLOOR(rank_bm25)::bigint");
+    expect(sql).toContain("FLOOR(rank_vector)::bigint");
+    expect(queryTemplate.values).toContain(60);
+    // No query embedding in tests: full-text carries the whole weight.
+    expect(queryTemplate.values).toContain(1.0);
+    expect(queryTemplate.values).toContain(0.0);
     expect(prisma.venue.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ["1"] } } }),
     );
+  });
+
+  it("treats a whitespace-only q as no query in fallback mode (#7727)", async () => {
+    const mockVenues = [{ id: "1", name: "Venue 1" }];
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+
+    const req = new NextRequest("http://localhost/api/venues?q=%20%20%20");
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.venues).toEqual(mockVenues);
+    // No ranked search ran and no text filter was added.
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.venue.findMany).toHaveBeenCalledWith({
+      skip: 0,
+      take: 50,
+      include: {
+        _count: {
+          select: { favorites: true, ratings: true },
+        },
+        foodValidations: true,
+      },
+    });
+  });
+
+  it("treats a whitespace-only query param as no query in fallback mode (#7727)", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest("http://localhost/api/venues?query=%09%20");
+    await GET(req);
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.not.objectContaining({ where: expect.anything() }),
+    );
+  });
+
+  it("uses q when query is only whitespace in fallback mode (#7727)", async () => {
+    const mockVenues = [
+      { id: "1", name: "Blue Bottle Coffee", address: "123 Main St" },
+    ];
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([
+      { id: "1", score: 0.03 },
+    ]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?query=%20&q=coffee",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    // The ranked search ran for "coffee"; the blank query did not hide it.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const queryTemplate = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+    expect(queryTemplate.values).toContain("coffee");
+  });
+
+  it("searches for the trimmed text when q has padding in fallback mode (#7727)", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([
+      { id: "1", name: "Blue Bottle Coffee" },
+    ]);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([
+      { id: "1", score: 0.03 },
+    ]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?q=%20%20coffee%20%20",
+    );
+    await GET(req);
+
+    const queryTemplate = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+    expect(queryTemplate.values).toContain("coffee");
+    expect(queryTemplate.values).not.toContain("  coffee  ");
   });
 
   it("should filter by text query in coordinate mode across valid venue fields (name, address)", async () => {
@@ -147,7 +258,9 @@ describe("GET /api/venues - Search and Pagination", () => {
     ];
     (prisma.venue.count as jest.Mock).mockResolvedValue(1);
     (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
-    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "2", score: 0.03 }]);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([
+      { id: "2", score: 0.03 },
+    ]);
 
     const req = new NextRequest(
       "http://localhost/api/venues?lat=37.7749&lng=-122.4194&radius=1000&query=coffee",
@@ -201,6 +314,27 @@ describe("GET /api/venues - Search and Pagination", () => {
         where: expect.objectContaining({
           latitude: expect.any(Object),
           longitude: expect.any(Object),
+        }),
+      }),
+    );
+  });
+
+  it("should apply ergonomic presets in coordinate mode", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?lat=35.6762&lng=139.6503&standingDesk=true&externalMonitor=true&ergonomic=true",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          hasErgonomic: true,
+          hasStandingDesk: true,
+          hasExternalMonitor: true,
         }),
       }),
     );

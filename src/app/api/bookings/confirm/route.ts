@@ -19,6 +19,7 @@ import {
 } from "@/lib/bookingTime";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { resolveVenue } from "@/lib/venueResolver";
+import { issuePasscard } from "@/lib/security/serverOfflinePasscardIssuer";
 
 const MAX_OCCURRENCES = 31;
 // Allow booking a slot that started a few minutes ago (walk-ins).
@@ -209,6 +210,40 @@ export async function POST(req: Request) {
       });
     }
 
+    // Server-side offline QR passcard issuance (#7820)
+    // Issue tokens only for successfully confirmed bookings. If issuance fails or is
+    // not configured, keep the booking successful and explicitly indicate unavailability.
+    const passcards: (string | null)[] = [];
+    let passcardIssueError = false;
+
+    for (const booking of bookings) {
+      try {
+        const startsAt = parseBookingDateTime(booking.date, booking.time, timeZone);
+        if (!startsAt) {
+          throw new Error("Unable to parse confirmed booking start time");
+        }
+        const token = await issuePasscard({
+          id: booking.id,
+          userId: booking.userId,
+          venueId: booking.venueId,
+          startsAt,
+          durationMinutes: booking.duration,
+          seatNumber: booking.seatNumber,
+        });
+        passcards.push(token);
+      } catch (err) {
+        passcardIssueError = true;
+        passcards.push(null);
+        console.error(
+          `[bookings/confirm] Offline passcard issuance unavailable for booking ${booking.id}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    const firstPasscard = passcards[0] ?? undefined;
+    const hasMultiple = bookings.length > 1;
+
     return NextResponse.json({
       success: true,
       bookingId: bookings[0].id,
@@ -216,6 +251,9 @@ export async function POST(req: Request) {
       confirmationId: bookings[0].confirmationId,
       confirmationIds: bookings.map((b) => b.confirmationId),
       venueId: venue.id,
+      ...(firstPasscard ? { offlinePasscard: firstPasscard } : {}),
+      ...(hasMultiple ? { offlinePasscards: passcards } : {}),
+      ...(passcardIssueError ? { offlinePasscardError: "Signing unavailable" } : {}),
     });
   } catch (error) {
     if (error instanceof DuplicateBookingError) {

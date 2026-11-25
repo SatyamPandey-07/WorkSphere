@@ -14,7 +14,7 @@ Without deterministic cross-tab synchronization, concurrent IndexedDB transactio
 2. **WebKit / Safari Engine Deadlocks**: In Safari and iOS WebKit browsers, concurrent IndexedDB transactions across workers and main threads trigger unrecoverable database locks at the SQLite layer, freezing UI threads indefinitely.
 3. **Deadlock Cascades**: A stalled transaction holds open a database lock; subsequent operations queue behind it, eventually exhausting browser microtask queues and crashing the tab.
 
-To solve this, WorkSphere standardizes all local storage mutations on the **W3C Web Locks API** ([`src/lib/webLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/webLock.ts)). By enforcing cooperative exclusive locking at the origin level before initiating IndexedDB transactions, WorkSphere guarantees strict serializability across tabs and workers, prevents Safari multi-worker hangs, and provides reliable 5-second timeout safeguards.
+To solve this, WorkSphere standardizes all local storage mutations on the **W3C Web Locks API** ([`src/lib/webLock.ts`](../../src/lib/webLock.ts)). By enforcing cooperative exclusive locking at the origin level before initiating IndexedDB transactions, WorkSphere guarantees strict serializability across tabs and workers, prevents Safari multi-worker hangs, and provides reliable 5-second timeout safeguards.
 
 ---
 
@@ -147,7 +147,7 @@ A critical advantage of the Web Locks API over manual `localStorage` mutexes is 
 
 ## 5. WorkSphere Implementation: `withWebLock` Engine
 
-WorkSphere encapsulates all Web Locks operations into a single robust helper in [`src/lib/webLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/webLock.ts).
+WorkSphere encapsulates all Web Locks operations into a single robust helper in [`src/lib/webLock.ts`](../../src/lib/webLock.ts).
 
 ```typescript
 /**
@@ -384,7 +384,7 @@ if (!hasLocksApi) {
 
 ### 9.1 `WebLocksDiagnosticPanel` Component
 
-WorkSphere includes an internal diagnostic panel ([`src/components/WebLocksDiagnosticPanel.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/WebLocksDiagnosticPanel.tsx)) allowing developers and support engineers to inspect real-time locking state:
+WorkSphere includes an internal diagnostic panel ([`src/components/WebLocksDiagnosticPanel.tsx`](../../src/components/WebLocksDiagnosticPanel.tsx)) allowing developers and support engineers to inspect real-time locking state:
 
 ```tsx
 import React, { useEffect, useState } from "react";
@@ -515,7 +515,7 @@ When implementing new offline capabilities or modifying existing storage logic i
 
 ## 12. Unit Testing & Mocking Strategies
 
-Because Node.js and Jest / Vitest test environments lack a native `navigator.locks` implementation by default, WorkSphere provides standardized test fixtures in [`src/__tests__/lib/offlineStoreLock.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/lib/offlineStoreLock.test.ts).
+Because Node.js and Jest / Vitest test environments lack a native `navigator.locks` implementation by default, WorkSphere provides standardized test fixtures in [`src/__tests__/lib/offlineStoreLock.test.ts`](../../src/__tests__/lib/offlineStoreLock.test.ts).
 
 ### 12.1 Mocking `navigator.locks.request` in Jest
 

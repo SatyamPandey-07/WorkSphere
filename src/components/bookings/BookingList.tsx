@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import {
   Ban,
   Calendar,
@@ -19,6 +25,7 @@ import { RescheduleModal } from "@/components/bookings/RescheduleModal";
 import { SplitBillModal } from "@/components/bookings/SplitBillModal";
 import { GeoCheckInReminderBanner } from "@/components/bookings/GeoCheckInReminderBanner";
 import { MobileWalletPassModal } from "@/components/bookings/MobileWalletPassModal";
+import { NomadDeskPass } from "@/components/bookings/NomadDeskPass";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 import { ReceiptDownloadButton } from "@/components/bookings/ReceiptDownloadButton";
 
@@ -89,6 +96,9 @@ export function BookingList({
     null,
   );
 
+  const [deskPassBooking, setDeskPassBooking] = useState<BookingSummary | null>(
+    null,
+  );
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -374,6 +384,16 @@ export function BookingList({
               </button>
               <button
                 type="button"
+                onClick={() => setDeskPassBooking(booking)}
+                className={chipClass}
+                aria-label={`Open NomadDesk pass for booking ${booking.confirmationId}`}
+                data-testid={`booking-nomaddesk-pass-btn-${booking.id}`}
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-500" />
+                NomadDesk Pass
+              </button>
+              <button
+                type="button"
                 onClick={() => cancelBooking(booking)}
                 disabled={cancellingId === booking.id}
                 data-testid={`booking-cancel-btn-${booking.id}`}
@@ -575,6 +595,13 @@ export function BookingList({
           booking={walletBooking}
           isOpen={Boolean(walletBooking)}
           onClose={() => setWalletBooking(null)}
+        />
+      )}
+      {deskPassBooking && (
+        <NomadDeskPass
+          booking={deskPassBooking}
+          isOpen={Boolean(deskPassBooking)}
+          onClose={() => setDeskPassBooking(null)}
         />
       )}
     </div>

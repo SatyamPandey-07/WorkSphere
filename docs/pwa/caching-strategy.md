@@ -6,7 +6,7 @@ This document details WorkSphere's progressive web application (PWA) Service Wor
 
 ## 1. Architecture Overview
 
-WorkSphere employs a production Service Worker located at [`public/sw.js`](file:///public/sw.js), alongside a dedicated client update listener component ([`src/components/PWAUpdateListener.tsx`](file:///src/components/PWAUpdateListener.tsx)) and client-side lifecycle hook ([`src/hooks/usePWA.tsx`](file:///src/hooks/usePWA.tsx)).
+WorkSphere employs a production Service Worker located at [`public/sw.js`](../../public/sw.js), alongside a dedicated client update listener component ([`src/components/PWAUpdateListener.tsx`](../../src/components/PWAUpdateListener.tsx)) and client-side lifecycle hook ([`src/hooks/usePWA.tsx`](../../src/hooks/usePWA.tsx)).
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -172,7 +172,7 @@ caches.keys().then((cacheNames) =>
 Mobile browsers (particularly iOS Safari PWAs with ~50MB overall storage caps) aggressively terminate PWAs that exceed storage limits.
 
 ### 5.1 Quota Pre-Flight Check
-Before large writes (e.g., video tours or high-res maps), [`public/sw.js`](file:///public/sw.js) calls `hasSufficientStorageQuota(requiredBytes)` using `navigator.storage.estimate()`:
+Before large writes (e.g., video tours or high-res maps), [`public/sw.js`](../../public/sw.js) calls `hasSufficientStorageQuota(requiredBytes)` using `navigator.storage.estimate()`:
 - Verifies at least `(requiredBytes + 5MB)` of available buffer exists.
 - Safely skips pre-fetching if storage space is constrained.
 
@@ -225,10 +225,10 @@ sequenceDiagram
 ### 6.1 Step-by-Step Orchestration Flow
 
 1. **Passive Waiting by Default:**
-   In [`public/sw.js`](file:///public/sw.js), the install event does **not** call `self.skipWaiting()`. The newly installed worker remains in the `waiting` phase until explicitly authorized by the user.
+   In [`public/sw.js`](../../public/sw.js), the install event does **not** call `self.skipWaiting()`. The newly installed worker remains in the `waiting` phase until explicitly authorized by the user.
 
 2. **Detection & Event Dispatch:**
-   In [`src/hooks/usePWA.tsx`](file:///src/hooks/usePWA.tsx):
+   In [`src/hooks/usePWA.tsx`](../../src/hooks/usePWA.tsx):
    - `reg.update()` checks the server for updated `sw.js` on every navigation.
    - When a new worker finishes installing while a controller is already active, it dispatches:
      ```typescript
@@ -237,7 +237,7 @@ sequenceDiagram
      );
      ```
 
-3. **User Notification via [`PWAUpdateListener`](file:///src/components/PWAUpdateListener.tsx):**
+3. **User Notification via [`PWAUpdateListener`](../../src/components/PWAUpdateListener.tsx):**
    - Renders a floating notification banner: `"New version available"` with action `"Update Now"`.
    - Also inspects `navigator.serviceWorker.getRegistration().then(reg => reg.waiting)` upon component mount to catch updates that landed while navigating.
 
@@ -256,7 +256,7 @@ sequenceDiagram
    ```
 
 5. **Safe Single-Fire Reload on `controllerchange`:**
-   Once the new worker activates and claims the clients, `navigator.serviceWorker` fires `controllerchange`. Both [`PWAUpdateListener.tsx`](file:///src/components/PWAUpdateListener.tsx) and [`usePWA.tsx`](file:///src/hooks/usePWA.tsx) feature ref guards (`refreshingRef.current`) to ensure `window.location.reload()` executes exactly once.
+   Once the new worker activates and claims the clients, `navigator.serviceWorker` fires `controllerchange`. Both [`PWAUpdateListener.tsx`](../../src/components/PWAUpdateListener.tsx) and [`usePWA.tsx`](../../src/hooks/usePWA.tsx) feature ref guards (`refreshingRef.current`) to ensure `window.location.reload()` executes exactly once.
 
 ---
 

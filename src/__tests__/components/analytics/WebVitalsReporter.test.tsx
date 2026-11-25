@@ -1,253 +1,85 @@
-import React from "react";
 import { render } from "@testing-library/react";
 import { WebVitalsReporter } from "@/components/analytics/WebVitalsReporter";
-import { clearStoredWebVitals } from "@/lib/webVitalsCollector";
 
-// Mock next/navigation
-jest.mock("next/navigation", () => ({
-  usePathname: jest.fn(() => "/venues"),
+const mockStartReporter = jest.fn();
+const mockSetConsent = jest.fn();
+const mockStopReporter = jest.fn();
+
+jest.mock("@/lib/telemetry/webVitalsReporter", () => ({
+  DEFAULT_WEB_VITALS_SAMPLE_RATE: 0.2,
+  WEB_VITALS_CONSENT_KEY: "worksphere-cookie-consent",
+  startWebVitalsReporter: (...args: unknown[]) => mockStartReporter(...args),
+  stopWebVitalsReporter: () => mockStopReporter(),
+  setWebVitalsConsent: (...args: unknown[]) => mockSetConsent(...args),
 }));
 
-describe("WebVitalsReporter Component", () => {
-  let createdObservers: {
-    type: string;
-    callback: (entryList: { getEntries: () => any[] }) => void;
-    disconnect: jest.Mock;
-  }[] = [];
-
-  let mockSendBeacon: jest.Mock;
-  let mockFetch: jest.Mock;
-
+describe("WebVitalsReporter component", () => {
   beforeEach(() => {
-    clearStoredWebVitals();
-    createdObservers = [];
-
-    // Mock PerformanceObserver
-    (window as any).PerformanceObserver = class MockPerformanceObserver {
-      callback: (entryList: { getEntries: () => any[] }) => void;
-      disconnect = jest.fn();
-
-      constructor(callback: (entryList: { getEntries: () => any[] }) => void) {
-        this.callback = callback;
-      }
-
-      observe(options: { type: string; buffered?: boolean }) {
-        createdObservers.push({
-          type: options.type,
-          callback: this.callback,
-          disconnect: this.disconnect,
-        });
-      }
-    };
-
-    mockSendBeacon = jest.fn(() => true);
-    Object.defineProperty(navigator, "sendBeacon", {
-      value: mockSendBeacon,
-      writable: true,
-      configurable: true,
-    });
-
-    mockFetch = jest.fn(() => Promise.resolve({ ok: true }));
-    global.fetch = mockFetch as any;
-
-    // Mock navigation timing on performance
-    (performance as any).getEntriesByType = jest.fn((type: string) => {
-      if (type === "navigation") {
-        return [{ responseStart: 210 } as any];
-      }
-      return [];
-    });
+    localStorage.clear();
+    mockStartReporter.mockReset();
+    mockSetConsent.mockReset();
+    mockStopReporter.mockReset();
   });
 
-  afterEach(() => {
-    delete (window as any).PerformanceObserver;
-    delete (performance as any).getEntriesByType;
-    jest.restoreAllMocks();
-  });
+  it("initializes the singleton reporter after stored consent is granted", () => {
+    localStorage.setItem("worksphere-cookie-consent", "granted");
 
-  it("renders null and registers observers for LCP, CLS, FCP, and INP on mount", () => {
     const { container } = render(<WebVitalsReporter />);
+
     expect(container.firstChild).toBeNull();
-
-    const observedTypes = createdObservers.map((o) => o.type);
-    expect(observedTypes).toContain("largest-contentful-paint");
-    expect(observedTypes).toContain("layout-shift");
-    expect(observedTypes).toContain("paint");
-    expect(observedTypes).toContain("event");
-  });
-
-  it("reports TTFB from navigation performance entries", () => {
-    const onMetricReported = jest.fn();
-    render(<WebVitalsReporter onMetricReported={onMetricReported} />);
-
-    expect(onMetricReported).toHaveBeenCalledWith(
+    expect(mockSetConsent).toHaveBeenCalledWith(true);
+    expect(mockStartReporter).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "TTFB",
-        value: 210,
-        route: "/venues",
+        endpoint: "/api/telemetry/vitals",
+        enabled: true,
+        samplingRate: 0.2,
       }),
     );
   });
 
-  it("reports LCP metrics from largest-contentful-paint observer", () => {
-    const onMetricReported = jest.fn();
-    render(<WebVitalsReporter onMetricReported={onMetricReported} />);
+  it("waits for consent, then responds to acceptance and withdrawal", () => {
+    render(<WebVitalsReporter />);
+    expect(mockStartReporter).not.toHaveBeenCalled();
 
-    const lcpObserver = createdObservers.find((o) => o.type === "largest-contentful-paint");
-    expect(lcpObserver).toBeDefined();
-
-    lcpObserver?.callback({
-      getEntries: () => [
-        { startTime: 1200 },
-        { startTime: 1850 },
-      ],
-    });
-
-    expect(onMetricReported).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "LCP",
-        value: 1850,
-        rating: "good",
-      }),
+    window.dispatchEvent(
+      new CustomEvent("worksphere:cookie-consent", { detail: "granted" }),
     );
+    expect(mockSetConsent).toHaveBeenLastCalledWith(true);
+    expect(mockStartReporter).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(
+      new CustomEvent("worksphere:cookie-consent", { detail: "declined" }),
+    );
+    expect(mockSetConsent).toHaveBeenLastCalledWith(false);
   });
 
-  it("accumulates and reports CLS scores, ignoring entries with hadRecentInput", () => {
-    const onMetricReported = jest.fn();
-    render(<WebVitalsReporter onMetricReported={onMetricReported} />);
-
-    const clsObserver = createdObservers.find((o) => o.type === "layout-shift");
-    expect(clsObserver).toBeDefined();
-
-    // First batch: 0.05 shift, and one with recent input (should be ignored)
-    clsObserver?.callback({
-      getEntries: () => [
-        { value: 0.05, hadRecentInput: false },
-        { value: 0.12, hadRecentInput: true },
-      ],
-    });
-
-    expect(onMetricReported).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "CLS",
-        value: 0.05,
-      }),
-    );
-
-    // Second batch: additional 0.03 shift
-    clsObserver?.callback({
-      getEntries: () => [{ value: 0.03, hadRecentInput: false }],
-    });
-
-    expect(onMetricReported).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "CLS",
-        value: 0.08,
-      }),
-    );
-  });
-
-  it("reports FCP metrics from paint observer", () => {
-    const onMetricReported = jest.fn();
-    render(<WebVitalsReporter onMetricReported={onMetricReported} />);
-
-    const paintObserver = createdObservers.find((o) => o.type === "paint");
-    expect(paintObserver).toBeDefined();
-
-    paintObserver?.callback({
-      getEntries: () => [
-        { name: "first-paint", startTime: 400 },
-        { name: "first-contentful-paint", startTime: 850 },
-      ],
-    });
-
-    expect(onMetricReported).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "FCP",
-        value: 850,
-        rating: "good",
-      }),
-    );
-  });
-
-  it("reports INP metrics from event interaction observer", () => {
-    const onMetricReported = jest.fn();
-    render(<WebVitalsReporter onMetricReported={onMetricReported} />);
-
-    const inpObserver = createdObservers.find((o) => o.type === "event");
-    expect(inpObserver).toBeDefined();
-
-    inpObserver?.callback({
-      getEntries: () => [
-        { duration: 42 },
-        { duration: 120 },
-      ],
-    });
-
-    expect(onMetricReported).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "INP",
-        value: 120,
-        rating: "good",
-      }),
-    );
-  });
-
-  it("sends payload using navigator.sendBeacon with application/json Blob", () => {
-    render(<WebVitalsReporter endpoint="/api/telemetry/vitals" />);
-
-    expect(mockSendBeacon).toHaveBeenCalledWith(
-      "/api/telemetry/vitals",
-      expect.any(Blob),
-    );
-  });
-
-  it("falls back to fetch with keepalive when sendBeacon is unavailable", () => {
-    Object.defineProperty(navigator, "sendBeacon", {
-      value: undefined,
-      writable: true,
-      configurable: true,
-    });
-
-    render(<WebVitalsReporter endpoint="/api/fallback/vitals" />);
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/fallback/vitals",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        keepalive: true,
-      }),
-    );
-  });
-
-  it("disconnects all observers when component unmounts", () => {
+  it("removes consent listeners when unmounted", () => {
     const { unmount } = render(<WebVitalsReporter />);
-    expect(createdObservers.length).toBeGreaterThanOrEqual(4);
-
     unmount();
+    window.dispatchEvent(
+      new CustomEvent("worksphere:cookie-consent", { detail: "granted" }),
+    );
 
-    for (const observer of createdObservers) {
-      expect(observer.disconnect).toHaveBeenCalled();
-    }
+    expect(mockStartReporter).not.toHaveBeenCalled();
+    expect(mockStopReporter).toHaveBeenCalledTimes(1);
   });
 
-  it("skips registering observers when enabled is false", () => {
-    render(<WebVitalsReporter enabled={false} />);
-    expect(createdObservers.length).toBe(0);
-  });
+  it("passes disabled and configured sampling options to the reporter", () => {
+    localStorage.setItem("worksphere-cookie-consent", "granted");
+    render(
+      <WebVitalsReporter
+        enabled={false}
+        endpoint="/custom"
+        samplingRate={0.75}
+      />,
+    );
 
-  it("discards negative or non-finite metric values safely", () => {
-    const onMetricReported = jest.fn();
-    render(<WebVitalsReporter onMetricReported={onMetricReported} />);
-
-    const lcpObserver = createdObservers.find((o) => o.type === "largest-contentful-paint");
-    onMetricReported.mockClear();
-
-    lcpObserver?.callback({
-      getEntries: () => [{ startTime: NaN }, { startTime: -500 }],
-    });
-
-    expect(onMetricReported).not.toHaveBeenCalled();
+    expect(mockStartReporter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled: false,
+        endpoint: "/custom",
+        samplingRate: 0.75,
+      }),
+    );
   });
 });

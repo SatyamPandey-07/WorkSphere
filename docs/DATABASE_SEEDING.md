@@ -60,6 +60,8 @@ Each venue object in the `mockVenues` array supports the following properties:
 | `hasOutlets`    | `Boolean` | Flag indicating if power outlets are available.      | `true`, `false`                                      |
 | `noiseLevel`    | `String`  | Ambient noise level categorization.                  | `quiet`, `moderate`, `loud`                          |
 | `hasErgonomic`  | `Boolean` | Flag indicating if ergonomic seating is present.     | `true`, `false`                                      |
+| `hasStandingDesk` | `Boolean` | Flag indicating if a standing desk is available.   | `true`, `false`                                      |
+| `hasExternalMonitor` | `Boolean` | Flag indicating if an external monitor is available. | `true`, `false`                                  |
 | `outletDensity` | `String`  | Qualitative distribution of outlets.                 | `every_table`, `some_tables`, `wall_seats`, `none`   |
 | `wifiSpeed`     |   `Int`   | Average internet download speed in Mbps.             | `85`, `180`, `250`                                   |
 | `crowdsourced`  | `Boolean` | Identifies if the venue was submitted by a user.     | `true`, `false`                                      |
@@ -84,6 +86,8 @@ To add a custom venue:
   hasOutlets: true,
   noiseLevel: "quiet",
   hasErgonomic: true,
+  hasStandingDesk: true,
+  hasExternalMonitor: true,
   outletDensity: "every_table",
   wifiSpeed: 300,
   crowdsourced: true,

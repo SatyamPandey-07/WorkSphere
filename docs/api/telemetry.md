@@ -10,10 +10,10 @@ Telemetry data is processed using **Differential Privacy Filters** when active v
 
 ## 1. Endpoint Summary
 
-| Method | Endpoint Route | Authentication | Rate Limit | Primary Purpose |
-| :--- | :--- | :--- | :--- | :--- |
-| **`GET`** | `/api/venues/[venueId]/telemetry` | Optional / Public | 120 req / min | Fetch aggregated hourly occupancy, noise, and network telemetry data. |
-| **`POST`** | `/api/venues/[venueId]/telemetry` | Required (Bearer Token / Session) | 30 req / min | Submit crowdsourced Wi-Fi speed and crowd density telemetry reports. |
+| Method     | Endpoint Route                    | Authentication                    | Rate Limit    | Primary Purpose                                                       |
+| :--------- | :-------------------------------- | :-------------------------------- | :------------ | :-------------------------------------------------------------------- |
+| **`GET`**  | `/api/venues/[venueId]/telemetry` | Optional / Public                 | 120 req / min | Fetch aggregated hourly occupancy, noise, and network telemetry data. |
+| **`POST`** | `/api/venues/[venueId]/telemetry` | Required (Bearer Token / Session) | 30 req / min  | Submit crowdsourced Wi-Fi speed and crowd density telemetry reports.  |
 
 ---
 
@@ -23,18 +23,18 @@ Retrieves time-series occupancy and telemetry statistics for a specific venue by
 
 ### 2.1 Request Path Parameters
 
-| Parameter | Type | Required | Description | Example |
-| :--- | :--- | :---: | :--- | :--- |
-| `venueId` | `string` | **Yes** | Unique CUID or slug identifier of the venue (supports `mock-*` testing IDs). | `v-88291a` |
+| Parameter | Type     | Required | Description                                                                  | Example    |
+| :-------- | :------- | :------: | :--------------------------------------------------------------------------- | :--------- |
+| `venueId` | `string` | **Yes**  | Unique CUID or slug identifier of the venue (supports `mock-*` testing IDs). | `v-88291a` |
 
 ### 2.2 Request Query Parameters
 
-| Parameter | Type | Default | Valid Options | Description |
-| :--- | :--- | :---: | :--- | :--- |
-| `timeframe` | `string` | `today` | `today`, `24h`, `7d`, `30d` | Time window filter for telemetry aggregation. |
-| `window` | `string` | `hourly` | `hourly`, `15m`, `daily` | Data point aggregation granularity. |
-| `metrics` | `string` | `occupancy` | `occupancy`, `wifi`, `noise`, `all` | Comma-separated list of telemetry metric types to return. |
-| `privacyFilter` | `boolean` | `true` | `true`, `false` | Enable Laplace differential privacy filter for low-sample hours ($N < 10$). |
+| Parameter       | Type      |   Default   | Valid Options                       | Description                                                                 |
+| :-------------- | :-------- | :---------: | :---------------------------------- | :-------------------------------------------------------------------------- |
+| `timeframe`     | `string`  |   `today`   | `today`, `24h`, `7d`, `30d`         | Time window filter for telemetry aggregation.                               |
+| `window`        | `string`  |  `hourly`   | `hourly`, `15m`, `daily`            | Data point aggregation granularity.                                         |
+| `metrics`       | `string`  | `occupancy` | `occupancy`, `wifi`, `noise`, `all` | Comma-separated list of telemetry metric types to return.                   |
+| `privacyFilter` | `boolean` |   `true`    | `true`, `false`                     | Enable Laplace differential privacy filter for low-sample hours ($N < 10$). |
 
 #### Query Example URL
 
@@ -177,19 +177,19 @@ User-Agent: WorkSphere-Mobile/2.4.0 (iOS 17.5)
 
 ### 3.2 Request JSON Body Schema
 
-| Field Name | Type | Required | Validation Constraints | Description |
-| :--- | :--- | :---: | :--- | :--- |
-| `download` | `number \| string` | **Yes** | Numeric value $> 0.0$ | Wi-Fi download throughput in Mbps. |
-| `upload` | `number \| string` | **Yes** | Numeric value $> 0.0$ | Wi-Fi upload throughput in Mbps. |
-| `latency` | `number \| string` | **Yes** | Numeric value $\ge 0.0$ | Wi-Fi round-trip latency in milliseconds (ping). |
-| `crowdLevel` | `string` | **Yes** | One of: `empty`, `low`, `quiet`, `moderate`, `busy`, `very busy`, `packed` | Perceived crowd density score label. |
+| Field Name   | Type               | Required | Validation Constraints                                                     | Description                                      |
+| :----------- | :----------------- | :------: | :------------------------------------------------------------------------- | :----------------------------------------------- |
+| `download`   | `number \| string` | **Yes**  | Numeric value $> 0.0$                                                      | Wi-Fi download throughput in Mbps.               |
+| `upload`     | `number \| string` | **Yes**  | Numeric value $> 0.0$                                                      | Wi-Fi upload throughput in Mbps.                 |
+| `latency`    | `number \| string` | **Yes**  | Numeric value $\ge 0.0$                                                    | Wi-Fi round-trip latency in milliseconds (ping). |
+| `crowdLevel` | `string`           | **Yes**  | One of: `empty`, `low`, `quiet`, `moderate`, `busy`, `very busy`, `packed` | Perceived crowd density score label.             |
 
 #### Request Body Example
 
 ```json
 {
   "download": 128.45,
-  "upload": 35.10,
+  "upload": 35.1,
   "latency": 14.2,
   "crowdLevel": "moderate"
 }
@@ -215,20 +215,20 @@ X-Queue-Job-Id: telemetry_job_1728200500_ab912
 
 Crowd level labels submitted via `POST` are normalized into numeric percentage occupancy scores ($0 - 100\%$) according to the following mapping:
 
-| Crowd Level Label | Numeric Occupancy Score | Description | Typical Environment |
-| :--- | :---: | :--- | :--- |
-| **`empty`** | `10%` | Nearly no visitors present | $< 10\%$ seat capacity occupied |
-| **`low` / `quiet`** | `25%` | Ample open seating available | $10 - 35\%$ seat capacity occupied |
-| **`moderate`** | `50%` | Half capacity filled | $35 - 65\%$ seat capacity occupied |
-| **`busy`** | `75%` | High occupancy, few seats left | $65 - 85\%$ seat capacity occupied |
-| **`very busy`** | `90%` | Standing room or single seats | $85 - 95\%$ seat capacity occupied |
-| **`packed`** | `100%` | Fully booked / at capacity | $100\%$ capacity reached |
+| Crowd Level Label   | Numeric Occupancy Score | Description                    | Typical Environment                |
+| :------------------ | :---------------------: | :----------------------------- | :--------------------------------- |
+| **`empty`**         |          `10%`          | Nearly no visitors present     | $< 10\%$ seat capacity occupied    |
+| **`low` / `quiet`** |          `25%`          | Ample open seating available   | $10 - 35\%$ seat capacity occupied |
+| **`moderate`**      |          `50%`          | Half capacity filled           | $35 - 65\%$ seat capacity occupied |
+| **`busy`**          |          `75%`          | High occupancy, few seats left | $65 - 85\%$ seat capacity occupied |
+| **`very busy`**     |          `90%`          | Standing room or single seats  | $85 - 95\%$ seat capacity occupied |
+| **`packed`**        |         `100%`          | Fully booked / at capacity     | $100\%$ capacity reached           |
 
 ---
 
 ## 5. Differential Privacy & Noise Filtering
 
-To protect user privacy in venues with few active reporters ($N < 10$ active sample submissions in a given hourly window), the API automatically invokes `applyPrivacyFilter()` from [src/lib/privacy/differentialPrivacy.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/privacy/differentialPrivacy.ts).
+To protect user privacy in venues with few active reporters ($N < 10$ active sample submissions in a given hourly window), the API automatically invokes `applyPrivacyFilter()` from [src/lib/privacy/differentialPrivacy.ts](../../src/lib/privacy/differentialPrivacy.ts).
 
 ### 5.1 Privacy Filter Formula
 
@@ -237,6 +237,7 @@ When active sample count $N < \text{threshold}$ (default: $10$ visitors), zero-m
 $$\text{Occupancy}_{\text{private}} = \text{clamp}\left(0,\, 100,\, \text{round}\left(\text{Occupancy}_{\text{raw}} + \text{Laplace}\left(0, \frac{\Delta S}{\epsilon}\right)\right)\right)$$
 
 Where:
+
 - $\Delta S = 100$ (sensitivity scale ceiling).
 - $\epsilon = 1.0$ (privacy budget parameter).
 - $\text{clamp}(min, max, val)$ ensures reported values remain within $[0, 100\%]$.
@@ -256,13 +257,13 @@ All API errors return standardized JSON responses using the `apiError()` helper 
 
 ### Error Code Summary Matrix
 
-| Status Code | Status Name | Error Code (`code`) | Cause / Trigger | Resolution Action |
-| :--- | :--- | :--- | :--- | :--- |
-| **`400`** | Bad Request | `VALIDATION_FAILED` | Missing required POST payload fields (`download`, `upload`, `latency`, `crowdLevel`). | Verify request body contains all 4 telemetry fields. |
-| **`401`** | Unauthorized | `UNAUTHORIZED` | Missing or invalid Clerk authentication session token on `POST`. | Include valid `Authorization: Bearer <token>` header. |
-| **`404`** | Not Found | `VENUE_NOT_FOUND` | `venueId` parameter does not match any database venue or valid mock ID. | Verify `venueId` spelling or query active venue list first. |
-| **`429`** | Too Many Requests | `RATE_LIMIT_EXCEEDED` | Request frequency exceeded limit (120/min GET, 30/min POST). | Pause requests until reset window specified in `X-RateLimit-Reset`. |
-| **`500`** | Internal Error | `INTERNAL_ERROR` | Database connection failure or unhandled internal exception. | Check backend application logs; retry with exponential backoff. |
+| Status Code | Status Name       | Error Code (`code`)   | Cause / Trigger                                                                       | Resolution Action                                                   |
+| :---------- | :---------------- | :-------------------- | :------------------------------------------------------------------------------------ | :------------------------------------------------------------------ |
+| **`400`**   | Bad Request       | `VALIDATION_FAILED`   | Missing required POST payload fields (`download`, `upload`, `latency`, `crowdLevel`). | Verify request body contains all 4 telemetry fields.                |
+| **`401`**   | Unauthorized      | `UNAUTHORIZED`        | Missing or invalid Clerk authentication session token on `POST`.                      | Include valid `Authorization: Bearer <token>` header.               |
+| **`404`**   | Not Found         | `VENUE_NOT_FOUND`     | `venueId` parameter does not match any database venue or valid mock ID.               | Verify `venueId` spelling or query active venue list first.         |
+| **`429`**   | Too Many Requests | `RATE_LIMIT_EXCEEDED` | Request frequency exceeded limit (120/min GET, 30/min POST).                          | Pause requests until reset window specified in `X-RateLimit-Reset`. |
+| **`500`**   | Internal Error    | `INTERNAL_ERROR`      | Database connection failure or unhandled internal exception.                          | Check backend application logs; retry with exponential backoff.     |
 
 ---
 
@@ -364,17 +365,24 @@ export interface TelemetryResponse {
   occupancy: OccupancyRecord[];
 }
 
-export async function fetchVenueTelemetry(venueId: string): Promise<OccupancyRecord[]> {
-  const response = await fetch(`/api/venues/${encodeURIComponent(venueId)}/telemetry`, {
-    method: "GET",
-    headers: {
-      "Accept": "application/json",
+export async function fetchVenueTelemetry(
+  venueId: string,
+): Promise<OccupancyRecord[]> {
+  const response = await fetch(
+    `/api/venues/${encodeURIComponent(venueId)}/telemetry`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
     },
-  });
+  );
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch telemetry`);
+    throw new Error(
+      errorData.error || `HTTP ${response.status}: Failed to fetch telemetry`,
+    );
   }
 
   const data: TelemetryResponse = await response.json();
@@ -383,24 +391,34 @@ export async function fetchVenueTelemetry(venueId: string): Promise<OccupancyRec
 
 export async function submitWifiTelemetry(
   venueId: string,
-  telemetry: { download: number; upload: number; latency: number; crowdLevel: string },
-  authToken: string
+  telemetry: {
+    download: number;
+    upload: number;
+    latency: number;
+    crowdLevel: string;
+  },
+  authToken: string,
 ): Promise<boolean> {
-  const response = await fetch(`/api/venues/${encodeURIComponent(venueId)}/telemetry`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${authToken}`,
+  const response = await fetch(
+    `/api/venues/${encodeURIComponent(venueId)}/telemetry`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(telemetry),
     },
-    body: JSON.stringify(telemetry),
-  });
+  );
 
   if (response.status === 202) {
     return true;
   }
 
   const errorData = await response.json().catch(() => ({}));
-  throw new Error(errorData.error || `HTTP ${response.status}: Submission failed`);
+  throw new Error(
+    errorData.error || `HTTP ${response.status}: Submission failed`,
+  );
 }
 ```
 
@@ -410,7 +428,11 @@ export async function submitWifiTelemetry(
 
 ```typescript
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchVenueTelemetry, submitWifiTelemetry, OccupancyRecord } from "@/lib/api/telemetry";
+import {
+  fetchVenueTelemetry,
+  submitWifiTelemetry,
+  OccupancyRecord,
+} from "@/lib/api/telemetry";
 
 export function useVenueTelemetryQuery(venueId: string) {
   return useQuery<OccupancyRecord[], Error>({
@@ -426,8 +448,13 @@ export function useSubmitTelemetryMutation(venueId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: { download: number; upload: number; latency: number; crowdLevel: string; authToken: string }) =>
-      submitWifiTelemetry(venueId, data, data.authToken),
+    mutationFn: (data: {
+      download: number;
+      upload: number;
+      latency: number;
+      crowdLevel: string;
+      authToken: string;
+    }) => submitWifiTelemetry(venueId, data, data.authToken),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["venue-telemetry", venueId] });
     },
@@ -488,7 +515,7 @@ paths:
             enum: [today, 24h, 7d, 30d]
             default: today
       responses:
-        '200':
+        "200":
           description: Telemetry data retrieved successfully
           content:
             application/json:
@@ -506,9 +533,9 @@ paths:
                         occupancy:
                           type: integer
                           example: 85
-        '404':
+        "404":
           description: Venue not found
-        '429':
+        "429":
           description: Rate limit exceeded
     post:
       summary: Submit crowdsourced Wi-Fi & density report
@@ -536,11 +563,11 @@ paths:
                   enum: [empty, low, quiet, moderate, busy, very busy, packed]
                   example: moderate
       responses:
-        '202':
+        "202":
           description: Telemetry report accepted for processing
-        '400':
+        "400":
           description: Missing required fields
-        '401':
+        "401":
           description: Unauthorized
 ```
 
@@ -564,3 +591,191 @@ curl -X GET "http://localhost:3000/api/venues/mock-venue-101/telemetry"
 - [x] Differential privacy filter verified for sample count $N < 10$.
 - [x] Error status codes 400, 401, 404, 429, and 500 documented with JSON payload schemas.
 - [x] Client TypeScript fetch and React Query helpers provided.
+
+---
+
+## 12. Batch Telemetry Ingestion API (`POST /api/telemetry/batch`)
+
+### 12.1 Endpoint Specification
+
+| Property           | Value                                                                                                                                    |
+| :----------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| **HTTP Method**    | `POST`                                                                                                                                   |
+| **Endpoint Path**  | `/api/telemetry/batch`                                                                                                                   |
+| **Purpose**        | Bulk ingestion of hardware sensor readings, IoT sound probes, ambient noise meters, and network probes in a single atomic database batch |
+| **Rate Limit**     | 60 requests / minute per client IP address (enforced via token bucket rate limiter)                                                      |
+| **Max Batch Size** | 100 readings per request payload                                                                                                         |
+
+---
+
+### 12.2 Authentication & Security Policies
+
+The batch telemetry endpoint is designed for server-to-server gateway ingestion and requires cryptographic token authentication using constant-time comparison (`crypto.timingSafeEqual`):
+
+#### Supported Headers
+
+Clients must provide the secret credential using any of the following HTTP headers:
+
+- `Authorization: Bearer <GATEWAY_TOKEN>`
+- `x-gateway-token: <GATEWAY_TOKEN>`
+- `x-api-key: <GATEWAY_TOKEN>`
+
+#### Environment Variable Resolution
+
+The server checks the following environment variables (in priority order) to validate the caller's token:
+
+1. `GATEWAY_API_TOKEN`
+2. `TELEMETRY_GATEWAY_TOKEN`
+3. `WORKER_SECRET`
+
+#### Fail-Closed Security Policy
+
+- **Production Mode (`NODE_ENV=production`)**: If no gateway secrets are configured in the environment, the endpoint immediately fails closed and returns `503 Service Unavailable` with error: `"Service Unavailable: Telemetry gateway credentials not configured"`.
+- **Invalid / Missing Credentials**: Requests lacking a valid token or providing an incorrect secret receive `401 Unauthorized` (`"Unauthorized: Invalid or missing gateway API token"`).
+- **Development / Test Environments**: When secrets are unconfigured in non-production environments (`NODE_ENV=development` or `NODE_ENV=test`), automated integration tests may proceed without authorization headers. Supplying any non-empty invalid token without matching credentials remains rejected.
+
+---
+
+### 12.3 Request Payload Specification
+
+The ingestion pipeline accepts readings wrapped in multiple flexible payload envelopes or as a raw array.
+
+#### Supported Envelopes
+
+1. **Direct Array**: `[ { ...reading }, ... ]`
+2. **`readings` Property**: `{ "readings": [ { ... } ] }`
+3. **`sensorReadings` Property**: `{ "sensorReadings": [ { ... } ] }`
+4. **`data` Property**: `{ "data": [ { ... } ] }`
+
+#### Reading Record Schema (`telemetryReadingSchema`)
+
+| Field          | Type                       |  Required   | Constraints                        | Description                                                                                |
+| :------------- | :------------------------- | :---------: | :--------------------------------- | :----------------------------------------------------------------------------------------- |
+| `venueId`      | `string`                   |   **Yes**   | Min length 1                       | Target venue identifier.                                                                   |
+| `roomId`       | `string`                   |     No      | Min length 1                       | Specific room or soundproof pod (defaults to `"main"`).                                    |
+| `sensorId`     | `string`                   |     No      | Min length 1                       | Hardware MAC, UUID, or probe serial number. Defaults to `sensor-<venueId>-<type>-<index>`. |
+| `type`         | `string`                   |     No      | Min length 1                       | Telemetry type: `"noise"`, `"ambient"`, `"occupancy"`, or `"wifi"`.                        |
+| `value`        | `number`                   | Conditional | Finite float                       | Primary metric value (required if `decibels` is omitted).                                  |
+| `decibels`     | `number`                   | Conditional | $\ge 0$                            | Sound pressure level in dBA (required if `value` is omitted).                              |
+| `peakDecibels` | `number`                   |     No      | $\ge 0$                            | Peak transient sound spike in dBA.                                                         |
+| `recordedAt`   | `string \| number \| Date` |     No      | Valid ISO 8601 or positive integer | Timestamp when measurement was captured.                                                   |
+| `timestamp`    | `string \| number \| Date` |     No      | Valid ISO 8601 or positive integer | Fallback timestamp alias if `recordedAt` is omitted.                                       |
+
+---
+
+### 12.4 Validation & Ingestion Behavior
+
+1. **Parallel Schema Parsing (`validateTelemetryBatchParallel`)**:
+   - Each reading is validated concurrently via `telemetryReadingSchema.safeParseAsync()`.
+   - If one or more readings fail schema validation, the entire batch is rejected with `400 Bad Request`.
+   - The response includes a structured `details` array containing the zero-indexed index of each failing item and its corresponding field errors.
+2. **Timestamp Validation**:
+   - Strings must satisfy standard ISO 8601 date parsing (`Date.parse(str)` must return a valid integer). Strings like `"not-a-date"` are rejected at validation time.
+   - Numeric timestamps must be positive integers representing valid epoch milliseconds.
+3. **Batch Constraints**:
+   - Empty batches (`length === 0`) are rejected with `400 Bad Request` (`"readings array cannot be empty"`).
+   - Batches exceeding 100 items are rejected with `400 Bad Request` (`"readings array cannot exceed 100 items"`).
+4. **Duplicate Deduplication**:
+   - The database insertion executes a single batch query via `prisma.venueTelemetry.createMany({ skipDuplicates: true })`.
+   - Duplicate records sharing identical primary keys or unique constraint combinations are discarded idempotently without aborting the batch.
+
+---
+
+### 12.5 Response Examples
+
+#### Success (201 Created)
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  "success": true,
+  "count": 2
+}
+```
+
+#### Validation Failure (400 Bad Request)
+
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "error": "Validation failed",
+  "details": [
+    {
+      "index": 1,
+      "errors": {
+        "fieldErrors": {
+          "recordedAt": ["Invalid date-time string"]
+        },
+        "formErrors": []
+      }
+    }
+  ]
+}
+```
+
+#### Unauthorized (401 Unauthorized)
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+
+{
+  "error": "Unauthorized: Invalid or missing gateway API token"
+}
+```
+
+#### Rate Limited (429 Too Many Requests)
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+
+{
+  "error": "Too many requests. Please retry later."
+}
+```
+
+#### Gateway Unconfigured in Production (503 Service Unavailable)
+
+```http
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{
+  "error": "Service Unavailable: Telemetry gateway credentials not configured"
+}
+```
+
+---
+
+### 12.6 Integration Example (cURL)
+
+```bash
+curl -X POST "https://api.worksphere.dev/api/telemetry/batch" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer test-gateway-token-4891" \
+  -d '{
+    "readings": [
+      {
+        "venueId": "venue_nomad_central",
+        "roomId": "quiet-library-pod",
+        "sensorId": "sensor_ambient_mic_01",
+        "type": "noise",
+        "value": 41.2,
+        "recordedAt": "2026-11-25T10:00:00.000Z"
+      },
+      {
+        "venueId": "venue_nomad_central",
+        "roomId": "main-coworking-floor",
+        "sensorId": "sensor_wifi_probe_02",
+        "type": "wifi",
+        "value": 285.5,
+        "recordedAt": "2026-11-25T10:00:00.000Z"
+      }
+    ]
+  }'
+```

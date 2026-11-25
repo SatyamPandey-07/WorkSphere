@@ -292,13 +292,19 @@ export function calculateActiveCalories(
 
   // Walking Mode
   if (normalizedMode === "walking") {
+    // Baseline minimum metabolic expenditure floor (~3.0 METs gross, 2.0 METs active, ~2.5 kcal/min)
+    const activeMetFloor = Math.max(2.0, (WALKING_MET - 1) * 0.8);
+    const minCaloriesFloor = Math.max(
+      1,
+      Math.round(((activeMetFloor * 3.5 * safeWeight) / 200) * minutes),
+    );
+
     // If gradient adjustment is enabled and sufficient valid data is present:
     if (
       includeGradientAdjustment &&
       typeof distanceMeters === "number" &&
       distanceMeters > 0 &&
       typeof elevationGainMeters === "number" &&
-      elevationGainMeters >= 0 &&
       Number.isFinite(elevationGainMeters)
     ) {
       // Horizontal walking speed S in meters per minute
@@ -310,28 +316,51 @@ export function calculateActiveCalories(
         // Multiplying by minutes gives: 0.1 * distanceMeters + 1.8 * elevationGainMeters
         const activeNetOxygenConsumption =
           0.1 * distanceMeters + 1.8 * elevationGainMeters;
-        const calories = (activeNetOxygenConsumption * safeWeight) / 200;
+        const calculatedCalories =
+          (activeNetOxygenConsumption * safeWeight) / 200;
 
-        if (Number.isFinite(calories) && calories >= 0) {
-          return Math.round(calories);
-        }
+        // Downhill efficiency clamped to positive baseline metabolic floor (~3.0 METs / ~2.5 kcal/min)
+        const clampedCalories = Math.max(
+          minCaloriesFloor,
+          Math.round(calculatedCalories),
+        );
+        return clampedCalories;
       }
     }
 
     // Base active walking MET: (3.5 - 1) = 2.5
     const baseActiveMET = WALKING_MET - 1;
-    const calories = (baseActiveMET * 3.5 * safeWeight / 200) * minutes;
-    return Math.round(calories);
+    const calories = ((baseActiveMET * 3.5 * safeWeight) / 200) * minutes;
+    return Math.max(minCaloriesFloor, Math.round(calories));
   }
 
   // Cycling Mode
   if (normalizedMode === "cycling") {
-    // Required inputs for outdoor cycling metabolic equations (workload in Watts,
-    // aerodynamic drag, bike mass, rolling resistance) are unavailable from GPS telemetry.
-    // Scientifically documented base active MET: (6.8 - 1) = 5.8.
     const baseActiveMET = CYCLING_MET - 1;
-    const calories = (baseActiveMET * 3.5 * safeWeight / 200) * minutes;
-    return Math.round(calories);
+    const baseCalories = ((baseActiveMET * 3.5 * safeWeight) / 200) * minutes;
+
+    // Baseline minimum cycling floor for downhill / freewheeling (~3.5 METs gross, 2.5 METs active)
+    const minCyclingFloor = Math.max(
+      1,
+      Math.round(((2.5 * 3.5 * safeWeight) / 200) * minutes),
+    );
+
+    if (
+      includeGradientAdjustment &&
+      typeof distanceMeters === "number" &&
+      distanceMeters > 0 &&
+      typeof elevationGainMeters === "number" &&
+      Number.isFinite(elevationGainMeters)
+    ) {
+      // Work done against gravity: (weight * g * elevation) in kcal with ~22% human cycling mechanical efficiency
+      // deltaCalories ≈ (safeWeight * 9.81 * elevationGainMeters) / (4184 * 0.22)
+      const gradeWorkKcal =
+        (safeWeight * 9.81 * elevationGainMeters) / 920.48;
+      const totalCyclingCalories = baseCalories + gradeWorkKcal;
+      return Math.max(minCyclingFloor, Math.round(totalCyclingCalories));
+    }
+
+    return Math.round(baseCalories);
   }
 
   return null;

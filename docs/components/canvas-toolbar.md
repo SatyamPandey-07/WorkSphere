@@ -1,6 +1,6 @@
 ﻿# CanvasToolbar: Drawing Tools, Hotkeys, Color Palettes, and Stroke Width Presets
 
-This technical guide documents WorkSphere’s **CanvasToolbar** component ([`src/components/whiteboard/CanvasToolbar.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/whiteboard/CanvasToolbar.tsx)), which provides user controls for the collaborative real-time whiteboard canvas ([`src/components/whiteboard/CanvasWhiteboard.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/whiteboard/CanvasWhiteboard.tsx)). It details all drawing tools, keyboard shortcuts, color swatch palettes, stroke width adjustments, history controls, and presence indicators.
+This technical guide documents WorkSphere’s **CanvasToolbar** component ([`src/components/whiteboard/CanvasToolbar.tsx`](../../src/components/whiteboard/CanvasToolbar.tsx)), which provides user controls for the collaborative real-time whiteboard canvas ([`src/components/whiteboard/CanvasWhiteboard.tsx`](../../src/components/whiteboard/CanvasWhiteboard.tsx)). It details all drawing tools, keyboard shortcuts, color swatch palettes, stroke width adjustments, history controls, and presence indicators.
 
 ---
 
@@ -40,7 +40,7 @@ flowchart TD
 
 ## 2. Drawing Tools Specification
 
-The toolbar supports 6 distinct tool types defined in `ToolType` ([`src/hooks/useCanvasWhiteboard.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useCanvasWhiteboard.ts)):
+The toolbar supports 6 distinct tool types defined in `ToolType` ([`src/hooks/useCanvasWhiteboard.ts`](../../src/hooks/useCanvasWhiteboard.ts)):
 
 ```typescript
 export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line" | "sticky";
@@ -90,7 +90,7 @@ The whiteboard system listens for single-key inputs to switch active tools insta
 
 ## 4. Color Swatches & Palette Architecture
 
-Colors are defined in `WHITEBOARD_COLOR_SWATCHES` ([`src/hooks/useCanvasWhiteboard.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useCanvasWhiteboard.ts)). The palette consists of 8 carefully tuned pigments optimized for both light and dark canvas backgrounds:
+Colors are defined in `WHITEBOARD_COLOR_SWATCHES` ([`src/hooks/useCanvasWhiteboard.ts`](../../src/hooks/useCanvasWhiteboard.ts)). The palette consists of 8 carefully tuned pigments optimized for both light and dark canvas backgrounds:
 
 ```typescript
 export interface ColorSwatch {

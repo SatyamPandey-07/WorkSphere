@@ -44,7 +44,9 @@ describe("geocodePostalOrCity", () => {
   });
 
   it("handles fetch failure gracefully by returning null", async () => {
-    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network failure"));
+    (global.fetch as jest.Mock).mockRejectedValueOnce(
+      new Error("Network failure"),
+    );
     const result = await geocodePostalOrCity("Berlin");
     expect(result).toBeNull();
   });
@@ -92,9 +94,7 @@ describe("useUserLocation", () => {
       }),
     });
 
-    const { result } = renderHook(() =>
-      useUserLocation({ autoRequest: true }),
-    );
+    const { result } = renderHook(() => useUserLocation({ autoRequest: true }));
 
     await act(async () => {
       await Promise.resolve();
@@ -102,9 +102,109 @@ describe("useUserLocation", () => {
 
     expect(result.current.permissionState).toBe("denied");
     expect(result.current.isDenied).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith("/api/location");
     // Must not be (0, 0)
     expect(result.current.location.latitude).not.toBe(0);
     expect(result.current.location.longitude).not.toBe(0);
+  });
+
+  it("requests /api/location and consumes returned coordinates and location name on IP fallback", async () => {
+    const mockGetCurrentPosition = jest.fn((_success, error) => {
+      error({
+        code: 1,
+        message: "User denied Geolocation",
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+      });
+    });
+
+    Object.defineProperty(navigator, "geolocation", {
+      value: { getCurrentPosition: mockGetCurrentPosition },
+      writable: true,
+      configurable: true,
+    });
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        lat: 40.7128,
+        lng: -74.006,
+        city: "New York",
+        region: "NY",
+        country: "US",
+        source: "ipwho.is",
+      }),
+    });
+
+    const { result } = renderHook(() => useUserLocation({ autoRequest: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/location");
+    expect(result.current.location).toEqual({
+      latitude: 40.7128,
+      longitude: -74.006,
+    });
+    expect(result.current.locationName).toBe("New York, NY");
+    expect(result.current.source).toBe("ip");
+  });
+
+  it("falls back to custom configured defaultLocation when /api/location returns server-side default response", async () => {
+    const mockGetCurrentPosition = jest.fn((_success, error) => {
+      error({
+        code: 1,
+        message: "User denied Geolocation",
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+      });
+    });
+
+    Object.defineProperty(navigator, "geolocation", {
+      value: { getCurrentPosition: mockGetCurrentPosition },
+      writable: true,
+      configurable: true,
+    });
+
+    // Mock API returning server-side static default (e.g. rate-limited or provider lookup failure)
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        lat: 37.7749,
+        lng: -122.4194,
+        city: "San Francisco",
+        region: "California",
+        country: "US",
+        source: "default",
+      }),
+    });
+
+    const customDefault = {
+      latitude: 51.5074,
+      longitude: -0.1278,
+    };
+
+    const { result } = renderHook(() =>
+      useUserLocation({
+        autoRequest: true,
+        defaultLocation: customDefault,
+      }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/location");
+    // Hook must preserve custom configured defaultLocation, not server's default coordinates
+    expect(result.current.location).toEqual(customDefault);
+    // Source must remain "default", not "ip"
+    expect(result.current.source).toBe("default");
+    // Must not show server's hardcoded San Francisco name for custom coordinates
+    expect(result.current.locationName).toBeNull();
   });
 
   it("updates coordinates when setManualLocation is called", () => {

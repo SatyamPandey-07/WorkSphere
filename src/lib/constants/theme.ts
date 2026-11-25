@@ -7,7 +7,11 @@ export type AccentColor =
   | "purple"
   | "emerald"
   | "amber"
-  | "lantern-emerald";
+  | "lantern-emerald"
+  | "indigo"
+  | "rose"
+  | "cyan"
+  | "violet";
 
 export interface AccentColorModes {
   light: string;
@@ -87,6 +91,30 @@ export const ACCENT_COLORS: Record<AccentColor, AccentColorConfig> = {
     },
     cssVar: "--accent-lantern",
   },
+  indigo: {
+    name: "indigo",
+    label: "Indigo",
+    value: "#4338ca",
+    hex: "#4338ca",
+  },
+  rose: {
+    name: "rose",
+    label: "Rose",
+    value: "#be123c",
+    hex: "#be123c",
+  },
+  cyan: {
+    name: "cyan",
+    label: "Cyan",
+    value: "#0e7490",
+    hex: "#0e7490",
+  },
+  violet: {
+    name: "violet",
+    label: "Violet",
+    value: "#6d28d9",
+    hex: "#6d28d9",
+  },
 };
 
 export const DEFAULT_ACCENT: AccentColor = "blue";
@@ -102,6 +130,10 @@ export const ACCENT_HEX_MAP: Record<AccentColor, string> = {
   emerald: ACCENT_COLORS.emerald.hex,
   amber: ACCENT_COLORS.amber.hex,
   "lantern-emerald": ACCENT_COLORS["lantern-emerald"].hex,
+  indigo: ACCENT_COLORS.indigo.hex,
+  rose: ACCENT_COLORS.rose.hex,
+  cyan: ACCENT_COLORS.cyan.hex,
+  violet: ACCENT_COLORS.violet.hex,
 };
 
 /**

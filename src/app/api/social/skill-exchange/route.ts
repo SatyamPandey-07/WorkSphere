@@ -1,118 +1,92 @@
 /**
  * route.ts
  * /api/social/skill-exchange
- * Retrieves and posts on-site nomad skill barter listings.
+ * Retrieves and posts persistent on-site nomad skill barter listings.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/prisma";
 import {
   findComplementaryBarters,
   type SkillListing,
   type SkillCategory,
 } from "@/lib/social/skillBarterEngine";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const venueId = searchParams.get("venueId") || "venue-sf-01";
-  const category = searchParams.get("category");
+  try {
+    const { searchParams } = new URL(req.url);
+    const venueId = searchParams.get("venueId") || "venue-sf-01";
+    const category = searchParams.get("category");
 
-  const mockListings: SkillListing[] = [
-    {
-      id: "listing-1",
-      venueId,
-      venueName: "Mission Focus Coworking & Cafe",
-      userId: "usr-alex",
-      userName: "Alex Chen",
-      userTitle: "Senior Next.js & WebAssembly Dev",
-      offeringSkill: "React 19 & Circom ZK Circuit Architecture",
-      offeringCategory: "CODE_DEV",
-      seekingSkill: "Schengen Visa & Portuguese NIF Tax Guidance",
-      seekingCategory: "LEGAL_VISA",
-      durationMinutes: 30,
-      meetupSpot: "Lounge Table #4 (Near Pour-Over Bar)",
-      status: "OPEN",
-      reputationScore: 98,
-      createdAt: new Date(Date.now() - 40 * 60000).toISOString(),
-    },
-    {
-      id: "listing-2",
-      venueId,
-      venueName: "Mission Focus Coworking & Cafe",
-      userId: "usr-maria",
-      userName: "Maria Santos",
-      userTitle: "Digital Nomad Immigration Consultant",
-      offeringSkill: "Spanish DNV & Portugal Digital Nomad Visa Setup",
-      offeringCategory: "LEGAL_VISA",
-      seekingSkill: "TypeScript Code Review & API Performance Audit",
-      seekingCategory: "CODE_DEV",
-      durationMinutes: 30,
-      meetupSpot: "Outdoor Garden Terrace",
-      status: "OPEN",
-      reputationScore: 95,
-      createdAt: new Date(Date.now() - 25 * 60000).toISOString(),
-    },
-    {
-      id: "listing-3",
-      venueId,
-      venueName: "Mission Focus Coworking & Cafe",
-      userId: "usr-sam",
-      userName: "Sam Rivera",
-      userTitle: "Product Designer & Brand Strategist",
-      offeringSkill: "Figma UI/UX Critique & Design System Review",
-      offeringCategory: "DESIGN_UI",
-      seekingSkill: "B2B SaaS Cold Outbound & GTM Strategy",
-      seekingCategory: "GROWTH_MARKETING",
-      durationMinutes: 15,
-      meetupSpot: "Quiet Booth 2",
-      status: "OPEN",
-      reputationScore: 92,
-      createdAt: new Date(Date.now() - 15 * 60000).toISOString(),
-    },
-    {
-      id: "listing-4",
-      venueId,
-      venueName: "Mission Focus Coworking & Cafe",
-      userId: "usr-elena",
-      userName: "Elena Rostova",
-      userTitle: "Growth Lead & B2B Copywriter",
-      offeringSkill: "Landing Page Conversion & Cold Email Teardown",
-      offeringCategory: "GROWTH_MARKETING",
-      seekingSkill: "Design System & Figma Component Architecture",
-      seekingCategory: "DESIGN_UI",
-      durationMinutes: 15,
-      meetupSpot: "Coffee Counter Island",
-      status: "OPEN",
-      reputationScore: 96,
-      createdAt: new Date(Date.now() - 10 * 60000).toISOString(),
-    },
-  ];
+    const dbListings = await prisma.skillListing.findMany({
+      where: {
+        venueId,
+        status: "OPEN",
+        ...(category && category !== "ALL"
+          ? {
+              OR: [
+                { offeringCategory: category },
+                { seekingCategory: category },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-  const filtered =
-    category && category !== "ALL"
-      ? mockListings.filter(
-          (l) =>
-            l.offeringCategory === category || l.seekingCategory === category,
-        )
-      : mockListings;
+    const listings: SkillListing[] = dbListings.map((l) => ({
+      id: l.id,
+      venueId: l.venueId,
+      venueName: l.venueName,
+      userId: l.userId,
+      userName: l.userName,
+      userTitle: l.userTitle,
+      offeringSkill: l.offeringSkill,
+      offeringCategory: l.offeringCategory as SkillCategory,
+      seekingSkill: l.seekingSkill,
+      seekingCategory: l.seekingCategory as SkillCategory,
+      durationMinutes: l.durationMinutes as 15 | 30 | 45,
+      meetupSpot: l.meetupSpot,
+      status: l.status as "OPEN" | "MATCHED" | "COMPLETED",
+      reputationScore: l.reputationScore,
+      createdAt: l.createdAt.toISOString(),
+    }));
 
-  const matches = findComplementaryBarters(filtered);
+    const matches = findComplementaryBarters(listings);
 
-  return NextResponse.json({
-    success: true,
-    venueId,
-    totalListings: filtered.length,
-    matches,
-    listings: filtered,
-  });
+    return NextResponse.json({
+      success: true,
+      venueId,
+      totalListings: listings.length,
+      matches,
+      listings,
+    });
+  } catch (error: any) {
+    console.error("[GET /api/social/skill-exchange] Error:", error);
+    return NextResponse.json(
+      {
+        error: "Failed to fetch skill barter listings",
+        details: error.message,
+      },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const {
       venueId = "venue-sf-01",
       venueName = "Mission Focus Coworking & Cafe",
-      userId = "user_nomad_self",
       userName = "You",
       userTitle = "Digital Nomad Specialist",
       offeringSkill,
@@ -130,22 +104,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const created = await prisma.skillListing.create({
+      data: {
+        venueId,
+        venueName,
+        userId,
+        userName,
+        userTitle,
+        offeringSkill,
+        offeringCategory,
+        seekingSkill,
+        seekingCategory,
+        durationMinutes: Number(durationMinutes),
+        meetupSpot,
+        status: "OPEN",
+        reputationScore: 100,
+      },
+    });
+
     const newListing: SkillListing = {
-      id: `listing-${Date.now()}`,
-      venueId,
-      venueName,
-      userId,
-      userName,
-      userTitle,
-      offeringSkill,
-      offeringCategory: offeringCategory as SkillCategory,
-      seekingSkill,
-      seekingCategory: seekingCategory as SkillCategory,
-      durationMinutes: durationMinutes as 15 | 30 | 45,
-      meetupSpot,
+      id: created.id,
+      venueId: created.venueId,
+      venueName: created.venueName,
+      userId: created.userId,
+      userName: created.userName,
+      userTitle: created.userTitle,
+      offeringSkill: created.offeringSkill,
+      offeringCategory: created.offeringCategory as SkillCategory,
+      seekingSkill: created.seekingSkill,
+      seekingCategory: created.seekingCategory as SkillCategory,
+      durationMinutes: created.durationMinutes as 15 | 30 | 45,
+      meetupSpot: created.meetupSpot,
       status: "OPEN",
-      reputationScore: 100,
-      createdAt: new Date().toISOString(),
+      reputationScore: created.reputationScore,
+      createdAt: created.createdAt.toISOString(),
     };
 
     return NextResponse.json({

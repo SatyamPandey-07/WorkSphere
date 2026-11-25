@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "prisma generate && (next build --webpack || next build --webpack)",
+  "crons": [
+    {
+      "path": "/api/cron/archive-telemetry",
+      "schedule": "0 3 1 * *"
+    }
+  ]
+}

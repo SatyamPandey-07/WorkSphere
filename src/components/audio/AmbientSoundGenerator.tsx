@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
 import {
   DEFAULT_SOUNDSCAPE_PRESET,
@@ -23,6 +23,18 @@ export interface AmbientSoundGeneratorProps {
   audioContextFactory?: () => any;
   storageKey?: string;
   className?: string;
+}
+
+const NOTCH_MIN_HZ = 50;
+const NOTCH_MAX_HZ = 2000;
+const NOTCH_DEFAULT_HZ = 60;
+const NOTCH_DEFAULT_Q = 10;
+
+function formatNotchBandHint(hz: number): string {
+  if (hz <= 80) return 'AC Hum';
+  if (hz <= 300) return 'HVAC / Rumble';
+  if (hz <= 1000) return 'Cafe Chatter';
+  return 'High Whine';
 }
 
 export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
@@ -49,10 +61,11 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   // Track active layer gain nodes and registered event listeners to prevent memory leaks (#10119)
   const layerGainNodesRef = useRef<Map<string, any>>(new Map());
   const masterGainNodeRef = useRef<any>(null);
+  const notchFilterNodeRef = useRef<any>(null);
   const listenersRef = useRef<Set<() => void>>(new Set());
 
   // Defensive, idempotent GainNode disconnection
-  const safelyDisconnectNode = (node: any) => {
+  const safelyDisconnectNode = useCallback((node: any) => {
     if (!node) return;
     try {
       if (typeof node.disconnect === 'function') {
@@ -61,19 +74,19 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     } catch {
       // Node may already be disconnected or in invalid state
     }
-  };
+  }, []);
 
   // Disconnect and release an individual layer's GainNode
-  const cleanupLayerGainNode = (layerKey: string) => {
+  const cleanupLayerGainNode = useCallback((layerKey: string) => {
     const existing = layerGainNodesRef.current.get(layerKey);
     if (existing) {
       safelyDisconnectNode(existing);
       layerGainNodesRef.current.delete(layerKey);
     }
-  };
+  }, [safelyDisconnectNode]);
 
   // Disconnect and release all GainNodes owned by the component
-  const cleanupAllGainNodes = () => {
+  const cleanupAllGainNodes = useCallback(() => {
     layerGainNodesRef.current.forEach((node) => {
       safelyDisconnectNode(node);
     });
@@ -83,7 +96,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       safelyDisconnectNode(masterGainNodeRef.current);
       masterGainNodeRef.current = null;
     }
-  };
+  }, [safelyDisconnectNode]);
 
   if (!engineRef.current) {
     let ctx: any = null;
@@ -122,6 +135,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [masterGain, setMasterGain] = useState(activeInitial.masterGain);
+  const [isNotchEnabled, setIsNotchEnabled] = useState(false);
+  const [notchFrequencyHz, setNotchFrequencyHz] = useState(NOTCH_DEFAULT_HZ);
+  const [isNotchTooltipVisible, setIsNotchTooltipVisible] = useState(false);
 
   // Sync initial sound layers from persistent preferences
   const [layers, setLayers] = useState<Record<NoiseLayerType, number>>(() => ({
@@ -142,9 +158,10 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       }
       engineRef.current?.setLayerGain('rain', normalizedRain);
     }
-  }, [preferences.rain]);
+  }, [preferences.rain, cleanupLayerGainNode]);
 
   useEffect(() => {
+    const listeners = listenersRef.current;
     const onVisibility = () => {
       if (typeof document === 'undefined') return;
       if (document.hidden) {
@@ -157,16 +174,16 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibility);
-      listenersRef.current.add(onVisibility);
+      listeners.add(onVisibility);
     }
 
     return () => {
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibility);
-        listenersRef.current.delete(onVisibility);
+        listeners.delete(onVisibility);
       }
       // Detach any remaining registered listeners
-      listenersRef.current.forEach((listener) => {
+      listeners.forEach((listener) => {
         if (typeof document !== 'undefined') {
           try {
             document.removeEventListener('visibilitychange', listener);
@@ -175,7 +192,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
           }
         }
       });
-      listenersRef.current.clear();
+      listeners.clear();
 
       // Disconnect and release all GainNodes on unmount
       cleanupAllGainNodes();
@@ -184,7 +201,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       engineRef.current = null;
       audioContextRef.current = null;
     };
-  }, []);
+  }, [cleanupAllGainNodes]);
 
   const togglePlayback = async () => {
     const engine = engineRef.current;
@@ -253,6 +270,65 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       engineRef.current?.setMasterGain(value, 0.05);
     }
   };
+
+  useEffect(() => {
+    const ctx = audioContextRef.current;
+    if (!ctx || typeof ctx.createBiquadFilter !== 'function') {
+      return;
+    }
+
+    if (!isNotchEnabled) {
+      if (notchFilterNodeRef.current) {
+        safelyDisconnectNode(notchFilterNodeRef.current);
+        notchFilterNodeRef.current = null;
+      }
+      return;
+    }
+
+    try {
+      const filter = notchFilterNodeRef.current ?? ctx.createBiquadFilter();
+      filter.type = 'notch';
+      if (filter.frequency) {
+        if (typeof filter.frequency.setTargetAtTime === 'function') {
+          filter.frequency.setTargetAtTime(notchFrequencyHz, ctx.currentTime ?? 0, 0.02);
+        } else {
+          filter.frequency.value = notchFrequencyHz;
+        }
+      }
+      if (filter.Q) {
+        filter.Q.value = NOTCH_DEFAULT_Q;
+      }
+      notchFilterNodeRef.current = filter;
+    } catch {
+      // Safe fallback when mock or restricted AudioContext rejects BiquadFilterNode
+    }
+  }, [isNotchEnabled, notchFrequencyHz, safelyDisconnectNode]);
+
+  useEffect(() => {
+    return () => {
+      if (notchFilterNodeRef.current) {
+        safelyDisconnectNode(notchFilterNodeRef.current);
+        notchFilterNodeRef.current = null;
+      }
+    };
+  }, [safelyDisconnectNode]);
+
+  const handleToggleNotch = () => {
+    setIsNotchEnabled((prev) => !prev);
+  };
+
+  const handleNotchFrequencyChange = (rawHz: number) => {
+    const clamped = Math.min(
+      NOTCH_MAX_HZ,
+      Math.max(NOTCH_MIN_HZ, Math.round(Number.isFinite(rawHz) ? rawHz : NOTCH_DEFAULT_HZ))
+    );
+    setNotchFrequencyHz(clamped);
+  };
+
+  const notchSliderPercent = Math.min(
+    100,
+    Math.max(0, ((notchFrequencyHz - NOTCH_MIN_HZ) / (NOTCH_MAX_HZ - NOTCH_MIN_HZ)) * 100)
+  );
 
   const handleSavePreset = () => {
     const customPreset: SoundscapePreset = {
@@ -405,6 +481,81 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
                 className="mt-1 w-full"
               />
             </label>
+          </div>
+        </div>
+
+        {/* Acoustic Notch Filter with visual frequency slider tooltip (#10432) */}
+        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Acoustic Notch Filter
+            </h4>
+            <button
+              type="button"
+              data-testid="toggle-notch-btn"
+              aria-pressed={isNotchEnabled}
+              onClick={handleToggleNotch}
+              className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                isNotchEnabled
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-300'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              {isNotchEnabled ? 'Notch On' : 'Notch Off'}
+            </button>
+          </div>
+
+          <label
+            htmlFor="notch-frequency-slider"
+            className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+          >
+            Notch Center Frequency ({notchFrequencyHz} Hz · Q={NOTCH_DEFAULT_Q})
+          </label>
+          <div
+            className="relative mt-6"
+            onMouseEnter={() => setIsNotchTooltipVisible(true)}
+            onMouseLeave={() => setIsNotchTooltipVisible(false)}
+          >
+            <div
+              role="tooltip"
+              id="notch-frequency-tooltip"
+              data-testid="notch-frequency-tooltip"
+              data-visible={isNotchTooltipVisible ? 'true' : 'false'}
+              aria-hidden={!isNotchTooltipVisible}
+              style={{ left: `${notchSliderPercent}%` }}
+              className={`pointer-events-none absolute -top-8 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white shadow-md transition-all duration-150 dark:bg-slate-100 dark:text-slate-900 ${
+                isNotchTooltipVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
+              }`}
+            >
+              <span>{notchFrequencyHz} Hz</span>
+              <span className="ml-1 text-[10px] font-normal opacity-80">
+                ({formatNotchBandHint(notchFrequencyHz)})
+              </span>
+            </div>
+            <input
+              id="notch-frequency-slider"
+              type="range"
+              min={NOTCH_MIN_HZ}
+              max={NOTCH_MAX_HZ}
+              step={10}
+              value={notchFrequencyHz}
+              data-testid="notch-frequency-slider"
+              aria-label="Notch filter center frequency"
+              aria-describedby="notch-frequency-tooltip"
+              aria-valuetext={`${notchFrequencyHz} Hz (${formatNotchBandHint(notchFrequencyHz)})`}
+              onFocus={() => setIsNotchTooltipVisible(true)}
+              onBlur={() => setIsNotchTooltipVisible(false)}
+              onPointerDown={() => setIsNotchTooltipVisible(true)}
+              onPointerUp={() => setIsNotchTooltipVisible(false)}
+              onChange={(e) => handleNotchFrequencyChange(Number(e.target.value))}
+              className="w-full cursor-pointer"
+            />
+          </div>
+          <div className="mt-1 flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
+            <span>{NOTCH_MIN_HZ} Hz</span>
+            <span>500 Hz</span>
+            <span>1000 Hz</span>
+            <span>{NOTCH_MAX_HZ} Hz</span>
           </div>
         </div>
       </div>

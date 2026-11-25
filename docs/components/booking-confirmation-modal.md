@@ -167,3 +167,64 @@ export const BookingFlowContainer: React.FC = () => {
   );
 };
 ```
+
+---
+
+## 9. ICS Calendar Invite Generation & Timezone / `VTIMEZONE` Formatting
+
+`BookingConfirmationModal` ([`src/components/bookings/BookingConfirmationModal.tsx`](../../src/components/bookings/BookingConfirmationModal.tsx)) includes a built-in **Add to Calendar (.ics)** workflow (`data-testid="add-to-calendar-btn"`) that generates and downloads RFC 5545 iCalendar files directly on the client.
+
+### 9.1 Exported ICS Helpers
+
+| Function | Signature | Purpose |
+| :--- | :--- | :--- |
+| `escapeIcsText` | `(str: string) => string` | Escapes RFC 5545 `TEXT` characters: `\` → `\\`, `;` → `\;`, `,` → `\,`, and `\r\n`/`\n` → `\n`. |
+| `formatIcsUtcDate` | `(date: Date) => string` | Formats a `Date` in basic RFC 5545 UTC format `YYYYMMDDTHHmmssZ` using `getUTC*()` accessors. |
+| `parseBookingDateTime` | `(dateStr?: string, timeStr?: string, isoFallback?: string) => Date \| null` | Parses `isoFallback` first if valid; otherwise parses `dateStr` directly if it contains `"T"`, or combines `${dateStr}T${timePart}` (defaulting `timeStr` to `"09:00"` and appending `":00"` for `HH:mm`). |
+| `generateIcsCalendar` | `(booking: BookingReceiptData) => string \| null` | Builds the CRLF-delimited (`\r\n`) `VCALENDAR` payload, or returns `null` if `booking.id` or a valid start date is missing. |
+| `downloadBookingIcs` | `(booking: BookingReceiptData) => boolean` | Wraps `generateIcsCalendar` in a `Blob` (`text/calendar;charset=utf-8`), triggers an `<a download="booking-<sanitizedId>.ics">` click, and revokes the object URL. |
+
+### 9.2 Emitted RFC 5545 Event Structure
+
+`generateIcsCalendar` produces a single `VEVENT` inside a `VCALENDAR` envelope joined with `\r\n`:
+
+```ics
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//WorkSphere//Booking Calendar//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:<sanitizedBookingId>-<timestamp>@worksphere.com
+DTSTAMP:<YYYYMMDDTHHmmssZ>
+DTSTART:<YYYYMMDDTHHmmssZ>
+DTEND:<YYYYMMDDTHHmmssZ>
+SUMMARY:<venueName>[ - <spaceTitle>]
+DESCRIPTION:Reservation at <venueName>\n[Space: <spaceTitle>\n]Booking ID: <id>[\nAccess Code: <passcode>][\nReference: <referenceNumber>]
+LOCATION:<venueAddress || address || venueName>
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+```
+
+- **Duration Fallback**: If `endDate` is missing or `endDate.getTime() <= startDate.getTime()`, `DTEND` defaults to `startDate + 1 hour` (`60 * 60 * 1000` ms).
+- **Text Escaping**: `SUMMARY`, `DESCRIPTION`, and `LOCATION` are passed through `escapeIcsText()` so commas, semicolons, backslashes, and newlines do not corrupt iCalendar property parsing.
+
+### 9.3 Timezone Resolution & `VTIMEZONE` vs. UTC `Z`-Suffix Design
+
+WorkSphere intentionally emits **UTC `Z`-suffixed timestamps** (`YYYYMMDDTHHmmssZ`) rather than `TZID=...` properties paired with embedded `BEGIN:VTIMEZONE` components:
+
+1. **Client Modal Path (`BookingConfirmationModal.tsx`)**:
+   - When `startDateTime` / `endDateTime` include an explicit ISO offset or `Z`, `new Date(isoFallback)` preserves the exact UTC instant before `formatIcsUtcDate()` serializes `DTSTART` and `DTEND`.
+   - When only wall-clock `date` and `startTime` / `endTime` are supplied without an offset, `parseBookingDateTime()` constructs a local `Date` (`${dateStr}T${timePart}`) in the browser runtime timezone and converts it to UTC via `formatIcsUtcDate()`.
+2. **Server & IANA Timezone Path (`src/lib/calendar/ics.ts` & `GET /api/bookings/[bookingId]/calendar.ics`)**:
+   - When a venue or booking carries an explicit IANA timezone (e.g., `"America/New_York"`, `"Asia/Kolkata"`), `wallClockToDate()` and `timeZoneOffsetMs()` run a two-pass `Intl.DateTimeFormat` convergence loop to resolve DST boundaries into an exact UTC instant before formatting `YYYYMMDDTHHmmssZ`.
+3. **Why `VTIMEZONE` Is Omitted**:
+   - RFC 5545 Section 3.6.5 requires every `TZID` reference to include a matching `VTIMEZONE` component with `STANDARD` and `DAYLIGHT` sub-components and historical `RRULE` transitions.
+   - Emitting UTC `Z` timestamps eliminates multi-kilobyte `VTIMEZONE` rule tables and avoids DST drift across Apple Calendar, Google Calendar, and Microsoft Outlook, as receiving calendar clients automatically project UTC instants into the attendee's configured local timezone.
+
+### 9.4 Verification
+
+- Unit tests in [`src/components/bookings/__tests__/BookingConfirmationModal.test.tsx`](../../src/components/bookings/__tests__/BookingConfirmationModal.test.tsx) verify RFC 5545 headers, escaped `SUMMARY` / `DESCRIPTION` / `LOCATION` fields, 1-hour fallback duration, CRLF line endings, and invalid-input handling.
+- Additional timezone and `VTIMEZONE` vs. UTC documentation is maintained in [`docs/calendar/ICS_SPECIFICATION.md`](../calendar/ICS_SPECIFICATION.md) and [`docs/api/BOOKING_CALENDAR_EXPORT.md`](../api/BOOKING_CALENDAR_EXPORT.md).
+

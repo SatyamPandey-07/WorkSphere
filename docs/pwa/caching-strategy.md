@@ -53,6 +53,7 @@ WorkSphere organizes stored responses across specialized cache namespaces to iso
 | :--- | :--- | :--- | :--- |
 | **Core App Shell** | `worksphere-v3` (`CACHE_NAME`) | Critical navigation shell, HTML pages, precached assets, core JS/CSS. | System Default |
 | **External Images** | `worksphere-images-v4` (`IMAGE_CACHE_NAME`) | Unsplash images, external photo CDNs (`images.unsplash.com`). | **20MB Cap** with LRU eviction |
+| **Venue Photos** | `worksphere-venue-photos-v1` (`VENUE_PHOTO_CACHE_NAME`) | Cloudinary and Pexels venue photos. | On quota failure, evict the oldest 20% and retry once; cache ages are persisted separately in IndexedDB |
 | **Map Tiles** | `worksphere-maptiles-v1` (`MAP_TILE_CACHE_NAME`) | OpenStreetMap and CartoDB basemap PNG tiles. | On-demand / Spatial prefetch |
 | **Video Tours** | `worksphere-video-tours-v1` (`VIDEO_CACHE_NAME`) | Venue virtual video walkthroughs. | Quota-guarded (5MB threshold) |
 | **Prefetched Venues**| `worksphere-prefetch-v1` (`PREFETCH_CACHE_NAME`) | Nearby venue details, floorplans, and map tiles. | Dynamic prefetch cache |
@@ -73,7 +74,7 @@ flowchart TD
 
     RouteType -- "/api/venues" OR "/api/reservations/availability" --> NetFirstAPI[Network-First API Strategy]
     NetFirstAPI --> TryFetchAPI{Fetch Online?}
-    TryFetchAPI -- Success --> PutCache[Update CACHE_NAME] --> ReturnResp[Return Response]
+    TryFetchAPI -- Success --> PutCache[Update CACHE_NAME; cache failure is non-fatal] --> ReturnResp[Return Response]
     TryFetchAPI -- Offline / Fail --> MatchCacheAPI{Match Cache?}
     MatchCacheAPI -- Found --> ServeCachedAPI[Return Cached Data]
     MatchCacheAPI -- Not Found --> SynthOffline[Return Synthetic Offline JSON]
@@ -95,6 +96,14 @@ flowchart TD
     MatchNavCache -- Hit --> ServeNav[Return Cached Asset]
     MatchNavCache -- Miss & mode==navigate --> ServeOfflineFallback[Serve /offline HTML Fallback]
 ```
+
+Venue photos use a separate stale-while-revalidate cache. A quota error evicts the
+oldest 20% of entries using persisted last-access timestamps, then retries once.
+The photo write queue serializes eviction and insertion; a second quota error
+leaves the fetched image available to the page without caching it. Photo eviction
+cannot remove API metadata or app-shell entries because it only deletes from the
+venue-photo cache. API cache-write failures are logged without replacing a
+successful network response.
 
 ### 3.1 Network-First Routes
 
@@ -154,6 +163,7 @@ caches.keys().then((cacheNames) =>
           name !== IMAGE_CACHE_NAME &&
           name !== MAP_TILE_CACHE_NAME &&
           name !== VIDEO_CACHE_NAME &&
+          name !== VENUE_PHOTO_CACHE_NAME &&
           name !== PREFETCH_CACHE_NAME &&
           !name.endsWith("-installing"),
       )

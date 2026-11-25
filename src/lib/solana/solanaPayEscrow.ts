@@ -11,8 +11,10 @@
  * 3. Fall back to background status polling (confirmed -> finalized) when WebSocket
  *    subscriptions cannot be registered (e.g. rate-limited RPC endpoints) or when the
  *    caller explicitly requests polling mode with an injectable, failover-aware poller.
- * 4. Roll back to available with user-friendly error message if the transaction fails or drops from mempool after 60 seconds.
- * 5. Anti-spam Proof-of-Work validation support using ProofOfWorkValidator.
+ * 4. Adaptive HTTP 429 rate-limit circuit breaker tracking consecutive 429 errors per subscription/endpoint,
+ *    triggering automatic fallback RPC rotation, cool-down, and controlled primary recovery.
+ * 5. Roll back to available with user-friendly error message if the transaction fails or drops from mempool after 60 seconds.
+ * 6. Anti-spam Proof-of-Work validation support using ProofOfWorkValidator.
  */
 
 import type { Connection, SignatureStatus } from "@solana/web3.js";
@@ -23,6 +25,8 @@ import {
 
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
 export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
+export const DEFAULT_CONSECUTIVE_429_THRESHOLD = 3;
+export const DEFAULT_CIRCUIT_COOLDOWN_MS = 30_000; // 30 seconds
 
 export type SeatConfirmationMode = "websocket" | "polling";
 
@@ -31,6 +35,17 @@ export type SeatState =
 
 export type PaymentConfirmationStage =
   "pending" | "confirmed" | "finalized" | "failed" | "timeout";
+
+export type CircuitBreakerState = "closed" | "open" | "half_open";
+
+export interface CircuitBreakerConfig {
+  /** Consecutive 429 responses before opening circuit on primary RPC. Default: 3 */
+  consecutive429Threshold?: number;
+  /** Cool-down period in ms before testing primary RPC again. Default: 30_000 ms */
+  cooldownMs?: number;
+  /** Optional fallback / secondary RPC connection */
+  fallbackConnection?: Connection;
+}
 
 export interface SeatReservationState {
   seatId: string;
@@ -53,6 +68,10 @@ export interface SeatReservationCallbacks {
   onFinalized?: (state: SeatReservationState) => void;
   onError?: (error: Error, state: SeatReservationState) => void;
   onRollback?: (reason: string, state: SeatReservationState) => void;
+  onCircuitStateChange?: (
+    state: CircuitBreakerState,
+    activeEndpoint: "primary" | "fallback",
+  ) => void;
 }
 
 export interface ReserveSeatOptions {
@@ -74,14 +93,19 @@ export interface ReserveSeatOptions {
   confirmationMode?: SeatConfirmationMode;
   /**
    * Optional failover-aware signature status poller used in polling mode.
-   * Defaults to polling the provided connection's getSignatureStatuses.
+   * Defaults to polling the active connection's getSignatureStatuses.
    */
-  pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  pollSignatureStatus?: (
+    signature: string,
+    activeConnection: Connection,
+  ) => Promise<SignatureStatus | null>;
   /** Interval between background status polls (polling mode only). */
   pollIntervalMs?: number;
+  /** Circuit breaker and failover configuration */
+  circuitBreaker?: CircuitBreakerConfig;
 }
 
-interface ActiveSubscription {
+export interface ActiveSubscription {
   seatId: string;
   signature: string;
   confirmedSubId?: number;
@@ -89,13 +113,50 @@ interface ActiveSubscription {
   timeoutTimer?: ReturnType<typeof setTimeout>;
   pollTimer?: ReturnType<typeof setTimeout>;
   pollAborted?: boolean;
-  connection: Connection;
+  primaryConnection: Connection;
+  fallbackConnection?: Connection;
+  activeConnection: Connection;
+  activeEndpoint: "primary" | "fallback";
   callbacks?: SeatReservationCallbacks;
+
+  // Circuit breaker state tracking
+  circuitState: CircuitBreakerState;
+  consecutive429Count: number;
+  consecutive429Threshold: number;
+  cooldownMs: number;
+  circuitOpenedAt?: number;
 }
 
 /**
- * Default signature status poller that queries the provided connection directly.
- * Used as the fallback poller when no failover-aware poller is injected.
+ * Checks if an error indicates an HTTP 429 / Rate Limit from an RPC provider.
+ */
+export function isHttp429Error(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === "number") return err === 429;
+  const errMsg =
+    typeof err === "string"
+      ? err
+      : (err as any)?.message ||
+        (err as any)?.toString?.() ||
+        JSON.stringify(err);
+
+  const status =
+    (err as any)?.status ||
+    (err as any)?.statusCode ||
+    (err as any)?.code ||
+    (err as any)?.response?.status;
+  if (status === 429 || status === "429") return true;
+
+  return (
+    /429/i.test(errMsg) ||
+    /too many requests/i.test(errMsg) ||
+    /rate limit/i.test(errMsg) ||
+    /exceeded limit/i.test(errMsg)
+  );
+}
+
+/**
+ * Default signature status poller querying the designated connection.
  */
 async function fetchSignatureStatusViaConnection(
   connection: Connection,
@@ -128,6 +189,13 @@ export class SolanaPayEscrowManager {
    */
   public getSeatState(seatId: string): SeatReservationState | null {
     return this.reservations.get(seatId) ?? null;
+  }
+
+  /**
+   * Gets active subscription metadata for testing and inspection.
+   */
+  public getActiveSubscription(seatId: string): ActiveSubscription | null {
+    return this.activeSubscriptions.get(seatId) ?? null;
   }
 
   /**
@@ -168,6 +236,7 @@ export class SolanaPayEscrowManager {
       confirmationMode = "websocket",
       pollSignatureStatus,
       pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+      circuitBreaker,
     } = options;
 
     if (!seatId || typeof seatId !== "string" || !seatId.trim()) {
@@ -249,6 +318,7 @@ export class SolanaPayEscrowManager {
         pollIntervalMs,
         pollSignatureStatus,
         callbacks,
+        circuitBreaker,
       );
     } else {
       this.subscribeToSignatureUpdates(
@@ -259,6 +329,7 @@ export class SolanaPayEscrowManager {
         callbacks,
         pollIntervalMs,
         pollSignatureStatus,
+        circuitBreaker,
       );
     }
 
@@ -279,16 +350,27 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS,
     pollSignatureStatus?: (
       signature: string,
+      activeConnection: Connection,
     ) => Promise<SignatureStatus | null>,
+    circuitBreaker?: CircuitBreakerConfig,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
-      connection,
+      primaryConnection: connection,
+      fallbackConnection: circuitBreaker?.fallbackConnection,
+      activeConnection: connection,
+      activeEndpoint: "primary",
       callbacks,
+      circuitState: "closed",
+      consecutive429Count: 0,
+      consecutive429Threshold:
+        circuitBreaker?.consecutive429Threshold ??
+        DEFAULT_CONSECUTIVE_429_THRESHOLD,
+      cooldownMs: circuitBreaker?.cooldownMs ?? DEFAULT_CIRCUIT_COOLDOWN_MS,
     };
 
-    // 3. 60-Second timeout: rollback to available if transaction drops from mempool
+    // 60-Second timeout: rollback to available if transaction drops from mempool
     subRecord.timeoutTimer = setTimeout(() => {
       const timeoutReason =
         `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
@@ -380,14 +462,25 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number,
     pollSignatureStatus?: (
       signature: string,
+      activeConnection: Connection,
     ) => Promise<SignatureStatus | null>,
     callbacks?: SeatReservationCallbacks,
+    circuitBreaker?: CircuitBreakerConfig,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
-      connection,
+      primaryConnection: connection,
+      fallbackConnection: circuitBreaker?.fallbackConnection,
+      activeConnection: connection,
+      activeEndpoint: "primary",
       callbacks,
+      circuitState: "closed",
+      consecutive429Count: 0,
+      consecutive429Threshold:
+        circuitBreaker?.consecutive429Threshold ??
+        DEFAULT_CONSECUTIVE_429_THRESHOLD,
+      cooldownMs: circuitBreaker?.cooldownMs ?? DEFAULT_CIRCUIT_COOLDOWN_MS,
     };
 
     // Overall timeout: rollback to available if transaction drops from mempool
@@ -417,6 +510,7 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number,
     pollSignatureStatus?: (
       signature: string,
+      activeConnection: Connection,
     ) => Promise<SignatureStatus | null>,
   ): void {
     if (subRecord.pollAborted) return;
@@ -432,9 +526,90 @@ export class SolanaPayEscrowManager {
   }
 
   /**
+   * Handles HTTP 429 rate-limit errors within the adaptive circuit breaker.
+   */
+  private handle429Occurrence(subRecord: ActiveSubscription): void {
+    subRecord.consecutive429Count += 1;
+
+    // If we were testing recovery (half_open), an immediate 429 re-trips back to open
+    if (subRecord.circuitState === "half_open") {
+      subRecord.circuitState = "open";
+      subRecord.circuitOpenedAt = Date.now();
+      if (subRecord.fallbackConnection) {
+        subRecord.activeConnection = subRecord.fallbackConnection;
+        subRecord.activeEndpoint = "fallback";
+      }
+      subRecord.callbacks?.onCircuitStateChange?.("open", subRecord.activeEndpoint);
+      return;
+    }
+
+    // If closed and threshold reached, open circuit & rotate to fallback
+    if (
+      subRecord.circuitState === "closed" &&
+      subRecord.consecutive429Count >= subRecord.consecutive429Threshold
+    ) {
+      subRecord.circuitState = "open";
+      subRecord.circuitOpenedAt = Date.now();
+
+      if (subRecord.fallbackConnection) {
+        subRecord.activeConnection = subRecord.fallbackConnection;
+        subRecord.activeEndpoint = "fallback";
+      }
+
+      subRecord.callbacks?.onCircuitStateChange?.("open", subRecord.activeEndpoint);
+    }
+  }
+
+  /**
+   * Evaluates cool-down status and returns the connection to query for this poll tick.
+   */
+  private evaluateConnectionForPoll(subRecord: ActiveSubscription): Connection {
+    const now = Date.now();
+
+    if (subRecord.circuitState === "open") {
+      const openedAt = subRecord.circuitOpenedAt || 0;
+      if (now - openedAt >= subRecord.cooldownMs) {
+        // Cool-down period has elapsed: enter half-open to allow controlled recovery test
+        subRecord.circuitState = "half_open";
+        subRecord.activeConnection = subRecord.primaryConnection;
+        subRecord.activeEndpoint = "primary";
+        subRecord.callbacks?.onCircuitStateChange?.("half_open", "primary");
+        return subRecord.primaryConnection;
+      }
+
+      // Still in cool-down: stay on fallback if available, else primary
+      if (subRecord.fallbackConnection) {
+        return subRecord.fallbackConnection;
+      }
+      return subRecord.primaryConnection;
+    }
+
+    if (subRecord.circuitState === "half_open") {
+      return subRecord.primaryConnection;
+    }
+
+    return subRecord.activeConnection;
+  }
+
+  /**
+   * Marks a successful RPC response, resetting consecutive 429 counters and restoring circuit to closed.
+   */
+  private handleSuccessfulRpc(subRecord: ActiveSubscription): void {
+    subRecord.consecutive429Count = 0;
+
+    if (subRecord.circuitState === "half_open") {
+      // Primary recovered successfully!
+      subRecord.circuitState = "closed";
+      subRecord.activeConnection = subRecord.primaryConnection;
+      subRecord.activeEndpoint = "primary";
+      subRecord.circuitOpenedAt = undefined;
+      subRecord.callbacks?.onCircuitStateChange?.("closed", "primary");
+    }
+  }
+
+  /**
    * Performs one background status poll and advances the reservation state machine.
-   * Transient RPC failures are swallowed and retried on the next tick until the
-   * overall confirmation timeout rolls the reservation back.
+   * Seamlessly applies the circuit breaker without dropping or resetting subscription progress.
    */
   private async pollSignatureStatusOnce(
     subRecord: ActiveSubscription,
@@ -442,17 +617,27 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number,
     pollSignatureStatus?: (
       signature: string,
+      activeConnection: Connection,
     ) => Promise<SignatureStatus | null>,
   ): Promise<void> {
     if (subRecord.pollAborted) return;
-    const { seatId, connection, callbacks } = subRecord;
+    const { seatId, callbacks } = subRecord;
+
+    const queryConnection = this.evaluateConnectionForPoll(subRecord);
 
     let status: SignatureStatus | null = null;
     try {
       status = pollSignatureStatus
-        ? await pollSignatureStatus(signature)
-        : await fetchSignatureStatusViaConnection(connection, signature);
+        ? await pollSignatureStatus(signature, queryConnection)
+        : await fetchSignatureStatusViaConnection(queryConnection, signature);
+
+      // RPC call succeeded without 429 error
+      this.handleSuccessfulRpc(subRecord);
     } catch (err) {
+      if (isHttp429Error(err)) {
+        this.handle429Occurrence(subRecord);
+      }
+
       console.warn(
         "[SolanaPayEscrow] Signature status poll failed; retrying next interval:",
         err,
@@ -642,7 +827,7 @@ export class SolanaPayEscrowManager {
     if (sub.confirmedSubId !== undefined) {
       try {
         Promise.resolve(
-          sub.connection.removeSignatureListener(sub.confirmedSubId),
+          sub.primaryConnection.removeSignatureListener(sub.confirmedSubId),
         ).catch(() => {});
       } catch {
         // Ignore unhandled connection close errors
@@ -653,7 +838,7 @@ export class SolanaPayEscrowManager {
     if (sub.finalizedSubId !== undefined) {
       try {
         Promise.resolve(
-          sub.connection.removeSignatureListener(sub.finalizedSubId),
+          sub.primaryConnection.removeSignatureListener(sub.finalizedSubId),
         ).catch(() => {});
       } catch {
         // Ignore unhandled connection close errors

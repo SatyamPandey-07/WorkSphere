@@ -7,7 +7,7 @@
  */
 
 import { randomBytes } from "crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, WaitlistStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   isValidBookingDate,
@@ -25,6 +25,7 @@ import type {
   ClaimWaitlistSeatResult,
 } from "./types";
 
+const ACTIVE_WAITLIST_STATUSES: WaitlistStatus[] = ["ACTIVE", "NOTIFIED"];
 const CLAIM_WINDOW_MINUTES = 15; // User has 15 minutes to claim an offered seat
 const CLAIM_MAX_RETRIES = 3; // Serializable transactions can abort; retry a few times
 
@@ -878,7 +879,7 @@ async function countActiveInQueue(
       venueId,
       date,
       time,
-      status: { in: ["ACTIVE", "NOTIFIED"] },
+      status: { in: ACTIVE_WAITLIST_STATUSES },
     },
   });
 }

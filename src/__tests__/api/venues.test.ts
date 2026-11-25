@@ -89,6 +89,29 @@ describe("GET /api/venues - Search and Pagination", () => {
     });
   });
 
+  it("should apply ergonomic presets in fallback mode", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?standingDesk=true&externalMonitor=1&ergonomic=true",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { hasErgonomic: true },
+            { hasStandingDesk: true },
+            { hasExternalMonitor: true },
+          ],
+        },
+      }),
+    );
+  });
+
   it("should enforce maximum limit of 100", async () => {
     const mockVenues = [{ id: "1", name: "Venue 1" }];
     (prisma.venue.count as jest.Mock).mockResolvedValue(150);
@@ -201,6 +224,27 @@ describe("GET /api/venues - Search and Pagination", () => {
         where: expect.objectContaining({
           latitude: expect.any(Object),
           longitude: expect.any(Object),
+        }),
+      }),
+    );
+  });
+
+  it("should apply ergonomic presets in coordinate mode", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?lat=35.6762&lng=139.6503&standingDesk=true&externalMonitor=true&ergonomic=true",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          hasErgonomic: true,
+          hasStandingDesk: true,
+          hasExternalMonitor: true,
         }),
       }),
     );

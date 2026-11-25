@@ -101,6 +101,8 @@ model Venue {
   pourOverAvailable      Boolean                                @default(false)
   noiseLevel             String? // quiet, moderate, loud
   hasErgonomic           Boolean                                @default(false)
+  hasStandingDesk        Boolean                                @default(false)
+  hasExternalMonitor     Boolean                                @default(false)
   hasPhoneBooths         Boolean                                @default(false)
   hasNoMusic             Boolean                                @default(false)
   hasQuietZone           Boolean                                @default(false)

@@ -22,6 +22,8 @@ export interface VenueAmenities {
   outletLocations?: string[];
   powerTypes?: string[];
   hasErgonomic?: boolean;
+  hasStandingDesk?: boolean;
+  hasExternalMonitor?: boolean;
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;

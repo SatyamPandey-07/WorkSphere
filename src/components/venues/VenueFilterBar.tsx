@@ -18,6 +18,9 @@ import {
   LayoutGrid,
   Building2,
   BookOpen,
+  MoveVertical,
+  Monitor,
+  Armchair,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DualRangeSlider } from "@/components/ui/DualRangeSlider";
@@ -104,6 +107,24 @@ export const DEFAULT_VENUE_FILTERS: VenueFilterItem[] = [
     label: "Outdoor Seating",
     paramKey: "outdoor",
     icon: Sun,
+  },
+  {
+    id: "standingDesk",
+    label: "Standing Desk",
+    paramKey: "standingDesk",
+    icon: MoveVertical,
+  },
+  {
+    id: "externalMonitor",
+    label: "External Monitor",
+    paramKey: "externalMonitor",
+    icon: Monitor,
+  },
+  {
+    id: "ergonomic",
+    label: "Ergonomic Chair",
+    paramKey: "ergonomic",
+    icon: Armchair,
   },
   {
     id: "coffee",

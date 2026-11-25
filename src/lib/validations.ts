@@ -172,6 +172,8 @@ export const venueCreateSchema = z.object({
   hasOutlets: z.boolean().optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]).optional(),
   hasErgonomic: z.boolean().optional(),
+  hasStandingDesk: z.boolean().optional(),
+  hasExternalMonitor: z.boolean().optional(),
   singleOriginBeans: z.boolean().optional(),
   specialtyEspresso: z.boolean().optional(),
   oatAlmondMilk: z.boolean().optional(),

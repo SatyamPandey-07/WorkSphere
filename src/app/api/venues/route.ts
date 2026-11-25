@@ -52,6 +52,14 @@ function suggestVenueQuery(
   return suggestion;
 }
 
+function isEnabledSearchParam(
+  searchParams: URLSearchParams,
+  key: string,
+): boolean {
+  const value = searchParams.get(key);
+  return value === "true" || value === "1";
+}
+
 interface VenueSearchData {
   lat: number;
   lng: number;
@@ -65,6 +73,8 @@ interface VenueSearchData {
   outlets?: boolean;
   quiet?: boolean;
   ergonomic?: boolean;
+  standingDesk?: boolean;
+  externalMonitor?: boolean;
   outletDensity?: string;
   wifiSpeedBand?: string;
   hasPhoneBooths?: boolean;
@@ -186,6 +196,16 @@ export async function GET(req: NextRequest) {
             })),
           });
         }
+      }
+
+      if (isEnabledSearchParam(searchParams, "ergonomic")) {
+        andConditions.push({ hasErgonomic: true });
+      }
+      if (isEnabledSearchParam(searchParams, "standingDesk")) {
+        andConditions.push({ hasStandingDesk: true });
+      }
+      if (isEnabledSearchParam(searchParams, "externalMonitor")) {
+        andConditions.push({ hasExternalMonitor: true });
       }
 
       const suggestionWhere =
@@ -337,6 +357,8 @@ export async function GET(req: NextRequest) {
       "outlets",
       "quiet",
       "ergonomic",
+      "standingDesk",
+      "externalMonitor",
       "outletDensity",
       "wifiSpeedBand",
       "hasPhoneBooths",
@@ -388,6 +410,8 @@ export async function GET(req: NextRequest) {
       outlets,
       quiet,
       ergonomic,
+      standingDesk,
+      externalMonitor,
       outletDensity,
       wifiSpeedBand,
       hasPhoneBooths,
@@ -441,6 +465,12 @@ export async function GET(req: NextRequest) {
 
     if (ergonomic) {
       where.hasErgonomic = true;
+    }
+    if (standingDesk) {
+      where.hasStandingDesk = true;
+    }
+    if (externalMonitor) {
+      where.hasExternalMonitor = true;
     }
 
     if (outletDensity && outletDensity !== "none") {
@@ -739,6 +769,8 @@ export async function POST(req: NextRequest) {
       hasOutlets,
       noiseLevel,
       hasErgonomic,
+      hasStandingDesk,
+      hasExternalMonitor,
       outletDensity,
       wifiSpeed,
       hasPhoneBooths,
@@ -809,6 +841,8 @@ export async function POST(req: NextRequest) {
         hasOutlets,
         noiseLevel,
         hasErgonomic,
+        hasStandingDesk,
+        hasExternalMonitor,
         outletDensity,
         wifiSpeed,
         hasPhoneBooths,
@@ -842,6 +876,8 @@ export async function POST(req: NextRequest) {
         hasOutlets: hasOutlets || false,
         noiseLevel,
         hasErgonomic: hasErgonomic || false,
+        hasStandingDesk: hasStandingDesk || false,
+        hasExternalMonitor: hasExternalMonitor || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
         hasPhoneBooths: hasPhoneBooths || false,

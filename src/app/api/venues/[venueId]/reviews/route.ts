@@ -9,8 +9,18 @@ import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
 import { executeIdempotent, IdempotencyConflictError } from "@/lib/idempotency";
 
 /**
- * Recursively redacts sensitive userId fields from review objects, nested replies,
+ * Recursively redacts sensitive `userId` fields from review objects, nested replies,
  * reply arrays, and arbitrary child data structures.
+ *
+ * Privacy guarantees (see docs/api/VENUE_REVIEWS_PRIVACY.md):
+ * - Every key named `userId` is dropped at any nesting depth; all other fields,
+ *   including `id`, `rating`, `comment` and reply text, are preserved as-is.
+ * - The input is never mutated; a new structure is returned.
+ * - `null`, `undefined` and primitives pass through unchanged.
+ * - Passing `shouldRedact = false` returns the input untouched (authenticated path).
+ *
+ * This is a denylist on the single key `userId`. New identifying fields added to
+ * review or reply payloads must be added here and covered by a test.
  */
 export function redactReviewPayload<T>(data: T, shouldRedact: boolean = true): T {
   if (!shouldRedact || data === null || data === undefined) {
@@ -36,7 +46,20 @@ export function redactReviewPayload<T>(data: T, shouldRedact: boolean = true): T
   return data;
 }
 
-// GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
+/**
+ * GET /api/venues/[venueId]/reviews - Get reviews/ratings for a venue (cursor paginated).
+ *
+ * Privacy behaviour by caller:
+ * - Unauthenticated: `userId` is stripped at every depth (via `redactReviewPayload`)
+ *   and `user` is `null`, so no reviewer identity (ID or name) is exposed.
+ * - Authenticated: `user` carries only `firstName` and `lastName`; the raw `userId`
+ *   is left in place.
+ *
+ * Rate limited to 60 requests per IP (`reviews:<ip>`), returning 429 `RATE_LIMITED`.
+ * `limit` defaults to 20 and is capped at 100. An unknown `cursor` returns 400
+ * `INVALID_CURSOR`. Redaction runs after the SWR cache read, so cached entries
+ * are shared across callers and never hold a redacted copy.
+ */
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ venueId: string }> },
@@ -104,6 +127,10 @@ export async function GET(
       });
     });
 
+    const hasMore = fetchedReviews.length > limit;
+    const reviews = hasMore ? fetchedReviews.slice(0, limit) : fetchedReviews;
+    const nextCursor = hasMore ? (reviews[reviews.length - 1]?.id ?? null) : null;
+
     const isUnauthenticated = !userId;
 
     const formattedReviews = reviews.map((r: any) => {
@@ -124,6 +151,8 @@ export async function GET(
 
     return NextResponse.json({
       reviews: formattedReviews,
+      nextCursor,
+      hasMore,
     });
   } catch (error) {
     if (

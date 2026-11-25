@@ -1715,11 +1715,10 @@ const Map = ({
             aria-checked={isHighContrast}
             aria-label="Toggle high-contrast mode"
             onClick={toggleHighContrast}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
-              isHighContrast
-                ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
-                : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
-            }`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${isHighContrast
+              ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
+              : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              }`}
           >
             <Contrast className="w-3.5 h-3.5 text-current" />
             <span>High Contrast</span>

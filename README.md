@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-147%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-148%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-147-active-rockstars"><b>👥 Contributors (147)</b></a> •
+  <a href="#-contributors-148-active-rockstars"><b>👥 Contributors (148)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (147 Active Rockstars)
+### 🚀 Contributors (148 Active Rockstars)
 
-A massive thank you to all **147 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **148 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -1010,6 +1010,12 @@ A massive thank you to all **147 brilliant contributors and bots** building Work
         <sub><b>priyanshiy1312-ui</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/RitikaDevi-12">
+        <img src="https://avatars.githubusercontent.com/u/306446453?v=4" width="55px;" height="55px;" alt="RitikaDevi-12" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>RitikaDevi-12</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1068,6 +1074,11 @@ A massive thank you to all **147 brilliant contributors and bots** building Work
 - **Workspace Ergonomics, Power Access & Acoustic Comfort Scoring**: Comprehensive venue scoring across power outlet density, seating ergonomics, and acoustic comfort.
 - **WebRTC Media Track Controller & Screen-Share Fallback**: Adaptive WebRTC media track controller with resilient screen-share fallback switching.
 - **Opening Hours Status Pill & Keyboard Search Shortcut**: Real-time venue open/closing countdown indicator paired with skip-to-content navigation and `⌘K`/`Ctrl+K` global search shortcut badge (`src/components/search/VenueSearchInput.tsx`).
+- **Offline Venue Search Indexer**: Client-side normalized offline venue search index for instant zero-connectivity discovery (`src/lib/search/offlineVenueSearchIndex.ts`).
+- **ZKP Verification Receipt Cache**: TTL-based zero-knowledge proof receipt cache with nullifier replay guard (`src/features/zkp/proofReceiptGuard.ts`).
+- **WebRTC Screen-Share Audio Toggle & Controller**: Dedicated screen-share audio capture toggle and controller for collaborative sessions (`src/components/realtime/ScreenShareAudioToggle.tsx`, `src/lib/realtime/screenShareAudioController.ts`).
+- **Venue Opening Hours Status Pill & Reactive Offline Drafts Badge**: Real-time opening status pill (`src/components/venues/VenueHoursBadge.tsx`) and reactive navbar badge for pending offline booking drafts (`src/components/layout/Navbar.tsx`).
+- **Zoom-Aware Spatial Venue Clustering & Tile Loader**: Viewport-bounded zoom-aware spatial clustering (`src/lib/geospatial/spatialVenueClusterer.ts`) and abort-safe map tile loader (`src/lib/maps/mapTileLoader.ts`).
 
 - **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
 - **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).

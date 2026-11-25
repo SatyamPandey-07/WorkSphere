@@ -56,25 +56,32 @@ export interface FallbackRateLimitResult {
   resetSeconds: number;
 }
 
-export interface FallbackTierMetrics {
-  activationCount: number;
-  requestCount: number;
-  allowedCount: number;
-  rejectedCount: number;
+export interface TokenBucketLimiterMetrics {
+  totalRequests: number;
+  allowedRequests: number;
+  rejectedRequests: number;
   activeBuckets: number;
 }
 
-export interface FallbackTelemetrySnapshot {
+export interface FallbackTierTelemetry extends TokenBucketLimiterMetrics {
+  tier: string;
+  lastActivatedAtMs: number | null;
+}
+
+export interface FallbackMetricsSnapshot {
   active: boolean;
   activationCount: number;
-  requestCount: number;
-  allowedCount: number;
-  rejectedCount: number;
-  totalDurationMs: number;
-  currentEpisodeDurationMs: number;
-  activeBuckets: number;
+  totalRequests: number;
+  allowedRequests: number;
+  rejectedRequests: number;
+  totalFallbackDurationMs: number;
+  activeFallbackDurationMs: number;
   lastActivatedAtMs: number | null;
-  byTier: Record<string, FallbackTierMetrics>;
+  lastRecoveredAtMs: number | null;
+  lastReason: string | null;
+  activeBucketCount: number;
+  tiers: Record<string, FallbackTierTelemetry>;
+  exportedAt: string;
 }
 
 interface BucketEntry {
@@ -232,9 +239,9 @@ export class TokenBucketLimiter {
   public readonly trackMetrics: boolean;
 
   private readonly buckets = new Map<string, BucketEntry>();
-  private instanceRequestCount = 0;
-  private instanceAllowedCount = 0;
-  private instanceRejectedCount = 0;
+  private totalRequests = 0;
+  private allowedRequests = 0;
+  private rejectedRequests = 0;
 
   constructor(config: TokenBucketFallbackConfig) {
     if (
@@ -335,14 +342,12 @@ export class TokenBucketLimiter {
       Math.ceil((this.effectiveCapacity - entry.tokens) / this.refillRatePerSecond),
     );
 
+    this.totalRequests += 1;
+
     if (entry.tokens >= safeCost) {
       // Deduct atomically
       entry.tokens -= safeCost;
-      this.instanceRequestCount += 1;
-      this.instanceAllowedCount += 1;
-      if (this.trackMetrics) {
-        recordFallbackConsume(this.tierName, true, now);
-      }
+      this.allowedRequests += 1;
       return {
         allowed: true,
         limit: this.effectiveCapacity,
@@ -353,11 +358,7 @@ export class TokenBucketLimiter {
     }
 
     // Rejected requests must NEVER consume tokens
-    this.instanceRequestCount += 1;
-    this.instanceRejectedCount += 1;
-    if (this.trackMetrics) {
-      recordFallbackConsume(this.tierName, false, now);
-    }
+    this.rejectedRequests += 1;
     const deficit = safeCost - entry.tokens;
     const retryAfterSeconds = Math.max(
       1,
@@ -371,6 +372,21 @@ export class TokenBucketLimiter {
       retryAfterSeconds,
       resetSeconds: Math.max(resetSeconds, retryAfterSeconds),
     };
+  }
+
+  public getMetrics(): TokenBucketLimiterMetrics {
+    return {
+      totalRequests: this.totalRequests,
+      allowedRequests: this.allowedRequests,
+      rejectedRequests: this.rejectedRequests,
+      activeBuckets: this.buckets.size,
+    };
+  }
+
+  public resetMetrics(): void {
+    this.totalRequests = 0;
+    this.allowedRequests = 0;
+    this.rejectedRequests = 0;
   }
 
   /**
@@ -418,21 +434,182 @@ export class TokenBucketLimiter {
    */
   public reset(): void {
     this.buckets.clear();
-    this.instanceRequestCount = 0;
-    this.instanceAllowedCount = 0;
-    this.instanceRejectedCount = 0;
+    this.resetMetrics();
   }
 }
 
 /**
  * Global fallback limiter singleton cache keyed by tier name.
  */
-const fallbackLimiters =
-  globalForFallback.__worksphereRateLimitFallbackLimiters ??
-  new Map<string, TokenBucketLimiter>();
+const fallbackLimiters = new Map<string, TokenBucketLimiter>();
+const tierLastActivatedAtMs = new Map<string, number>();
 
-if (!globalForFallback.__worksphereRateLimitFallbackLimiters) {
-  globalForFallback.__worksphereRateLimitFallbackLimiters = fallbackLimiters;
+interface FallbackTelemetryState {
+  active: boolean;
+  activationCount: number;
+  currentEpisodeStartMs: number | null;
+  accumulatedDurationMs: number;
+  lastActivatedAtMs: number | null;
+  lastRecoveredAtMs: number | null;
+  lastReason: string | null;
+}
+
+const telemetryState: FallbackTelemetryState = {
+  active: false,
+  activationCount: 0,
+  currentEpisodeStartMs: null,
+  accumulatedDurationMs: 0,
+  lastActivatedAtMs: null,
+  lastRecoveredAtMs: null,
+  lastReason: null,
+};
+
+function normalizeTimestampMs(nowMs?: number): number {
+  return typeof nowMs === "number" && Number.isFinite(nowMs)
+    ? nowMs
+    : Date.now();
+}
+
+export function isFallbackActive(): boolean {
+  return telemetryState.active;
+}
+
+/**
+ * Records an in-memory fallback activation due to a Redis timeout or outage.
+ * Consecutive calls while already active update metadata without double-counting
+ * the same outage episode.
+ */
+export function recordFallbackActivation(
+  reason?: string,
+  tierName?: string,
+  nowMs?: number,
+): void {
+  const ts = normalizeTimestampMs(nowMs);
+  if (!telemetryState.active) {
+    telemetryState.active = true;
+    telemetryState.activationCount += 1;
+    telemetryState.currentEpisodeStartMs = ts;
+  }
+  telemetryState.lastActivatedAtMs = ts;
+  if (reason && reason.trim().length > 0) {
+    telemetryState.lastReason = reason.trim();
+  }
+  if (tierName && tierName.trim().length > 0) {
+    tierLastActivatedAtMs.set(tierName.trim(), ts);
+  }
+}
+
+/**
+ * Marks the end of an active fallback outage episode when Redis recovers
+ * and accumulates its duration into totalFallbackDurationMs.
+ */
+export function recordFallbackRecovery(nowMs?: number): void {
+  if (!telemetryState.active) {
+    return;
+  }
+  const ts = normalizeTimestampMs(nowMs);
+  if (telemetryState.currentEpisodeStartMs !== null) {
+    telemetryState.accumulatedDurationMs += Math.max(
+      0,
+      ts - telemetryState.currentEpisodeStartMs,
+    );
+  }
+  telemetryState.active = false;
+  telemetryState.currentEpisodeStartMs = null;
+  telemetryState.lastRecoveredAtMs = ts;
+}
+
+/**
+ * Returns a structured telemetry snapshot suitable for `/api/health` or admin vitals.
+ */
+export function getFallbackMetricsSnapshot(
+  nowMs?: number,
+): FallbackMetricsSnapshot {
+  const ts = normalizeTimestampMs(nowMs);
+  const activeFallbackDurationMs =
+    telemetryState.active && telemetryState.currentEpisodeStartMs !== null
+      ? Math.max(0, ts - telemetryState.currentEpisodeStartMs)
+      : 0;
+
+  let totalRequests = 0;
+  let allowedRequests = 0;
+  let rejectedRequests = 0;
+  let activeBucketCount = 0;
+  const tiers: Record<string, FallbackTierTelemetry> = {};
+
+  for (const [tier, limiter] of fallbackLimiters.entries()) {
+    const m = limiter.getMetrics();
+    totalRequests += m.totalRequests;
+    allowedRequests += m.allowedRequests;
+    rejectedRequests += m.rejectedRequests;
+    activeBucketCount += m.activeBuckets;
+    tiers[tier] = {
+      tier,
+      ...m,
+      lastActivatedAtMs: tierLastActivatedAtMs.get(tier) ?? null,
+    };
+  }
+
+  return {
+    active: telemetryState.active,
+    activationCount: telemetryState.activationCount,
+    totalRequests,
+    allowedRequests,
+    rejectedRequests,
+    totalFallbackDurationMs:
+      telemetryState.accumulatedDurationMs + activeFallbackDurationMs,
+    activeFallbackDurationMs,
+    lastActivatedAtMs: telemetryState.lastActivatedAtMs,
+    lastRecoveredAtMs: telemetryState.lastRecoveredAtMs,
+    lastReason: telemetryState.lastReason,
+    activeBucketCount,
+    tiers,
+    exportedAt: new Date(ts).toISOString(),
+  };
+}
+
+/**
+ * Formats fallback telemetry in Prometheus/OpenMetrics text exposition format.
+ */
+export function formatFallbackMetricsPrometheus(
+  snapshot: FallbackMetricsSnapshot = getFallbackMetricsSnapshot(),
+): string {
+  const lines = [
+    "# HELP worksphere_ratelimit_fallback_active Whether the in-memory rate-limit fallback is currently active (1 = active, 0 = inactive).",
+    "# TYPE worksphere_ratelimit_fallback_active gauge",
+    `worksphere_ratelimit_fallback_active ${snapshot.active ? 1 : 0}`,
+    "# HELP worksphere_ratelimit_fallback_activations_total Total number of fallback activation episodes triggered by Redis timeouts or outages.",
+    "# TYPE worksphere_ratelimit_fallback_activations_total counter",
+    `worksphere_ratelimit_fallback_activations_total ${snapshot.activationCount}`,
+    "# HELP worksphere_ratelimit_fallback_duration_ms_total Cumulative duration spent in fallback mode in milliseconds.",
+    "# TYPE worksphere_ratelimit_fallback_duration_ms_total counter",
+    `worksphere_ratelimit_fallback_duration_ms_total ${snapshot.totalFallbackDurationMs}`,
+    "# HELP worksphere_ratelimit_fallback_requests_total Total requests evaluated by the in-memory fallback limiter.",
+    "# TYPE worksphere_ratelimit_fallback_requests_total counter",
+    `worksphere_ratelimit_fallback_requests_total{outcome="allowed"} ${snapshot.allowedRequests}`,
+    `worksphere_ratelimit_fallback_requests_total{outcome="rejected"} ${snapshot.rejectedRequests}`,
+    "# HELP worksphere_ratelimit_fallback_active_buckets Active client buckets currently tracked in memory.",
+    "# TYPE worksphere_ratelimit_fallback_active_buckets gauge",
+    `worksphere_ratelimit_fallback_active_buckets ${snapshot.activeBucketCount}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Resets fallback telemetry counters and episode state without clearing limiters.
+ */
+export function resetFallbackMetrics(): void {
+  telemetryState.active = false;
+  telemetryState.activationCount = 0;
+  telemetryState.currentEpisodeStartMs = null;
+  telemetryState.accumulatedDurationMs = 0;
+  telemetryState.lastActivatedAtMs = null;
+  telemetryState.lastRecoveredAtMs = null;
+  telemetryState.lastReason = null;
+  tierLastActivatedAtMs.clear();
+  for (const limiter of fallbackLimiters.values()) {
+    limiter.resetMetrics();
+  }
 }
 
 /**
@@ -461,83 +638,11 @@ export function getOrCreateFallbackLimiter(
 }
 
 /**
- * Returns a snapshot of fallback rate-limiter telemetry suitable for `/api/health`
- * and admin system vitals exporters.
- */
-export function getFallbackTelemetrySnapshot(
-  nowMonotonic?: number,
-): FallbackTelemetrySnapshot {
-  const now = resolveMonotonicNow(nowMonotonic);
-  const currentEpisodeDurationMs =
-    telemetryState.active && telemetryState.activeSinceMs !== null
-      ? Math.max(0, now - telemetryState.activeSinceMs)
-      : 0;
-  const totalDurationMs =
-    telemetryState.completedDurationMs + currentEpisodeDurationMs;
-
-  const byTier: Record<string, FallbackTierMetrics> = {};
-  let totalActiveBuckets = 0;
-
-  for (const [tierName, limiter] of fallbackLimiters.entries()) {
-    totalActiveBuckets += limiter.size;
-    const stats = telemetryState.byTier.get(tierName);
-    byTier[tierName] = {
-      activationCount: stats?.activationCount ?? 0,
-      requestCount: stats?.requestCount ?? 0,
-      allowedCount: stats?.allowedCount ?? 0,
-      rejectedCount: stats?.rejectedCount ?? 0,
-      activeBuckets: limiter.size,
-    };
-  }
-
-  for (const [tierName, stats] of telemetryState.byTier.entries()) {
-    if (!(tierName in byTier)) {
-      byTier[tierName] = {
-        activationCount: stats.activationCount,
-        requestCount: stats.requestCount,
-        allowedCount: stats.allowedCount,
-        rejectedCount: stats.rejectedCount,
-        activeBuckets: 0,
-      };
-    }
-  }
-
-  return {
-    active: telemetryState.active,
-    activationCount: telemetryState.activationCount,
-    requestCount: telemetryState.requestCount,
-    allowedCount: telemetryState.allowedCount,
-    rejectedCount: telemetryState.rejectedCount,
-    totalDurationMs,
-    currentEpisodeDurationMs,
-    activeBuckets: totalActiveBuckets,
-    lastActivatedAtMs: telemetryState.lastActivatedAtMs,
-    byTier,
-  };
-}
-
-/**
- * Resets all fallback telemetry counters and episode duration state.
- */
-export function resetFallbackTelemetry(): void {
-  telemetryState.active = false;
-  telemetryState.activeSinceMs = null;
-  telemetryState.lastActivatedAtMs = null;
-  telemetryState.completedDurationMs = 0;
-  telemetryState.activationCount = 0;
-  telemetryState.requestCount = 0;
-  telemetryState.allowedCount = 0;
-  telemetryState.rejectedCount = 0;
-  telemetryState.activeTiersInEpisode.clear();
-  telemetryState.byTier.clear();
-}
-
-/**
- * Clears cached fallback limiters and resets fallback telemetry (for testing).
+ * Clears cached fallback limiters and resets telemetry (for testing).
  */
 export function resetFallbackLimiters(): void {
   fallbackLimiters.clear();
-  resetFallbackTelemetry();
+  resetFallbackMetrics();
 }
 
 /**
@@ -553,7 +658,12 @@ export function isRecoverableRedisError(error: unknown): boolean {
     if (err.status === 503 || err.statusCode === 503) {
       return true;
     }
-    if (err.code === "ETIMEDOUT" || err.code === "ECONNREFUSED" || err.code === "ECONNRESET" || err.code === "EAI_AGAIN") {
+    if (
+      err.code === "ETIMEDOUT" ||
+      err.code === "ECONNREFUSED" ||
+      err.code === "ECONNRESET" ||
+      err.code === "EAI_AGAIN"
+    ) {
       return true;
     }
     if (typeof err.message === "string") {

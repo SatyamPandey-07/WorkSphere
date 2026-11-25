@@ -2,16 +2,13 @@ import {
   TokenBucketLimiter,
   getOrCreateFallbackLimiter,
   resetFallbackLimiters,
-  isRecoverableRedisError,
+  resetFallbackMetrics,
   recordFallbackActivation,
   recordFallbackRecovery,
-  getFallbackTelemetrySnapshot,
-  resetFallbackTelemetry,
+  getFallbackMetricsSnapshot,
+  formatFallbackMetricsPrometheus,
+  isFallbackActive,
 } from "@/lib/rateLimit/tokenBucketFallback";
-import {
-  buildSystemVitalsSnapshot,
-  formatSystemVitalsPrometheus,
-} from "@/lib/export/domain/systemVitalExporter";
 import { NextRequest, NextResponse } from "next/server";
 import type { MiddlewareContext } from "@/lib/middleware/types";
 
@@ -340,6 +337,100 @@ describe("API Gateway Middleware Fallback Integration Tests", () => {
     const res2 = await rateLimitMiddleware(req2, ctx, mockNext);
     expect(res2.status).toBe(200);
     expect(res2.headers.get("RateLimit-Remaining")).toBe("59");
+    expect(isFallbackActive()).toBe(false);
+    const snapshot = getFallbackMetricsSnapshot();
+    expect(snapshot.activationCount).toBe(1);
+    expect(snapshot.totalRequests).toBe(1);
+  });
+});
+
+describe("Fallback Telemetry Counters & Snapshot Exporter", () => {
+  beforeEach(() => {
+    resetFallbackLimiters();
+  });
+
+  it("tracks activation count, episode duration, allowed/rejected requests, and recovery", () => {
+    const initial = getFallbackMetricsSnapshot(1_000);
+    expect(initial.active).toBe(false);
+    expect(initial.activationCount).toBe(0);
+    expect(initial.totalRequests).toBe(0);
+    expect(initial.rejectedRequests).toBe(0);
+    expect(initial.totalFallbackDurationMs).toBe(0);
+
+    // First outage episode starts at t=1000ms
+    recordFallbackActivation("ETIMEDOUT", "tier:search", 1_000);
+    recordFallbackActivation("ETIMEDOUT", "tier:search", 1_250); // Same episode, should not increment activationCount
+    expect(isFallbackActive()).toBe(true);
+
+    const limiter = getOrCreateFallbackLimiter("tier:search", 2, 1, 0);
+    expect(limiter.consume("client-1", 1, 100).allowed).toBe(true);
+    expect(limiter.consume("client-1", 1, 100).allowed).toBe(true);
+    expect(limiter.consume("client-1", 1, 100).allowed).toBe(false);
+
+    const midEpisode = getFallbackMetricsSnapshot(2_500);
+    expect(midEpisode.active).toBe(true);
+    expect(midEpisode.activationCount).toBe(1);
+    expect(midEpisode.activeFallbackDurationMs).toBe(1_500);
+    expect(midEpisode.totalFallbackDurationMs).toBe(1_500);
+    expect(midEpisode.totalRequests).toBe(3);
+    expect(midEpisode.allowedRequests).toBe(2);
+    expect(midEpisode.rejectedRequests).toBe(1);
+    expect(midEpisode.lastReason).toBe("ETIMEDOUT");
+    expect(midEpisode.tiers["tier:search"]).toMatchObject({
+      tier: "tier:search",
+      totalRequests: 3,
+      allowedRequests: 2,
+      rejectedRequests: 1,
+      activeBuckets: 1,
+      lastActivatedAtMs: 1_250,
+    });
+
+    // Recover at t=3000ms (episode 1 duration = 2000ms)
+    recordFallbackRecovery(3_000);
+    expect(isFallbackActive()).toBe(false);
+
+    // Second outage episode from t=5000ms to t=5400ms (duration = 400ms)
+    recordFallbackActivation("503 Service Unavailable", "tier:mutations", 5_000);
+    const secondLimiter = getOrCreateFallbackLimiter("tier:mutations", 1, 1, 0);
+    expect(secondLimiter.consume("client-2", 1, 200).allowed).toBe(true);
+    expect(secondLimiter.consume("client-2", 1, 200).allowed).toBe(false);
+    recordFallbackRecovery(5_400);
+
+    const finalSnapshot = getFallbackMetricsSnapshot(6_000);
+    expect(finalSnapshot.active).toBe(false);
+    expect(finalSnapshot.activationCount).toBe(2);
+    expect(finalSnapshot.activeFallbackDurationMs).toBe(0);
+    expect(finalSnapshot.totalFallbackDurationMs).toBe(2_400);
+    expect(finalSnapshot.totalRequests).toBe(5);
+    expect(finalSnapshot.allowedRequests).toBe(3);
+    expect(finalSnapshot.rejectedRequests).toBe(2);
+    expect(finalSnapshot.activeBucketCount).toBe(2);
+
+    const prom = formatFallbackMetricsPrometheus(finalSnapshot);
+    expect(prom).toContain("worksphere_ratelimit_fallback_activations_total 2");
+    expect(prom).toContain("worksphere_ratelimit_fallback_duration_ms_total 2400");
+    expect(prom).toContain('worksphere_ratelimit_fallback_requests_total{outcome="rejected"} 2');
+  });
+
+  it("resets telemetry counters cleanly via resetFallbackMetrics and resetFallbackLimiters", () => {
+    recordFallbackActivation("503", "tier:search", 1_000);
+    const limiter = getOrCreateFallbackLimiter("tier:search", 1, 1, 0);
+    limiter.consume("u1", 1, 100);
+    limiter.consume("u1", 1, 100);
+
+    expect(getFallbackMetricsSnapshot(1_500).rejectedRequests).toBe(1);
+
+    resetFallbackMetrics();
+    const afterMetricsReset = getFallbackMetricsSnapshot(2_000);
+    expect(afterMetricsReset.active).toBe(false);
+    expect(afterMetricsReset.activationCount).toBe(0);
+    expect(afterMetricsReset.totalRequests).toBe(0);
+    expect(afterMetricsReset.rejectedRequests).toBe(0);
+    expect(afterMetricsReset.totalFallbackDurationMs).toBe(0);
+    expect(afterMetricsReset.lastReason).toBeNull();
+
+    resetFallbackLimiters();
+    expect(Object.keys(getFallbackMetricsSnapshot(2_000).tiers)).toHaveLength(0);
   });
 });
 

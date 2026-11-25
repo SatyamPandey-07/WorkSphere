@@ -81,7 +81,8 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
         if (isRecoverableRedisError(err)) {
           // Activate in-memory token bucket fallback limiter to prevent unbounded traffic during outages
           const tierKey = `sensitive:${sensitiveRule.name}`;
-          recordFallbackActivation(tierKey);
+          const reason = err instanceof Error ? err.message : String(err);
+          recordFallbackActivation(reason, tierKey);
           const refillRate =
             sensitiveRule.limit / (sensitiveRule.windowMs / 1000);
           const fallbackLimiter = getOrCreateFallbackLimiter(
@@ -150,7 +151,8 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
           if (isRecoverableRedisError(err)) {
             // Activate client-side / edge token bucket fallback when Redis experiences transient failure
             const tierKey = `tier:${tier.name}`;
-            recordFallbackActivation(tierKey);
+            const reason = err instanceof Error ? err.message : String(err);
+            recordFallbackActivation(reason, tierKey);
             const refillRate = tier.limit / (tier.windowMs / 1000);
             const fallbackLimiter = getOrCreateFallbackLimiter(
               tierKey,

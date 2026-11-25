@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
-import { getFallbackTelemetrySnapshot } from "@/lib/rateLimit/tokenBucketFallback";
+import { getFallbackMetricsSnapshot } from "@/lib/rateLimit/tokenBucketFallback";
 
 export async function GET() {
   const startTime = performance.now();
@@ -50,7 +50,7 @@ export async function GET() {
         redisMs,
         totalMs: Math.round(performance.now() - startTime),
       },
-      rateLimitFallback: getFallbackTelemetrySnapshot(),
+      rateLimitFallback: getFallbackMetricsSnapshot(),
       version: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
     },
     { status: statusCode }

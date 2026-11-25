@@ -677,17 +677,276 @@ export const SeatHoldHeartbeatService = {
 export function resetMemorySeatLocks(): void {
   stopAllSeatLockRenewalHeartbeats();
   memoryLocks.clear();
- fix/redlock-monotonic-fencing-drift
   resetMonotonicFencingSequence();
-
   getRedisKeyspaceManager().reset();
- main
+  seatHoldTimingWheel.reset();
 }
 
 export interface SeatWebLockOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
 }
+
+/**
+ * Hashed Timing Wheel for Seat Hold Expirations (#10455)
+ *
+ * Implements a circular hashed timing wheel to schedule seat hold expirations and lock renewals
+ * efficiently without creating thousands of disparate Node/browser timer handles.
+ *
+ * Wrap-Around Fix (#10455):
+ * - Problem: In a naive timing wheel, scheduling a task with delay `d > wheelSize` calculates
+ *   `targetSlot = (currentSlot + ticks) % wheelSize`. If the wheel does not track remaining complete
+ *   wheel rotations (`remainingRotations`), the task will be fired the first time the wheel's hand
+ *   visits `targetSlot` during revolution 0, prematurely executing tasks that requested delays
+ *   spanning multiple revolutions.
+ * - Solution:
+ *   1. Calculate total ticks: `ticks = Math.max(0, Math.floor(delayMs / tickDurationMs))`.
+ *   2. Target slot: `slotIndex = (currentSlot + ticks) % wheelSize`.
+ *   3. Complete revolutions: `rotations = Math.floor(ticks / wheelSize)`.
+ *   4. Each wheel tick advances `currentSlot = (currentSlot + 1) % wheelSize`.
+ *   5. For each task in the visited slot:
+ *      - If `task.remainingRotations > 0`, decrement `remainingRotations--` and retain in the slot.
+ *      - If `task.remainingRotations === 0`, remove from slot and execute callback.
+ *   6. Supports cancellation, rescheduling, zero-delay execution, and arbitrary multi-revolution delays.
+ */
+
+export interface TimingWheelTask {
+  id: string;
+  delayMs: number;
+  remainingRotations: number;
+  slotIndex: number;
+  targetTick: number;
+  callback: () => void | Promise<void>;
+  cancelled: boolean;
+  executed: boolean;
+}
+
+export interface HashedTimingWheelOptions {
+  /** Number of circular slots in the wheel (default: 60) */
+  wheelSize?: number;
+  /** Granularity of each tick in milliseconds (default: 1000ms = 1s) */
+  tickDurationMs?: number;
+}
+
+export class HashedTimingWheel {
+  public readonly wheelSize: number;
+  public readonly tickDurationMs: number;
+  private slots: Array<Map<string, TimingWheelTask>>;
+  private tasksById = new Map<string, TimingWheelTask>();
+  private currentSlot: number = 0;
+  private currentTick: number = 0;
+  private timerHandle: ReturnType<typeof setInterval> | null = null;
+  private isRunning: boolean = false;
+
+  constructor(options?: HashedTimingWheelOptions) {
+    this.wheelSize = Math.max(1, options?.wheelSize ?? 60);
+    this.tickDurationMs = Math.max(1, options?.tickDurationMs ?? 1000);
+    this.slots = Array.from({ length: this.wheelSize }, () => new Map<string, TimingWheelTask>());
+  }
+
+  /**
+   * Schedules a task to run after delayMs milliseconds.
+   * Correctly computes target slot and remaining rotations to prevent premature wrap-around execution.
+   */
+  public schedule(
+    id: string,
+    delayMs: number,
+    callback: () => void | Promise<void>,
+  ): TimingWheelTask {
+    // If a task with this id already exists, cancel it first (rescheduling)
+    if (this.tasksById.has(id)) {
+      this.cancel(id);
+    }
+
+    const safeDelay = Math.max(0, delayMs);
+    const ticks = Math.floor(safeDelay / this.tickDurationMs);
+
+    // Immediate execution for zero-delay (0 ticks)
+    if (ticks === 0 && safeDelay === 0) {
+      const task: TimingWheelTask = {
+        id,
+        delayMs: 0,
+        remainingRotations: 0,
+        slotIndex: this.currentSlot,
+        targetTick: this.currentTick,
+        callback,
+        cancelled: false,
+        executed: true,
+      };
+      try {
+        callback();
+      } catch (err) {
+        console.error(`[HashedTimingWheel] Task ${id} immediate execution error:`, err);
+      }
+      return task;
+    }
+
+    // Wrap-around calculation (#10455)
+    // Ticks at which the task should fire in absolute time
+    const targetTick = this.currentTick + Math.max(1, ticks);
+    // Target slot in the circular wheel
+    const slotIndex = targetTick % this.wheelSize;
+    // Calculate how many full revolutions of the wheel before reaching targetTick
+    // When the wheel visits slotIndex, targetTick may still be in a future revolution.
+    const ticksUntilTarget = targetTick - this.currentTick;
+    // Difference between target slot and current slot (modulo wheelSize)
+    const slotDistance = (slotIndex - this.currentSlot + this.wheelSize) % this.wheelSize;
+    const remainingRotations = Math.floor(
+      (ticksUntilTarget - (slotDistance === 0 ? this.wheelSize : slotDistance)) / this.wheelSize,
+    );
+
+    const task: TimingWheelTask = {
+      id,
+      delayMs: safeDelay,
+      remainingRotations: Math.max(0, remainingRotations),
+      slotIndex,
+      targetTick,
+      callback,
+      cancelled: false,
+      executed: false,
+    };
+
+    this.slots[slotIndex].set(id, task);
+    this.tasksById.set(id, task);
+
+    return task;
+  }
+
+  /**
+   * Reschedules an existing task with a new delay.
+   */
+  public reschedule(
+    id: string,
+    newDelayMs: number,
+    newCallback?: () => void | Promise<void>,
+  ): TimingWheelTask | null {
+    const existing = this.tasksById.get(id);
+    const callback = newCallback || existing?.callback;
+    if (!callback) return null;
+
+    this.cancel(id);
+    return this.schedule(id, newDelayMs, callback);
+  }
+
+  /**
+   * Cancels a scheduled task by ID.
+   */
+  public cancel(id: string): boolean {
+    const task = this.tasksById.get(id);
+    if (!task) return false;
+
+    task.cancelled = true;
+    this.slots[task.slotIndex].delete(id);
+    this.tasksById.delete(id);
+    return true;
+  }
+
+  /**
+   * Advances the timing wheel by one tick and executes eligible tasks.
+   * Only executes tasks whose remainingRotations has reached 0 (and targetTick matches).
+   */
+  public advanceTick(): TimingWheelTask[] {
+    this.currentSlot = (this.currentSlot + 1) % this.wheelSize;
+    this.currentTick += 1;
+
+    const currentSlotTasks = this.slots[this.currentSlot];
+    const executedTasks: TimingWheelTask[] = [];
+
+    // Snapshot keys to allow safe mutation/deletion during iteration
+    const taskIds = Array.from(currentSlotTasks.keys());
+
+    for (const id of taskIds) {
+      const task = currentSlotTasks.get(id);
+      if (!task || task.cancelled || task.executed) {
+        currentSlotTasks.delete(id);
+        this.tasksById.delete(id);
+        continue;
+      }
+
+      // Check remaining revolutions (#10455 wrap-around fix)
+      if (task.remainingRotations > 0) {
+        task.remainingRotations -= 1;
+        // Retain in current slot for next revolution
+        continue;
+      }
+
+      // Elapsed rotations completed: execute task
+      currentSlotTasks.delete(id);
+      this.tasksById.delete(id);
+      task.executed = true;
+      executedTasks.push(task);
+
+      try {
+        task.callback();
+      } catch (err) {
+        console.error(`[HashedTimingWheel] Task ${id} execution error:`, err);
+      }
+    }
+
+    return executedTasks;
+  }
+
+  /**
+   * Starts the internal background timer.
+   */
+  public start(): void {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    this.timerHandle = setInterval(() => {
+      this.advanceTick();
+    }, this.tickDurationMs);
+    // Unref timer in Node environment so it doesn't block process exit
+    if (this.timerHandle && typeof (this.timerHandle as any).unref === "function") {
+      (this.timerHandle as any).unref();
+    }
+  }
+
+  /**
+   * Stops the internal background timer.
+   */
+  public stop(): void {
+    if (this.timerHandle) {
+      clearInterval(this.timerHandle);
+      this.timerHandle = null;
+    }
+    this.isRunning = false;
+  }
+
+  /**
+   * Clears all tasks and resets wheel position.
+   */
+  public reset(): void {
+    this.stop();
+    for (const slot of this.slots) {
+      slot.clear();
+    }
+    this.tasksById.clear();
+    this.currentSlot = 0;
+    this.currentTick = 0;
+  }
+
+  public getTask(id: string): TimingWheelTask | undefined {
+    return this.tasksById.get(id);
+  }
+
+  public getCurrentSlot(): number {
+    return this.currentSlot;
+  }
+
+  public getCurrentTick(): number {
+    return this.currentTick;
+  }
+
+  public getTaskCount(): number {
+    return this.tasksById.size;
+  }
+}
+
+/** Global singleton seat hold timing wheel (60 slots @ 1s per tick = 60s per revolution) */
+export const seatHoldTimingWheel = new HashedTimingWheel({
+  wheelSize: 60,
+  tickDurationMs: 1000,
+});
 
 /**
  * Client-side Web Locks helper using Navigator.locks API.

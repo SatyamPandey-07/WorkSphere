@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
 import {
   getLatestVenueTimestamp,
   generateETag,
@@ -275,7 +276,23 @@ export async function GET(request: NextRequest) {
         console.warn("Phonetic venue search fallback:", err);
       }
     } else if (id) {
-      venues = [{ id, name: "Workspace Venue", address: "Sample Address" }];
+      const venue = await prisma.venue.findUnique({
+        where: { id },
+      });
+      if (!venue) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Venue not found",
+            count: 0,
+            venues: [],
+            results: [],
+            data: [],
+          },
+          { status: 404, headers: responseHeaders },
+        );
+      }
+      venues = [venue as unknown as Record<string, unknown>];
     }
 
     const minWifiSpeedParam = searchParams.get("minWifiSpeed");

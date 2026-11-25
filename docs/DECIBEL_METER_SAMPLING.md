@@ -1,6 +1,6 @@
 # Decibel Meter Real-Time Audio Sampling & Processing Guide
 
-This document provides a comprehensive technical guide to WorkSphere's real-time decibel sampling system. It details the client-side Web Audio API pipeline implemented in [`DecibelMeterModal.tsx`](file:///d:/ECSOC/Worksphere/WorkSphere/src/components/DecibelMeterModal.tsx) and [`useDecibelMeter.ts`](file:///d:/ECSOC/Worksphere/WorkSphere/src/hooks/useDecibelMeter.ts), browser permission handling, RMS decibel calculation formulas, noise classification boundaries, strict privacy safeguards, and step-by-step testing instructions using browser Web Audio mocks.
+This document provides a comprehensive technical guide to WorkSphere's real-time decibel sampling system. It details the client-side Web Audio API pipeline implemented in [`DecibelMeterModal.tsx`](../src/components/DecibelMeterModal.tsx) and [`useDecibelMeter.ts`](../src/hooks/useDecibelMeter.ts), browser permission handling, RMS decibel calculation formulas, noise classification boundaries, strict privacy safeguards, and step-by-step testing instructions using browser Web Audio mocks.
 
 ---
 

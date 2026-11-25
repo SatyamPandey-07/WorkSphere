@@ -21,14 +21,24 @@
     height: 5px;
     border: 1px solid rgb(52 211 153 / 35%);
     border-radius: 9999px;
-    background: linear-gradient(90deg, rgb(6 78 59 / 75%), rgb(16 185 129 / 45%), rgb(6 78 59 / 75%));
+    background: linear-gradient(
+      90deg,
+      rgb(6 78 59 / 75%),
+      rgb(16 185 129 / 45%),
+      rgb(6 78 59 / 75%)
+    );
   }
 
   .audio-eq-energy-slider::-moz-range-track {
     height: 5px;
     border: 1px solid rgb(52 211 153 / 35%);
     border-radius: 9999px;
-    background: linear-gradient(90deg, rgb(6 78 59 / 75%), rgb(16 185 129 / 45%), rgb(6 78 59 / 75%));
+    background: linear-gradient(
+      90deg,
+      rgb(6 78 59 / 75%),
+      rgb(16 185 129 / 45%),
+      rgb(6 78 59 / 75%)
+    );
   }
 
   .audio-eq-energy-slider::-webkit-slider-thumb {
@@ -38,8 +48,15 @@
     appearance: none;
     border: 2px solid rgb(187 247 208);
     border-radius: 50%;
-    background: radial-gradient(circle, rgb(236 253 245) 0 20%, rgb(34 197 94) 45%, rgb(6 78 59) 100%);
-    box-shadow: 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 85%), inset 0 0 5px rgb(220 252 231 / 80%);
+    background: radial-gradient(
+      circle,
+      rgb(236 253 245) 0 20%,
+      rgb(34 197 94) 45%,
+      rgb(6 78 59) 100%
+    );
+    box-shadow:
+      0 0 var(--energy-glow, 8px) rgb(74 222 128 / 85%),
+      inset 0 0 5px rgb(220 252 231 / 80%);
     transition: box-shadow 150ms ease;
   }
 
@@ -48,8 +65,15 @@
     height: 14px;
     border: 2px solid rgb(187 247 208);
     border-radius: 50%;
-    background: radial-gradient(circle, rgb(236 253 245) 0 20%, rgb(34 197 94) 45%, rgb(6 78 59) 100%);
-    box-shadow: 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 85%), inset 0 0 5px rgb(220 252 231 / 80%);
+    background: radial-gradient(
+      circle,
+      rgb(236 253 245) 0 20%,
+      rgb(34 197 94) 45%,
+      rgb(6 78 59) 100%
+    );
+    box-shadow:
+      0 0 var(--energy-glow, 8px) rgb(74 222 128 / 85%),
+      inset 0 0 5px rgb(220 252 231 / 80%);
     transition: box-shadow 150ms ease;
   }
 
@@ -60,11 +84,17 @@
   }
 
   .audio-eq-energy-slider:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px rgb(3 7 18), 0 0 0 5px rgb(187 247 208), 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 95%);
+    box-shadow:
+      0 0 0 3px rgb(3 7 18),
+      0 0 0 5px rgb(187 247 208),
+      0 0 var(--energy-glow, 8px) rgb(74 222 128 / 95%);
   }
 
   .audio-eq-energy-slider:focus-visible::-moz-range-thumb {
-    box-shadow: 0 0 0 3px rgb(3 7 18), 0 0 0 5px rgb(187 247 208), 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 95%);
+    box-shadow:
+      0 0 0 3px rgb(3 7 18),
+      0 0 0 5px rgb(187 247 208),
+      0 0 var(--energy-glow, 8px) rgb(74 222 128 / 95%);
   }
 }
 
@@ -144,30 +174,49 @@
   /* ─── Hard-Light Construct Border Glow Utilities ─────────────────── */
   .hard-light-construct {
     position: relative;
-    border: 1px solid color-mix(in srgb, var(--primary-accent, #3b82f6) 75%, #ffffff);
+    border: 1px solid
+      color-mix(in srgb, var(--primary-accent, #3b82f6) 75%, #ffffff);
     box-shadow:
-      0 0 1px 1px color-mix(in srgb, var(--primary-accent, #3b82f6) 80%, #ffffff),
-      0 0 12px color-mix(in srgb, var(--primary-accent, #3b82f6) 45%, transparent),
-      0 0 24px color-mix(in srgb, var(--primary-accent, #3b82f6) 25%, transparent),
-      inset 0 0 12px color-mix(in srgb, var(--primary-accent, #3b82f6) 18%, transparent);
-    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+      0 0 1px 1px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 80%, #ffffff),
+      0 0 12px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 45%, transparent),
+      0 0 24px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 25%, transparent),
+      inset 0 0 12px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 18%, transparent);
+    transition:
+      box-shadow 0.25s ease,
+      border-color 0.25s ease;
   }
 
   .hard-light-construct:hover {
-    border-color: color-mix(in srgb, var(--primary-accent, #3b82f6) 90%, #ffffff);
+    border-color: color-mix(
+      in srgb,
+      var(--primary-accent, #3b82f6) 90%,
+      #ffffff
+    );
     box-shadow:
-      0 0 2px 1.5px color-mix(in srgb, var(--primary-accent, #3b82f6) 95%, #ffffff),
-      0 0 16px color-mix(in srgb, var(--primary-accent, #3b82f6) 60%, transparent),
-      0 0 32px color-mix(in srgb, var(--primary-accent, #3b82f6) 35%, transparent),
-      inset 0 0 16px color-mix(in srgb, var(--primary-accent, #3b82f6) 28%, transparent);
+      0 0 2px 1.5px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 95%, #ffffff),
+      0 0 16px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 60%, transparent),
+      0 0 32px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 35%, transparent),
+      inset 0 0 16px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 28%, transparent);
   }
 
   .border-glow-construct {
-    border: 1px solid color-mix(in srgb, var(--primary-accent, #3b82f6) 70%, transparent);
+    border: 1px solid
+      color-mix(in srgb, var(--primary-accent, #3b82f6) 70%, transparent);
     box-shadow:
-      0 0 1px 1px color-mix(in srgb, var(--primary-accent, #3b82f6) 60%, transparent),
-      0 0 10px color-mix(in srgb, var(--primary-accent, #3b82f6) 40%, transparent),
-      inset 0 0 8px color-mix(in srgb, var(--primary-accent, #3b82f6) 20%, transparent);
+      0 0 1px 1px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 60%, transparent),
+      0 0 10px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 40%, transparent),
+      inset 0 0 8px
+        color-mix(in srgb, var(--primary-accent, #3b82f6) 20%, transparent);
   }
 
   .border-glow-construct-cyan {
@@ -202,19 +251,28 @@
   }
 
   @keyframes hardLightConstructPulse {
-    0%, 100% {
+    0%,
+    100% {
       box-shadow:
-        0 0 1px 1px color-mix(in srgb, var(--primary-accent, #3b82f6) 80%, #ffffff),
-        0 0 12px color-mix(in srgb, var(--primary-accent, #3b82f6) 40%, transparent),
-        0 0 24px color-mix(in srgb, var(--primary-accent, #3b82f6) 20%, transparent),
-        inset 0 0 10px color-mix(in srgb, var(--primary-accent, #3b82f6) 15%, transparent);
+        0 0 1px 1px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 80%, #ffffff),
+        0 0 12px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 40%, transparent),
+        0 0 24px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 20%, transparent),
+        inset 0 0 10px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 15%, transparent);
     }
     50% {
       box-shadow:
-        0 0 2px 1.5px color-mix(in srgb, var(--primary-accent, #3b82f6) 95%, #ffffff),
-        0 0 18px color-mix(in srgb, var(--primary-accent, #3b82f6) 65%, transparent),
-        0 0 36px color-mix(in srgb, var(--primary-accent, #3b82f6) 35%, transparent),
-        inset 0 0 16px color-mix(in srgb, var(--primary-accent, #3b82f6) 30%, transparent);
+        0 0 2px 1.5px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 95%, #ffffff),
+        0 0 18px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 65%, transparent),
+        0 0 36px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 35%, transparent),
+        inset 0 0 16px
+          color-mix(in srgb, var(--primary-accent, #3b82f6) 30%, transparent);
     }
   }
 
@@ -693,6 +751,11 @@ textarea:focus::placeholder {
   }
 }
 
+/* Leaflet map initial background - prevents flash of light background (#9161) */
+.leaflet-container {
+  background: #0b0f17 !important;
+}
+
 /* Leaflet map marker popup z-index stacking context for mobile viewports (<640px) */
 .leaflet-popup-pane {
   z-index: 1000 !important;
@@ -907,7 +970,8 @@ textarea:focus::placeholder {
 }
 
 /* ─── High-Contrast Mode Styles (WCAG 2.1 AAA Compliant - 7:1 Ratio) ── */
-html.high-contrast {
+html.high-contrast,
+html[data-high-contrast="true"] {
   --background: #ffffff;
   --foreground: #000000;
   --contrast-border: #000000;
@@ -929,7 +993,10 @@ html.high-contrast.dark,
 html.high-contrast.cyberpunk,
 html.high-contrast .dark,
 html.dark.high-contrast,
-html[data-high-contrast="true"].dark {
+html[data-high-contrast="true"].dark,
+html[data-high-contrast="true"].cyberpunk,
+html[data-high-contrast="true"] .dark,
+html.dark[data-high-contrast="true"] {
   --background: #000000;
   --foreground: #ffffff;
   --contrast-border: #ffffff;
@@ -948,7 +1015,9 @@ html[data-high-contrast="true"].dark {
 }
 
 html.high-contrast,
-html.high-contrast body {
+html.high-contrast body,
+html[data-high-contrast="true"],
+html[data-high-contrast="true"] body {
   background-color: #ffffff !important;
   color: #000000 !important;
 }
@@ -956,7 +1025,11 @@ html.high-contrast body {
 html.high-contrast.dark,
 html.high-contrast.dark body,
 html.dark.high-contrast,
-html.dark.high-contrast body {
+html.dark.high-contrast body,
+html[data-high-contrast="true"].dark,
+html[data-high-contrast="true"].dark body,
+html.dark[data-high-contrast="true"],
+html.dark[data-high-contrast="true"] body {
   background-color: #000000 !important;
   color: #ffffff !important;
 }
@@ -972,7 +1045,18 @@ html.high-contrast .text-gray-700,
 html.high-contrast .text-slate-500,
 html.high-contrast .text-slate-600,
 html.high-contrast .text-slate-700,
-html.high-contrast .text-muted-foreground {
+html.high-contrast .text-muted-foreground,
+html[data-high-contrast="true"] .text-zinc-500,
+html[data-high-contrast="true"] .text-zinc-600,
+html[data-high-contrast="true"] .text-zinc-700,
+html[data-high-contrast="true"] .text-zinc-800,
+html[data-high-contrast="true"] .text-gray-500,
+html[data-high-contrast="true"] .text-gray-600,
+html[data-high-contrast="true"] .text-gray-700,
+html[data-high-contrast="true"] .text-slate-500,
+html[data-high-contrast="true"] .text-slate-600,
+html[data-high-contrast="true"] .text-slate-700,
+html[data-high-contrast="true"] .text-muted-foreground {
   color: #000000 !important;
 }
 
@@ -985,11 +1069,31 @@ html.high-contrast.dark .text-gray-500,
 html.high-contrast.dark .text-slate-300,
 html.high-contrast.dark .text-slate-400,
 html.high-contrast.dark .text-slate-500,
-html.high-contrast.dark .text-muted-foreground {
+html.high-contrast.dark .text-muted-foreground,
+html[data-high-contrast="true"].dark .text-zinc-300,
+html[data-high-contrast="true"].dark .text-zinc-400,
+html[data-high-contrast="true"].dark .text-zinc-500,
+html[data-high-contrast="true"].dark .text-gray-300,
+html[data-high-contrast="true"].dark .text-gray-400,
+html[data-high-contrast="true"].dark .text-gray-500,
+html[data-high-contrast="true"].dark .text-slate-300,
+html[data-high-contrast="true"].dark .text-slate-400,
+html[data-high-contrast="true"].dark .text-slate-500,
+html[data-high-contrast="true"].dark .text-muted-foreground,
+html.dark[data-high-contrast="true"] .text-zinc-300,
+html.dark[data-high-contrast="true"] .text-zinc-400,
+html.dark[data-high-contrast="true"] .text-zinc-500,
+html.dark[data-high-contrast="true"] .text-gray-300,
+html.dark[data-high-contrast="true"] .text-gray-400,
+html.dark[data-high-contrast="true"] .text-gray-500,
+html.dark[data-high-contrast="true"] .text-slate-300,
+html.dark[data-high-contrast="true"] .text-slate-400,
+html.dark[data-high-contrast="true"] .text-slate-500,
+html.dark[data-high-contrast="true"] .text-muted-foreground {
   color: #ffffff !important;
 }
 
-/* High-Contrast Borders */
+/* High-Contrast Borders: Increase border widths (2px solid) */
 html.high-contrast .border,
 html.high-contrast .border-t,
 html.high-contrast .border-b,
@@ -997,7 +1101,17 @@ html.high-contrast .border-l,
 html.high-contrast .border-r,
 html.high-contrast [class*="border-zinc-"],
 html.high-contrast [class*="border-gray-"],
-html.high-contrast [class*="border-slate-"] {
+html.high-contrast [class*="border-slate-"],
+html[data-high-contrast="true"] .border,
+html[data-high-contrast="true"] .border-t,
+html[data-high-contrast="true"] .border-b,
+html[data-high-contrast="true"] .border-l,
+html[data-high-contrast="true"] .border-r,
+html[data-high-contrast="true"] [class*="border-zinc-"],
+html[data-high-contrast="true"] [class*="border-gray-"],
+html[data-high-contrast="true"] [class*="border-slate-"] {
+  border-width: 2px !important;
+  border-style: solid !important;
   border-color: #000000 !important;
 }
 
@@ -1008,8 +1122,38 @@ html.high-contrast.dark .border-l,
 html.high-contrast.dark .border-r,
 html.high-contrast.dark [class*="border-zinc-"],
 html.high-contrast.dark [class*="border-gray-"],
-html.high-contrast.dark [class*="border-slate-"] {
+html.high-contrast.dark [class*="border-slate-"],
+html[data-high-contrast="true"].dark .border,
+html[data-high-contrast="true"].dark .border-t,
+html[data-high-contrast="true"].dark .border-b,
+html[data-high-contrast="true"].dark .border-l,
+html[data-high-contrast="true"].dark .border-r,
+html[data-high-contrast="true"].dark [class*="border-zinc-"],
+html[data-high-contrast="true"].dark [class*="border-gray-"],
+html[data-high-contrast="true"].dark [class*="border-slate-"],
+html.dark[data-high-contrast="true"] .border,
+html.dark[data-high-contrast="true"] .border-t,
+html.dark[data-high-contrast="true"] .border-b,
+html.dark[data-high-contrast="true"] .border-l,
+html.dark[data-high-contrast="true"] .border-r,
+html.dark[data-high-contrast="true"] [class*="border-zinc-"],
+html.dark[data-high-contrast="true"] [class*="border-gray-"],
+html.dark[data-high-contrast="true"] [class*="border-slate-"] {
+  border-width: 2px !important;
+  border-style: solid !important;
   border-color: #ffffff !important;
+}
+
+/* Remove subtle low-contrast gradients */
+html.high-contrast [class*="bg-gradient-"],
+html[data-high-contrast="true"] [class*="bg-gradient-"],
+html.high-contrast [class*="from-"],
+html[data-high-contrast="true"] [class*="from-"],
+html.high-contrast [class*="to-"],
+html[data-high-contrast="true"] [class*="to-"],
+html.high-contrast [class*="via-"],
+html[data-high-contrast="true"] [class*="via-"] {
+  background-image: none !important;
 }
 
 /* Reinforced Outline Focus Rings for all interactive components (WCAG 2.1 AAA) */
@@ -1025,7 +1169,20 @@ html.high-contrast [role="checkbox"]:focus-visible,
 html.high-contrast [role="tab"]:focus-visible,
 html.high-contrast [role="menuitem"]:focus-visible,
 html.high-contrast [role="option"]:focus-visible,
-html.high-contrast [tabindex]:focus-visible {
+html.high-contrast [tabindex]:focus-visible,
+html[data-high-contrast="true"] :focus-visible,
+html[data-high-contrast="true"] button:focus-visible,
+html[data-high-contrast="true"] a:focus-visible,
+html[data-high-contrast="true"] input:focus-visible,
+html[data-high-contrast="true"] select:focus-visible,
+html[data-high-contrast="true"] textarea:focus-visible,
+html[data-high-contrast="true"] [role="button"]:focus-visible,
+html[data-high-contrast="true"] [role="switch"]:focus-visible,
+html[data-high-contrast="true"] [role="checkbox"]:focus-visible,
+html[data-high-contrast="true"] [role="tab"]:focus-visible,
+html[data-high-contrast="true"] [role="menuitem"]:focus-visible,
+html[data-high-contrast="true"] [role="option"]:focus-visible,
+html[data-high-contrast="true"] [tabindex]:focus-visible {
   outline: 3px solid #000000 !important;
   outline-offset: 2px !important;
   box-shadow:
@@ -1045,7 +1202,33 @@ html.high-contrast.dark [role="checkbox"]:focus-visible,
 html.high-contrast.dark [role="tab"]:focus-visible,
 html.high-contrast.dark [role="menuitem"]:focus-visible,
 html.high-contrast.dark [role="option"]:focus-visible,
-html.high-contrast.dark [tabindex]:focus-visible {
+html.high-contrast.dark [tabindex]:focus-visible,
+html[data-high-contrast="true"].dark :focus-visible,
+html[data-high-contrast="true"].dark button:focus-visible,
+html[data-high-contrast="true"].dark a:focus-visible,
+html[data-high-contrast="true"].dark input:focus-visible,
+html[data-high-contrast="true"].dark select:focus-visible,
+html[data-high-contrast="true"].dark textarea:focus-visible,
+html[data-high-contrast="true"].dark [role="button"]:focus-visible,
+html[data-high-contrast="true"].dark [role="switch"]:focus-visible,
+html[data-high-contrast="true"].dark [role="checkbox"]:focus-visible,
+html[data-high-contrast="true"].dark [role="tab"]:focus-visible,
+html[data-high-contrast="true"].dark [role="menuitem"]:focus-visible,
+html[data-high-contrast="true"].dark [role="option"]:focus-visible,
+html[data-high-contrast="true"].dark [tabindex]:focus-visible,
+html.dark[data-high-contrast="true"] :focus-visible,
+html.dark[data-high-contrast="true"] button:focus-visible,
+html.dark[data-high-contrast="true"] a:focus-visible,
+html.dark[data-high-contrast="true"] input:focus-visible,
+html.dark[data-high-contrast="true"] select:focus-visible,
+html.dark[data-high-contrast="true"] textarea:focus-visible,
+html.dark[data-high-contrast="true"] [role="button"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="switch"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="checkbox"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="tab"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="menuitem"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="option"]:focus-visible,
+html.dark[data-high-contrast="true"] [tabindex]:focus-visible {
   outline: 3px solid #ffea00 !important;
   outline-offset: 2px !important;
   box-shadow:
@@ -1190,17 +1373,17 @@ html[data-crt-phosphor="true"] body::after {
   pointer-events: none;
   z-index: 99999;
   opacity: 0.04;
-  background: linear-gradient(
-    rgba(18, 16, 16, 0) 50%,
-    rgba(0, 0, 0, 0.25) 50%
-  ),
-  linear-gradient(
-    90deg,
-    rgba(0, 255, 136, 0.04),
-    rgba(0, 255, 136, 0.01),
-    rgba(0, 255, 136, 0.04)
-  );
-  background-size: 100% 3px, 6px 100%;
+  background:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(
+      90deg,
+      rgba(0, 255, 136, 0.04),
+      rgba(0, 255, 136, 0.01),
+      rgba(0, 255, 136, 0.04)
+    );
+  background-size:
+    100% 3px,
+    6px 100%;
 }
 
 .dark.crt-phosphor-overlay,
@@ -1216,7 +1399,10 @@ html.hud-boresight-cursor *,
 html[data-hud-cursor="true"],
 html[data-hud-cursor="true"] body,
 html[data-hud-cursor="true"] * {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%2300ff88'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%2300ff88' stroke-width='1.2' stroke-dasharray='4,2'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%2300ff88' stroke-width='1' stroke-opacity='0.6' stroke-dasharray='6,3'/%3E%3Cpath d='M16 2v4M16 26v4M2 16h4M26 16h4' stroke='%2300ff88' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 16 16, crosshair !important;
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%2300ff88'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%2300ff88' stroke-width='1.2' stroke-dasharray='4,2'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%2300ff88' stroke-width='1' stroke-opacity='0.6' stroke-dasharray='6,3'/%3E%3Cpath d='M16 2v4M16 26v4M2 16h4M26 16h4' stroke='%2300ff88' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E")
+      16 16,
+    crosshair !important;
 }
 
 html.hud-boresight-cursor a,
@@ -1233,7 +1419,10 @@ html[data-hud-cursor="true"] input,
 html[data-hud-cursor="true"] select,
 html[data-hud-cursor="true"] textarea,
 html[data-hud-cursor="true"] [role="switch"] {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='2' fill='%2338bdf8'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%2300ff88' stroke-width='1.5' stroke-dasharray='4,2'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%2338bdf8' stroke-width='1.2' stroke-dasharray='6,3'/%3E%3Cpath d='M16 1v5M16 25v5M1 16h5M25 16h5' stroke='%2338bdf8' stroke-width='1.8' stroke-linecap='round'/%3E%3Cpolygon points='16,11 21,16 16,21 11,16' fill='none' stroke='%2300ff88' stroke-width='1'/%3E%3C/svg%3E") 16 16, pointer !important;
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='2' fill='%2338bdf8'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%2300ff88' stroke-width='1.5' stroke-dasharray='4,2'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%2338bdf8' stroke-width='1.2' stroke-dasharray='6,3'/%3E%3Cpath d='M16 1v5M16 25v5M1 16h5M25 16h5' stroke='%2338bdf8' stroke-width='1.8' stroke-linecap='round'/%3E%3Cpolygon points='16,11 21,16 16,21 11,16' fill='none' stroke='%2300ff88' stroke-width='1'/%3E%3C/svg%3E")
+      16 16,
+    pointer !important;
 }
 
 /* Green Lantern Ring Construct Pulse Animation */
@@ -1260,7 +1449,8 @@ html[data-hud-cursor="true"] [role="switch"] {
     transform: scale(1);
   }
   50% {
-    filter: drop-shadow(0 0 20px rgba(0, 255, 136, 1)) drop-shadow(0 0 30px rgba(255, 255, 255, 0.9));
+    filter: drop-shadow(0 0 20px rgba(0, 255, 136, 1))
+      drop-shadow(0 0 30px rgba(255, 255, 255, 0.9));
     transform: scale(1.06);
   }
   100% {
@@ -1329,7 +1519,9 @@ html[data-hud-cursor="true"] [role="switch"] {
 .radar-ring-outer {
   inset: 0;
   border: 1.5px solid rgba(0, 255, 136, 0.45);
-  box-shadow: 0 0 14px rgba(0, 255, 136, 0.2), inset 0 0 14px rgba(0, 255, 136, 0.08);
+  box-shadow:
+    0 0 14px rgba(0, 255, 136, 0.2),
+    inset 0 0 14px rgba(0, 255, 136, 0.08);
 }
 
 .radar-ring-mid {
@@ -1423,7 +1615,8 @@ html[data-hud-cursor="true"] [role="switch"] {
     transform: scale(1);
     opacity: 0.85;
   }
-  75%, 100% {
+  75%,
+  100% {
     transform: scale(2.4);
     opacity: 0;
   }
@@ -1437,7 +1630,9 @@ html[data-hud-cursor="true"] [role="switch"] {
     rgba(1, 22, 15, 0.99) 100%
   );
   border-bottom: 1px solid rgba(16, 185, 129, 0.45);
-  box-shadow: 0 4px 25px rgba(4, 120, 87, 0.35), inset 0 1px 0 rgba(52, 211, 153, 0.3);
+  box-shadow:
+    0 4px 25px rgba(4, 120, 87, 0.35),
+    inset 0 1px 0 rgba(52, 211, 153, 0.3);
 }
 
 .beacon-ring-ping {
@@ -1450,10 +1645,94 @@ html[data-hud-cursor="true"] [role="switch"] {
   }
 }
 
-
 /* Disable transitions while the theme switches to avoid FOUC (#7201) */
 html.preload *,
 html.preload *::before,
 html.preload *::after {
   transition: none !important;
+}
+
+/* Animate only interactive theme changes. The theme-init script and the
+   provider's first effect do not add this class, preventing hydration flashes. */
+html.theme-transitioning,
+html.theme-transitioning body,
+html.theme-transitioning body * {
+  transition-property: color, background-color, border-color, fill, stroke;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transitioning,
+  html.theme-transitioning body,
+  html.theme-transitioning body * {
+    transition: none !important;
+  }
+}
+/* ─── Sleek Glassmorphic Hover Pulse for VenueCard Action Buttons ─────────── */
+@keyframes neon-glass-pulse-dark {
+  0%,
+  100% {
+    box-shadow:
+      0 0 10px rgba(59, 130, 246, 0.35),
+      0 0 2px rgba(255, 255, 255, 0.1),
+      inset 0 0 6px rgba(255, 255, 255, 0.05);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(99, 102, 241, 0.55),
+      0 0 4px rgba(255, 255, 255, 0.2),
+      inset 0 0 10px rgba(255, 255, 255, 0.1);
+    transform: scale(1.03);
+  }
+}
+@keyframes neon-glass-pulse-cyberpunk {
+  0%,
+  100% {
+    box-shadow:
+      0 0 12px rgba(0, 240, 255, 0.45),
+      0 0 6px rgba(255, 0, 128, 0.35),
+      inset 0 0 8px rgba(0, 240, 255, 0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 22px rgba(0, 240, 255, 0.75),
+      0 0 14px rgba(255, 0, 128, 0.6),
+      inset 0 0 14px rgba(0, 240, 255, 0.35);
+    transform: scale(1.04);
+  }
+}
+.venue-action-glass-btn {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .venue-action-glass-btn:hover:not(:disabled),
+:where(.dark, .dark *) .venue-action-glass-btn:hover:not(:disabled) {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: neon-glass-pulse-dark 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.cyberpunk .venue-action-glass-btn:hover:not(:disabled),
+:where(.cyberpunk, .cyberpunk *) .venue-action-glass-btn:hover:not(:disabled) {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: rgba(0, 240, 255, 0.5) !important;
+  animation: neon-glass-pulse-cyberpunk 1.5s cubic-bezier(0.4, 0, 0.2, 1)
+    infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .venue-action-glass-btn,
+  .dark .venue-action-glass-btn:hover:not(:disabled),
+  :where(.dark, .dark *) .venue-action-glass-btn:hover:not(:disabled),
+  .cyberpunk .venue-action-glass-btn:hover:not(:disabled),
+  :where(.cyberpunk, .cyberpunk *)
+    .venue-action-glass-btn:hover:not(:disabled) {
+    animation: none !important;
+    transform: none !important;
+    transition: none !important;
+  }
 }

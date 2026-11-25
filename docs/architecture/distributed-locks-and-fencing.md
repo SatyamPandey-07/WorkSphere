@@ -11,7 +11,7 @@ Without deterministic, distributed concurrency controls, naive locking mechanism
 3. **Stale Lock Overwrites & Accidental Releases:** User A's 5-minute lease expires while filling credit card details. User B immediately acquires the seat. If User A's client subsequently cancels or finishes, User A must never accidentally delete or overwrite User B's active hold.
 4. **The Distributed Lease Split-Brain Dilemma:** A worker process holding a time-bounded distributed lock suffers an unexpected stop-the-world Garbage Collection (GC) pause, I/O stall, or network blip. While the worker is suspended, its lock lease expires in Redis, and another worker acquires the lock. When the first worker resumes, it mistakenly assumes it still holds the lock and writes to storage, corrupting database integrity.
 
-To eliminate these concurrency vulnerabilities, WorkSphere deploys an enterprise-grade distributed concurrency architecture centered in [`src/lib/locks/seatHoldLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts). This system unifies **Redis Atomic Lua Scripts**, **Redlock Multi-Node Consensus**, **Monotonic Fencing Tokens**, and **Client-Side Background Lease Heartbeats**.
+To eliminate these concurrency vulnerabilities, WorkSphere deploys an enterprise-grade distributed concurrency architecture centered in [`src/lib/locks/seatHoldLock.ts`](../../src/lib/locks/seatHoldLock.ts). This system unifies **Redis Atomic Lua Scripts**, **Redlock Multi-Node Consensus**, **Monotonic Fencing Tokens**, and **Client-Side Background Lease Heartbeats**.
 
 ```mermaid
 flowchart TD
@@ -158,7 +158,7 @@ export interface SeatLockData {
 }
 ```
 
-In the atomic acquire Lua script ([`SEAT_LOCK_ACQUIRE_LUA`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts#L51-L67)), every renewal or re-acquisition monotonically increments this version number:
+In the atomic acquire Lua script ([`SEAT_LOCK_ACQUIRE_LUA`](../../src/lib/locks/seatHoldLock.ts#L51-L67)), every renewal or re-acquisition monotonically increments this version number:
 
 ```lua
 local ok, decoded = pcall(cjson.decode, current)
@@ -222,7 +222,7 @@ Rather than configuring an excessively large static TTL (which would lock out in
 
 ### 4.1 Lease Half-Life Renewal Scheduling
 
-Heartbeat renewals are initiated through [`startSeatLockRenewalHeartbeat`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts#L333-L391). To ensure network resiliency against temporary packet loss, heartbeats fire at **half the TTL interval** ($\frac{\text{TTL}}{2}$):
+Heartbeat renewals are initiated through [`startSeatLockRenewalHeartbeat`](../../src/lib/locks/seatHoldLock.ts#L333-L391). To ensure network resiliency against temporary packet loss, heartbeats fire at **half the TTL interval** ($\frac{\text{TTL}}{2}$):
 
 $$\text{HeartbeatInterval} = \max\left(5000\text{ms}, \left\lfloor \frac{\text{TTL} \times 1000}{2} \right\rfloor\right)$$
 
@@ -330,7 +330,7 @@ To ensure strict ACID linearizability within Redis, WorkSphere packages all stat
 
 ### 5.1 Atomic Acquire / Renew Lua Script
 
-[`SEAT_LOCK_ACQUIRE_LUA`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts#L51-L67) executes atomic test, acquire, or ownership-preserving extension:
+[`SEAT_LOCK_ACQUIRE_LUA`](../../src/lib/locks/seatHoldLock.ts#L51-L67) executes atomic test, acquire, or ownership-preserving extension:
 
 ```lua
 local current = redis.call('GET', KEYS[1])
@@ -357,7 +357,7 @@ return { 0, current }
 
 ### 5.2 Atomic Compare-and-Delete (CAD) Release Script
 
-[`SEAT_LOCK_RELEASE_LUA`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts#L76-L85) ensures that a releasing user only deletes their own lock:
+[`SEAT_LOCK_RELEASE_LUA`](../../src/lib/locks/seatHoldLock.ts#L76-L85) ensures that a releasing user only deletes their own lock:
 
 ```lua
 local current = redis.call('GET', KEYS[1])
@@ -413,7 +413,7 @@ function pruneMemoryLocks(now: number = Date.now()) {
 
 ## 8. Verification & Operational Testing Guide
 
-Unit tests in `src/__tests__/lib/locks/seatHoldLock.test.ts` validate all distributed locking invariants:
+Unit tests in `src/__tests__/lib/seatHoldLock.test.ts` validate all distributed locking invariants:
 
 ```typescript
 import {

@@ -9,9 +9,9 @@ In WorkSphere's real-time collaborative workspace, peers stream desktop displays
 - **WebRTC Data Channel Congestion Control:** Cooperative throttling between large file transfers, throughput estimation (`webrtcWorker.ts`, `P2PBandwidthEstimator.ts`), and media transport channels.
 
 Relevant implementations in WorkSphere include:
-- [`src/workers/webrtcWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/webrtcWorker.ts) — WebRTC DataChannel worker and bandwidth measurement.
-- [`src/lib/screenShareBitrate.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/screenShareBitrate.ts) — Active bitrate tier adaptation and network telemetry parser.
-- [`src/hooks/useScreenShare.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useScreenShare.ts) — Peer connection lifecycle and screen media track negotiation.
+- [`src/workers/webrtcWorker.ts`](../src/workers/webrtcWorker.ts) — WebRTC DataChannel worker and bandwidth measurement.
+- [`src/lib/screenShareBitrate.ts`](../src/lib/screenShareBitrate.ts) — Active bitrate tier adaptation and network telemetry parser.
+- [`src/hooks/useScreenShare.ts`](../src/hooks/useScreenShare.ts) — Peer connection lifecycle and screen media track negotiation.
 
 ---
 
@@ -58,7 +58,7 @@ Screen sharing exhibits distinct characteristics compared to typical webcam vide
 
 ### 3.2 Telemetry Thresholds & Tier Selection
 
-In [`src/lib/screenShareBitrate.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/screenShareBitrate.ts), transport statistics parsed from `candidate-pair`, `remote-inbound-rtp`, and `outbound-rtp` drive tier transitions:
+In [`src/lib/screenShareBitrate.ts`](../src/lib/screenShareBitrate.ts), transport statistics parsed from `candidate-pair`, `remote-inbound-rtp`, and `outbound-rtp` drive tier transitions:
 
 $$\text{Loss Ratio} = \frac{\text{packetsLost}}{\text{packetsSent}}$$
 
@@ -166,7 +166,7 @@ if ('generateKeyFrame' in videoSender) {
 
 ## 6. WebRTC Data Channel Congestion Control
 
-In WorkSphere, [`webrtcWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/webrtcWorker.ts) and [`P2PBandwidthEstimator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/P2PBandwidthEstimator.ts) utilize WebRTC DataChannels for P2P speed testing and large workspace asset exchange.
+In WorkSphere, [`webrtcWorker.ts`](../src/workers/webrtcWorker.ts) and [`P2PBandwidthEstimator.ts`](../src/core/network/P2PBandwidthEstimator.ts) utilize WebRTC DataChannels for P2P speed testing and large workspace asset exchange.
 
 ### 6.1 Buffer Threshold Monitoring
 

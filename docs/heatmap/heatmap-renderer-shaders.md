@@ -1,6 +1,6 @@
 # WebGL HeatmapRenderer: GLSL Shader Pipeline, Color Gradients, and Fragment Blending
 
-This technical manual documents the hardware-accelerated graphics pipeline, GLSL shader architecture, spatial mathematics, bilinear interpolation, and alpha blending mechanisms powering WorkSphere's GPU-accelerated telemetry heatmap renderer ([`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts), [`src/shaders/heatmapShaders.ts`](file:///c:/Users/admin/Desktop/workfere/src/shaders/heatmapShaders.ts), and [`src/components/WebGLHeatmapLayer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/WebGLHeatmapLayer.tsx)).
+This technical manual documents the hardware-accelerated graphics pipeline, GLSL shader architecture, spatial mathematics, bilinear interpolation, and alpha blending mechanisms powering WorkSphere's GPU-accelerated telemetry heatmap renderer ([`src/lib/webgl/webglHeatmapRenderer.ts`](../../src/lib/webgl/WebGLHeatmapRenderer.ts), [`src/shaders/heatmapShaders.ts`](../../src/shaders/heatmapShaders.ts), and [`src/components/WebGLHeatmapLayer.tsx`](../../src/components/WebGLHeatmapLayer.tsx)).
 
 ---
 
@@ -10,7 +10,7 @@ Visualizing real-time environmental telemetry across co-working spaces—such as
 
 Traditional CPU-bound rendering approaches (such as HTML5 Canvas 2D `arc()` or SVG paths) suffer from severe frame rate drops when dataset sizes exceed 2,000 points due to DOM overhead, repeated CPU rasterization, and software-based pixel compositing.
 
-WorkSphere utilizes **WebGL 2.0 / WebGL 1.0 hardware acceleration** via [`WebGLHeatmapRenderer`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts) to achieve smooth **60 FPS rendering of up to 100,000 live telemetry points**. The entire rendering lifecycle—from spatial coordinate projection to continuous Gaussian density decay and multi-stop color gradient mapping—executes directly on the GPU shader cores.
+WorkSphere utilizes **WebGL 2.0 / WebGL 1.0 hardware acceleration** via [`WebGLHeatmapRenderer`](../../src/lib/webgl/WebGLHeatmapRenderer.ts) to achieve smooth **60 FPS rendering of up to 100,000 live telemetry points**. The entire rendering lifecycle—from spatial coordinate projection to continuous Gaussian density decay and multi-stop color gradient mapping—executes directly on the GPU shader cores.
 
 ### 1.1 Complete GPU Rendering Pipeline
 
@@ -48,7 +48,7 @@ flowchart TD
 
 ## 2. GLSL Vertex Shader (`heatmap.vert`) Specification
 
-The vertex shader is compiled from [`HEATMAP_VERTEX_SHADER`](file:///c:/Users/admin/Desktop/workfere/src/shaders/heatmapShaders.ts) using the GLSL 3.00 ES specification (`#version 300 es`) with `precision highp float`. It operates on individual point vertices and is responsible for projecting screen-space pixel coordinates into normalized device coordinates (NDC) and computing hardware sprite point sizes.
+The vertex shader is compiled from [`HEATMAP_VERTEX_SHADER`](../../src/shaders/heatmapShaders.ts) using the GLSL 3.00 ES specification (`#version 300 es`) with `precision highp float`. It operates on individual point vertices and is responsible for projecting screen-space pixel coordinates into normalized device coordinates (NDC) and computing hardware sprite point sizes.
 
 ### 2.1 Complete GLSL Vertex Shader Source
 
@@ -319,7 +319,7 @@ A critical challenge in density mapping is ensuring that overlapping sensor read
 
 In standard WebGL alpha blending (`gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA`), rendering order matters. Newer points overwrite or average with existing pixels, which fails to represent density clustering accurately.
 
-WorkSphere configures **additive color blending** in [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts#L106-L108):
+WorkSphere configures **additive color blending** in [`src/lib/webgl/webglHeatmapRenderer.ts`](../../src/lib/webgl/WebGLHeatmapRenderer.ts#L106-L108):
 
 ```typescript
 // Enable additive blending for GPU spatial density clustering
@@ -375,7 +375,7 @@ Stride:        └───────────────┴────�
 
 ### 7.2 WebGL Attribute Pointer Configuration
 
-From [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts#L233-L261):
+From [`src/lib/webgl/webglHeatmapRenderer.ts`](../../src/lib/webgl/WebGLHeatmapRenderer.ts#L233-L261):
 
 ```typescript
 const stride = 4 * Float32Array.BYTES_PER_ELEMENT; // 16 bytes
@@ -399,7 +399,7 @@ Memory allocation on the GPU is expensive. The renderer allocates the maximum bu
 
 $$\text{BufferSize} = N_{\max} \times 4 \times 4\text{ bytes} = 100{,}000 \times 16\text{ bytes} = 1.6\text{ MB}$$
 
-During subsequent updates, [`updatePoints()`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts#L184) modifies existing GPU memory using `gl.bufferSubData()` without triggering GPU reallocation:
+During subsequent updates, [`updatePoints()`](../../src/lib/webgl/WebGLHeatmapRenderer.ts#L184) modifies existing GPU memory using `gl.bufferSubData()` without triggering GPU reallocation:
 
 ```typescript
 gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
@@ -413,7 +413,7 @@ this.lastBufferData = bufferData; // Cached for context loss recovery
 
 Mobile operating systems and browser background tabs frequently evict WebGL contexts when system memory is constrained. A production-grade heatmap renderer must recover gracefully without requiring a page reload.
 
-WorkSphere pairs [`WebGLHeatmapRenderer`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts) with [`attachWebGLContextRecovery`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/contextManager.ts).
+WorkSphere pairs [`WebGLHeatmapRenderer`](../../src/lib/webgl/WebGLHeatmapRenderer.ts) with [`attachWebGLContextRecovery`](../../src/lib/webgl/contextManager.ts).
 
 ```mermaid
 sequenceDiagram
@@ -443,13 +443,13 @@ sequenceDiagram
 ### 8.1 Key Recovery Invariants
 1. **Event Prevention**: The `webglcontextlost` event must invoke `event.preventDefault()`, or the browser will permanently dispose of the context.
 2. **Handle Invalidation**: Existing `WebGLProgram`, `WebGLShader`, and `WebGLBuffer` references from the lost context cannot be deleted via `gl.delete*()`; they must be abandoned and reinstantiated.
-3. **Data Re-Hydration**: A newly restored VBO is empty. [`WebGLHeatmapRenderer`](file:///c:/Users/admin/Desktop/workfere/src/lib/webgl/webglHeatmapRenderer.ts#L71-L75) immediately restores the point buffer using `this.lastBufferData`, ensuring that `render()` does not draw a blank frame.
+3. **Data Re-Hydration**: A newly restored VBO is empty. [`WebGLHeatmapRenderer`](../../src/lib/webgl/WebGLHeatmapRenderer.ts#L71-L75) immediately restores the point buffer using `this.lastBufferData`, ensuring that `render()` does not draw a blank frame.
 
 ---
 
 ## 9. React Leaflet Map Integration (`WebGLHeatmapLayer`)
 
-The [`WebGLHeatmapLayer`](file:///c:/Users/admin/Desktop/workfere/src/components/WebGLHeatmapLayer.tsx) component binds the low-level WebGL renderer to interactive React Leaflet geographic maps.
+The [`WebGLHeatmapLayer`](../../src/components/WebGLHeatmapLayer.tsx) component binds the low-level WebGL renderer to interactive React Leaflet geographic maps.
 
 ### 9.1 Geographic Coordinate Transformation
 

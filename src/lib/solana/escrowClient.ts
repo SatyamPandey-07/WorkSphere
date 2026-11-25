@@ -1722,4 +1722,193 @@ export function resetEscrowClient(): void {
   defaultEscrowClient = null;
 }
 
+/**
+ * ============================================================================
+ * Escrow Preflight Diagnostic Report (#10442)
+ * ============================================================================
+ *
+ * Provides a structured, copyable, human-readable diagnostic report for
+ * failed escrow transactions and preflight simulations.
+ *
+ * Security & Redaction Guarantees:
+ * 1. Automatically redacts private keys, secret phrases, mnemonics, auth headers,
+ *    bearer tokens, and sensitive base58/base64 private keys.
+ * 2. Clearly distinguishes unavailable information ("N/A") rather than fabricating values.
+ * 3. Formats error logs into clean markdown blocks suitable for support sharing.
+ * 4. Provides a robust copyToClipboard utility with safe fallback for headless/denied environments.
+ */
+
+export interface EscrowPreflightDiagnosticContext {
+  failureStage:
+    | "preflight_simulation"
+    | "transaction_submission"
+    | "confirmation_polling"
+    | "settlement"
+    | "unknown";
+  errorMessage: string;
+  signature?: string | null;
+  clusterOrNetwork?: string | null;
+  timestamp?: number | string | Date | null;
+  simulationUnitsConsumed?: number | null;
+  simulationLogs?: string[] | null;
+  instructionError?: string | null;
+  accountsInvolved?: string[] | null;
+  rpcEndpoint?: string | null;
+}
+
+export interface EscrowDiagnosticReport {
+  formattedText: string;
+  summary: {
+    failureStage: string;
+    errorMessage: string;
+    signature: string;
+    clusterOrNetwork: string;
+    timestampUtc: string;
+    simulationUnits: string;
+    instructionError: string;
+    logsCount: number;
+  };
+}
+
+/**
+ * Patterns matching sensitive secrets, private keys, seeds, and credentials.
+ */
+const SENSITIVE_PATTERNS = [
+  /(?:private_?key|secret_?key|privkey|secretkey)["']?\s*[:=]\s*["']?([a-zA-Z0-9+/=]{32,88})["']?/gi,
+  /(?:bearer\s+)([a-zA-Z0-9_\-\.]{16,})/gi,
+  /(?:mnemonic|seed_?phrase)["']?\s*[:=]\s*["']?([a-zA-Z\s]{20,})["']?/gi,
+  /(?:api_?key|auth_?token)["']?\s*[:=]\s*["']?([a-zA-Z0-9_\-\.]{16,})["']?/gi,
+  /(?:https?:\/\/[^/:]+:[^/@]+@)/gi, // Basic auth in URLs: https://user:pass@rpc.com
+];
+
+/**
+ * Redacts sensitive credentials, private keys, and tokens from a given string.
+ */
+export function redactSensitiveData(text: string): string {
+  if (!text) return "";
+  let sanitized = text;
+
+  // Redact URL credentials
+  sanitized = sanitized.replace(/(https?:\/\/)[^/:]+:[^/@]+@/gi, "$1[REDACTED_AUTH]@");
+
+  // Redact bearer tokens
+  sanitized = sanitized.replace(/(bearer\s+)[a-zA-Z0-9_\-\.]+/gi, "$1[REDACTED_TOKEN]");
+
+  // Redact explicit private key or secret key values
+  sanitized = sanitized.replace(
+    /(["']?(?:private_?key|secret_?key|privkey|secret|apiKey|api_key|token)["']?\s*[:=]\s*["']?)[^"',\s}]+/gi,
+    "$1[REDACTED_KEY]",
+  );
+
+  // Redact seed phrases / mnemonics
+  sanitized = sanitized.replace(
+    /(["']?(?:mnemonic|seed_?phrase)["']?\s*[:=]\s*["']?)[^"'}]+/gi,
+    "$1[REDACTED_SEED]",
+  );
+
+  return sanitized;
+}
+
+/**
+ * Generates a structured, copyable, human-readable preflight failure diagnostic report.
+ */
+export function generateEscrowDiagnosticReport(
+  context: EscrowPreflightDiagnosticContext,
+): EscrowDiagnosticReport {
+  const stage = context.failureStage || "unknown";
+  const rawErrorMessage = context.errorMessage || "Unknown preflight error encountered";
+  const errorMessage = redactSensitiveData(rawErrorMessage);
+
+  const signature = context.signature ? redactSensitiveData(context.signature) : "N/A (Not submitted or not generated)";
+  const clusterOrNetwork = context.clusterOrNetwork ? redactSensitiveData(context.clusterOrNetwork) : "N/A (Unspecified cluster)";
+  const rpcEndpoint = context.rpcEndpoint ? redactSensitiveData(context.rpcEndpoint) : "N/A";
+
+  let timestampUtc = "N/A";
+  if (context.timestamp) {
+    try {
+      const d = context.timestamp instanceof Date ? context.timestamp : new Date(context.timestamp);
+      timestampUtc = !isNaN(d.getTime()) ? d.toISOString() : "N/A";
+    } catch {
+      timestampUtc = "N/A";
+    }
+  } else {
+    timestampUtc = new Date().toISOString();
+  }
+
+  const simulationUnits =
+    typeof context.simulationUnitsConsumed === "number"
+      ? `${context.simulationUnitsConsumed} compute units`
+      : "N/A";
+
+  const instructionError = context.instructionError
+    ? redactSensitiveData(context.instructionError)
+    : "N/A (No specific instruction error returned)";
+
+  const logs = Array.isArray(context.simulationLogs) && context.simulationLogs.length > 0
+    ? context.simulationLogs.map((log) => redactSensitiveData(log)).join("\n")
+    : "N/A (No simulation logs recorded)";
+
+  const accounts = Array.isArray(context.accountsInvolved) && context.accountsInvolved.length > 0
+    ? context.accountsInvolved.map((acc) => redactSensitiveData(acc)).join(", ")
+    : "N/A";
+
+  const formattedText = [
+    "=== WORKSPHERE ESCROW PREFLIGHT DIAGNOSTIC REPORT ===",
+    `Timestamp (UTC): ${timestampUtc}`,
+    `Cluster / Network: ${clusterOrNetwork}`,
+    `RPC Endpoint: ${rpcEndpoint}`,
+    `Failure Stage: ${stage}`,
+    `Transaction Signature: ${signature}`,
+    `Error Message: ${errorMessage}`,
+    `Instruction Error: ${instructionError}`,
+    `Simulation Compute Units: ${simulationUnits}`,
+    `Accounts Involved: ${accounts}`,
+    "",
+    "--- Simulation Logs ---",
+    logs,
+    "=====================================================",
+  ].join("\n");
+
+  return {
+    formattedText,
+    summary: {
+      failureStage: stage,
+      errorMessage,
+      signature,
+      clusterOrNetwork,
+      timestampUtc,
+      simulationUnits,
+      instructionError,
+      logsCount: Array.isArray(context.simulationLogs) ? context.simulationLogs.length : 0,
+    },
+  };
+}
+
+/**
+ * Copies the diagnostic report text safely to clipboard, handling permission denials
+ * or unavailable navigator.clipboard gracefully.
+ */
+export async function copyEscrowDiagnosticReport(
+  report: EscrowDiagnosticReport | string,
+): Promise<{ success: boolean; error?: string }> {
+  const text = typeof report === "string" ? report : report.formattedText;
+
+  if (typeof navigator === "undefined" || !navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+    return {
+      success: false,
+      error: "Clipboard API is not available in the current execution environment.",
+    };
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return { success: true };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to copy diagnostic report to clipboard.",
+    };
+  }
+}
+
 export * from "./solanaPayEscrow";

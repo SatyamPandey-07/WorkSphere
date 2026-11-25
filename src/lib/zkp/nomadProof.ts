@@ -10,7 +10,11 @@ export interface NomadProductivityStatement {
   minThresholdStreak: number;
   minThresholdHours: number;
   epoch: number; // e.g. 2026
-  badgeType: "NOMAD_50_HOURS" | "NOMAD_100_HOURS" | "STREAK_30_DAYS" | "MULTI_CITY_EXPLORER";
+  badgeType:
+    | "NOMAD_50_HOURS"
+    | "NOMAD_100_HOURS"
+    | "STREAK_30_DAYS"
+    | "MULTI_CITY_EXPLORER";
   tierTitle: string;
 }
 
@@ -82,12 +86,26 @@ export function generateBadgeSvgMarkup(stamp: PassportStamp): string {
 </svg>`.trim();
 }
 
-const PASSPORT_SIGNING_KEY = process.env.ZKP_PASSPORT_KEY || "nomad-zkp-passport-secret-signature-2026";
+export const PASSPORT_SIGNING_KEY =
+  process.env.ZKP_PASSPORT_KEY || "nomad-zkp-passport-secret-signature-2026";
+
+/**
+ * Computes a standardized short fingerprint of a signature for UI display (e.g. "8f7e2a...3e4f").
+ */
+export function computeNomadSignatureFingerprint(signature: string): string {
+  if (!signature || typeof signature !== "string") return "";
+  const cleaned = signature.trim();
+  if (cleaned.length <= 16) return cleaned;
+  return `${cleaned.slice(0, 8)}...${cleaned.slice(-8)}`;
+}
 
 /**
  * Computes commitment hash: Poseidon/SHA-256 for user secret & epoch.
  */
-export function computeUserNomadCommitment(identitySecret: string, epoch: number): string {
+export function computeUserNomadCommitment(
+  identitySecret: string,
+  epoch: number,
+): string {
   return crypto
     .createHash("sha256")
     .update(`${identitySecret}:${epoch}:worksphere_nomad_v1`)
@@ -97,7 +115,10 @@ export function computeUserNomadCommitment(identitySecret: string, epoch: number
 /**
  * Computes unique nullifier to prevent double-claiming: Poseidon/SHA-256(secret, epoch, salt).
  */
-export function computeNomadNullifier(identitySecret: string, epoch: number): string {
+export function computeNomadNullifier(
+  identitySecret: string,
+  epoch: number,
+): string {
   return crypto
     .createHash("sha256")
     .update(`${identitySecret}:${epoch}:nullifier_salt_42`)
@@ -111,16 +132,23 @@ export async function generateClientNomadProof(
   identitySecret: string,
   actualStreak: number,
   actualHours: number,
-  statement: NomadProductivityStatement
+  statement: NomadProductivityStatement,
 ): Promise<ZkNomadProofPayload> {
   if (actualStreak < statement.minThresholdStreak) {
-    throw new Error(`Insufficient streak: ${actualStreak} < ${statement.minThresholdStreak}`);
+    throw new Error(
+      `Insufficient streak: ${actualStreak} < ${statement.minThresholdStreak}`,
+    );
   }
   if (actualHours < statement.minThresholdHours) {
-    throw new Error(`Insufficient work hours: ${actualHours} < ${statement.minThresholdHours}`);
+    throw new Error(
+      `Insufficient work hours: ${actualHours} < ${statement.minThresholdHours}`,
+    );
   }
 
-  const commitment = computeUserNomadCommitment(identitySecret, statement.epoch);
+  const commitment = computeUserNomadCommitment(
+    identitySecret,
+    statement.epoch,
+  );
   const nullifier = computeNomadNullifier(identitySecret, statement.epoch);
 
   return {
@@ -132,12 +160,24 @@ export async function generateClientNomadProof(
       expectedCommitment: commitment,
     },
     proof: {
-      pi_a: ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
-      pi_b: [
-        ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
-        ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
+      pi_a: [
+        "0x" + crypto.randomBytes(32).toString("hex"),
+        "0x" + crypto.randomBytes(32).toString("hex"),
       ],
-      pi_c: ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
+      pi_b: [
+        [
+          "0x" + crypto.randomBytes(32).toString("hex"),
+          "0x" + crypto.randomBytes(32).toString("hex"),
+        ],
+        [
+          "0x" + crypto.randomBytes(32).toString("hex"),
+          "0x" + crypto.randomBytes(32).toString("hex"),
+        ],
+      ],
+      pi_c: [
+        "0x" + crypto.randomBytes(32).toString("hex"),
+        "0x" + crypto.randomBytes(32).toString("hex"),
+      ],
     },
     nullifierHash: nullifier,
   };
@@ -146,9 +186,11 @@ export async function generateClientNomadProof(
 /**
  * Verifies a ZK Nomad Productivity Proof and mints a cryptographically signed SVG passport stamp.
  */
-export function verifyAndMintNomadPassportStamp(
-  payload: ZkNomadProofPayload
-): { isValid: boolean; stamp?: PassportStamp; error?: string } {
+export function verifyAndMintNomadPassportStamp(payload: ZkNomadProofPayload): {
+  isValid: boolean;
+  stamp?: PassportStamp;
+  error?: string;
+} {
   const { statement, publicInputs, proof, nullifierHash } = payload;
 
   if (!statement || !publicInputs || !proof || !nullifierHash) {
@@ -156,8 +198,16 @@ export function verifyAndMintNomadPassportStamp(
   }
 
   // Verify proof formatting
-  if (!proof.pi_a || proof.pi_a.length < 2 || !proof.pi_c || proof.pi_c.length < 2) {
-    return { isValid: false, error: "Invalid Groth16 elliptic curve proof elements" };
+  if (
+    !proof.pi_a ||
+    proof.pi_a.length < 2 ||
+    !proof.pi_c ||
+    proof.pi_c.length < 2
+  ) {
+    return {
+      isValid: false,
+      error: "Invalid Groth16 elliptic curve proof elements",
+    };
   }
 
   const stampId = `STAMP-${statement.badgeType}-${publicInputs.epoch}-${nullifierHash.slice(0, 8).toUpperCase()}`;

@@ -22,3 +22,8 @@ export {
   NomadPassportCoinSkeleton,
 } from "./NomadPassportCoin";
 export type { NomadPassportCoinProps } from "./NomadPassportCoin";
+export {
+  PassportAttestationBadge,
+  type PassportAttestationBadgeProps,
+  type AttestationStatus,
+} from "./PassportAttestationBadge";

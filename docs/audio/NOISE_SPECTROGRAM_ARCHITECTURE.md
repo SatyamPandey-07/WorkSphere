@@ -92,6 +92,27 @@ It does not implement the canvas waterfall renderer.
 
 The two components have different APIs and rendering strategies. Avoid treating them as interchangeable.
 
+### 2.2.1 Ambient acoustic notch filter defaults
+
+The three-band visualization also provides an optional acoustic notch filter. It is disabled by default and is controlled by the **Simulate Acoustic Notch Filter** button; `aria-pressed` reports the active state. `configureNotchFilter()` configures a single `BiquadFilterNode`, which is inserted between the microphone source and the `AnalyserNode` while the filter is active. Disabling the filter restores the direct source-to-analyser connection.
+
+The defaults are fixed constants in `src/components/audio/NoiseSpectrogram.tsx`:
+
+| Parameter | Constant | Default | Notes |
+| --- | --- | --- | --- |
+| Filter type | — | `notch` | One biquad stage |
+| Center frequency | `NOTCH_FREQUENCY_HZ` | 60 Hz | Targets mains hum; also used to place the spectrum overlay |
+| Q factor | `NOTCH_Q` | 10 | The overlay uses `frequency / Q` as the notch bandwidth (6 Hz) |
+
+Other WorkSphere acoustic engines use different notch defaults and are not configured by this component:
+
+| Implementation | Notch frequencies | Q factor |
+| --- | --- | --- |
+| `src/lib/audio/acousticFilterEngine.ts` (`cafe-suppress` preset) | 120 Hz and 240 Hz, cascaded | 4.0 for both stages |
+| `src/lib/audio/AdaptiveNoiseFilter.ts` | 60 Hz, 120 Hz and 2400 Hz, plus a dynamically tracked frequency | 8.0 |
+
+`src/components/audio/AmbientSoundGenerator.tsx` is the focus soundscape mixer. It manages noise layer gains, master gain and presets only; it does not construct a notch filter and therefore defines no notch frequency or Q-factor default.
+
 ### 2.3 Current venue integration
 
 The current `VenueNoiseSection.tsx` imports:

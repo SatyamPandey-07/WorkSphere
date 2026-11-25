@@ -8,25 +8,18 @@
 import {
   initPowerWasm,
   analyzePowerDraw,
-
   cleanupPowerWasm,
   resetStats,
   type PowerAnalysisResult,
-
   resetStats,
   PowerAnalysisResult,
-
 } from "@/lib/wasm-loader/power";
 
 let isWasmReady = false;
 let sharedBufferRef: SharedArrayBuffer | ArrayBuffer | Float32Array | null =
   null;
 
-
 export const handleWorkerMessage = async (event: MessageEvent) => {
-
-self.addEventListener("message", async (event: MessageEvent) => {
-
   const { type, payload } = event.data || {};
 
   if (type === "INIT") {
@@ -47,15 +40,9 @@ self.addEventListener("message", async (event: MessageEvent) => {
           error: err?.message || String(err),
         });
       }
-
-      self.postMessage({ type: "INIT_SUCCESS" });
-    } catch (err: any) {
-      self.postMessage({ type: "INIT_ERROR", error: err.message });
-
     }
     return;
   }
-
 
   if (type === "SET_BUFFER") {
     if (payload?.sharedBuffer) {
@@ -126,6 +113,9 @@ self.addEventListener("message", async (event: MessageEvent) => {
     resetStats();
     if (typeof self.postMessage === "function") {
       self.postMessage({ type: "RESET_COMPLETE" });
+    }
+    return;
+  }
 
   if (type === "TELEMETRY_STREAM") {
     if (!isWasmReady) {
@@ -184,11 +174,9 @@ self.addEventListener("message", async (event: MessageEvent) => {
         outletId,
         error: err.message,
       });
-
     }
     return;
   }
-
 
   if (type === "TERMINATE" || type === "CLEANUP") {
     try {
@@ -250,17 +238,9 @@ export function getWorkerState() {
 
 export { isWasmReady, sharedBufferRef };
 
-  if (type === "RESET") {
-    resetStats();
-    self.postMessage({ type: "RESET_COMPLETE" });
-    return;
-  }
-});
-
 // Handle worker termination
 self.addEventListener("unload", () => {
   console.log("[PowerWorker] Terminating...");
 });
 
 export {};
-

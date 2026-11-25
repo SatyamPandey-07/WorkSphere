@@ -1,7 +1,4 @@
-
 import crypto from "crypto";
-import { calculateDistanceMeters, Coordinates } from "../geo/geofence";
-
 import {
   calculateDistanceMeters,
   Coordinates,

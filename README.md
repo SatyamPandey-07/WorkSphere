@@ -1060,6 +1060,14 @@ A massive thank you to all **147 brilliant contributors and bots** building Work
 - **Administrative Audit Log Streaming Exporter**: Real-time streaming CSV and PDF audit export engine for workspace administrators with chunked memory buffering (`src/app/api/admin/venues/[venueId]/export/route.ts`, `src/lib/export/auditExporter.ts`).
 - **Schnorr Threshold Signature Aggregation**: Cryptographic multi-party signing module validating non-malleable secp256k1 curve points and preventing nonce collisions (`src/core/crypto/SchnorrThresholdAggregator.ts`).
 - **BFT Consensus View-Change Quorum Verification**: Byzantine Fault Tolerant consensus engine verifying proposal sequence numbers, parent hashes, and certified view-change quorums across nomadic edge nodes (`src/core/consensus/BFTConsensusCoordinator.ts`).
+- **Snapshot-Consistent Partition Exports**: Verifiable snapshot manifests for consistent distributed partition exports (`src/lib/export/`).
+- **Crash-Safe IndexedDB Schema Migration Protocol**: Cross-tab and Service Worker safe IndexedDB schema migration coordinator preventing storage corruption across concurrent tabs.
+- **Reputation-Weighted Amenity Consensus & Vote Settlement**: Reputation-weighted community amenity verification and consensus settlement for venue attributes.
+- **Viewport-Bounded Heatmap Tiling**: Zoom-aware spatial heatmap tile aggregation for dense urban venue discovery.
+- **Server-Verifiable Check-In Attestations**: Cryptographic server-verifiable venue check-in attestations replacing client-side signatures.
+- **Workspace Ergonomics, Power Access & Acoustic Comfort Scoring**: Comprehensive venue scoring across power outlet density, seating ergonomics, and acoustic comfort.
+- **WebRTC Media Track Controller & Screen-Share Fallback**: Adaptive WebRTC media track controller with resilient screen-share fallback switching.
+- **Opening Hours Status Pill & Keyboard Search Shortcut**: Real-time venue open/closing countdown indicator paired with skip-to-content navigation and `⌘K`/`Ctrl+K` global search shortcut badge (`src/components/search/VenueSearchInput.tsx`).
 
 - **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
 - **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).

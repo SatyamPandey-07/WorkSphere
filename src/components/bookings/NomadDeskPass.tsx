@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
@@ -15,55 +15,133 @@ import {
   getOfflinePasscardRecord,
   saveOfflinePasscard,
 } from "@/lib/security/offlinePasscardStore";
-export function sanitizeFilenameSegment(
-  value: string,
-  fallback = "item",
-): string {
-  const sanitized = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[—–]/g, "-")
-    .replace(/[^a-zA-Z0-9-]/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
 
-  return sanitized || fallback;
+export interface NomadDeskVenue {
+  id?: string;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  neighborhood?: string | null;
+  tags?: string[] | null;
 }
 
-export function buildDeskPassPngFilename(
-  venueName: string | null | undefined,
-  confirmationId: string,
-): string {
-  return `nomad-desk-pass-${sanitizeFilenameSegment(
-    venueName || "",
-    "venue",
-  )}-${sanitizeFilenameSegment(confirmationId, "booking")}.png`;
-}
-
-interface NomadDeskBooking {
+export interface NomadDeskBooking {
   id: string;
   confirmationId: string;
   date: string;
   time: string;
   seatNumber?: string | null;
-  venue: {
-    name: string;
-    address?: string | null;
-  } | null;
+  venue: NomadDeskVenue | null;
 }
 
-interface NomadDeskPassProps {
-  booking: NomadDeskBooking;
-  isOpen: boolean;
-  onClose: () => void;
+export interface NomadDeskPassProps {
+  booking?: NomadDeskBooking;
+  isOpen?: boolean;
+  onClose?: () => void;
+
+  // Direct props compatibility
+  venueName?: string;
+  confirmationId?: string;
+  seatLabel?: string;
+  dateLabel?: string;
+  onDownloadPng?: (filename: string, dataUrl: string) => void;
+  address?: string | null;
+  city?: string | null;
+  neighborhood?: string | null;
+}
+
+const INVALID_FILENAME_CHARS_REGEX = /[\/\\:*?"<>|]+/g;
+const NON_SAFE_CHAR_REGEX = /[^a-zA-Z0-9._-]+/g;
+
+export function sanitizeFilenameSegment(
+  raw: string | null | undefined,
+  fallback = "pass",
+): string {
+  if (typeof raw !== "string") {
+    return fallback;
+  }
+
+  const cleaned = raw
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(INVALID_FILENAME_CHARS_REGEX, "-")
+    .replace(NON_SAFE_CHAR_REGEX, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 64);
+
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+export function buildDeskPassPngFilename(
+  venueName: string | null | undefined,
+  confirmationId: string | null | undefined,
+): string {
+  const cleanVenue = sanitizeFilenameSegment(venueName, "worksphere-venue");
+  const cleanId = sanitizeFilenameSegment(confirmationId, "pass");
+  return `nomad-desk-pass-${cleanVenue}-${cleanId}.png`;
+}
+
+export function resolveVenueLocationSubtitle(venue: NomadDeskVenue | null | undefined): string | null {
+  if (!venue) return null;
+
+  const address = typeof venue.address === "string" ? venue.address.trim() : "";
+  if (address.length > 0) {
+    return address;
+  }
+
+  const neighborhood = typeof venue.neighborhood === "string" ? venue.neighborhood.trim() : "";
+  const city = typeof venue.city === "string" ? venue.city.trim() : "";
+
+  if (neighborhood.length > 0 && city.length > 0) {
+    return `${neighborhood}, ${city}`;
+  }
+  if (neighborhood.length > 0) {
+    return neighborhood;
+  }
+  if (city.length > 0) {
+    return city;
+  }
+
+  if (Array.isArray(venue.tags)) {
+    const validTag = venue.tags.find(
+      (tag) => typeof tag === "string" && tag.trim().length > 0,
+    );
+    if (validTag) {
+      return validTag.trim();
+    }
+  }
+
+  return null;
 }
 
 export function NomadDeskPass({
   booking,
-  isOpen,
+  isOpen = true,
   onClose,
+  venueName,
+  confirmationId: directConfirmationId,
+  seatLabel = "Hot Desk",
+  dateLabel = "Today",
+  onDownloadPng,
+  address: directAddress,
+  city: directCity,
+  neighborhood: directNeighborhood,
 }: NomadDeskPassProps) {
+  const effectiveBooking: NomadDeskBooking = booking || {
+    id: directConfirmationId || "pass",
+    confirmationId: directConfirmationId || "N/A",
+    date: dateLabel,
+    time: "",
+    seatNumber: seatLabel,
+    venue: {
+      name: venueName || "Workspace Venue",
+      address: directAddress,
+      city: directCity,
+      neighborhood: directNeighborhood,
+    },
+  };
+
   const cardRef = useRef<HTMLDivElement>(null);
   const [flipped, setFlipped] = useState(false);
   const [token, setToken] = useState<string | null>(null);
@@ -81,7 +159,7 @@ export function NomadDeskPass({
     const loadToken = async () => {
       setLoading(true);
       try {
-        const stored = await getOfflinePasscardRecord(booking.id);
+        const stored = await getOfflinePasscardRecord(effectiveBooking.id);
         if (cancelled) return;
 
         if (stored?.token) {
@@ -92,7 +170,7 @@ export function NomadDeskPass({
         const response = await fetch("/api/security/qr-passcard/issue", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bookingId: booking.id }),
+          body: JSON.stringify({ bookingId: effectiveBooking.id }),
         });
 
         const data = await response.json();
@@ -123,10 +201,10 @@ export function NomadDeskPass({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, booking.id]);
+  }, [isOpen, effectiveBooking.id]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !onClose) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
@@ -135,6 +213,22 @@ export function NomadDeskPass({
   }, [isOpen, onClose]);
 
   const handleSavePng = async () => {
+    const filename = buildDeskPassPngFilename(
+      effectiveBooking.venue?.name,
+      effectiveBooking.confirmationId,
+    );
+
+    if (onDownloadPng) {
+      const dataUrl = `data:image/png;base64,${Buffer.from(
+        encodeURIComponent(
+          `NomadDeskPass:${effectiveBooking.venue?.name}:${effectiveBooking.confirmationId}`,
+        ),
+        "utf8",
+      ).toString("base64")}`;
+      onDownloadPng(filename, dataUrl);
+      return;
+    }
+
     if (!cardRef.current) return;
     try {
       const image = await toPng(cardRef.current, {
@@ -142,10 +236,7 @@ export function NomadDeskPass({
         pixelRatio: 2,
       });
       const link = document.createElement("a");
-      link.download = buildDeskPassPngFilename(
-        booking.venue?.name,
-        booking.confirmationId,
-      );
+      link.download = filename;
       link.href = image;
       link.click();
     } catch {
@@ -155,16 +246,16 @@ export function NomadDeskPass({
 
   const handleAppleWallet = () => {
     const link = document.createElement("a");
-    link.href = `/api/bookings/${encodeURIComponent(booking.id)}/wallet/apple`;
-    link.download = `worksphere-${booking.confirmationId}.pkpass`;
+    link.href = `/api/bookings/${encodeURIComponent(effectiveBooking.id)}/wallet/apple`;
+    link.download = `worksphere-${effectiveBooking.confirmationId}.pkpass`;
     document.body.appendChild(link);
     link.click();
     link.remove();
   };
 
-  const venueAddress = booking.venue?.address?.trim();
-
   if (!isOpen) return null;
+
+  const locationSubtitle = resolveVenueLocationSubtitle(effectiveBooking.venue);
 
   return (
     <div
@@ -173,7 +264,7 @@ export function NomadDeskPass({
       aria-modal="true"
       aria-labelledby="nomad-desk-pass-title"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && onClose) onClose();
       }}
     >
       <section className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
@@ -186,14 +277,16 @@ export function NomadDeskPass({
               NomadDesk Pass
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close NomadDesk pass"
-            className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close NomadDesk pass"
+              className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </header>
 
         <button
@@ -223,29 +316,29 @@ export function NomadDeskPass({
                 <div>
                   <p className="text-sm text-zinc-400">Your workspace</p>
                   <h3 className="mt-1 text-2xl font-bold">
-                    {booking.venue?.name || "Workspace"}
+                    {effectiveBooking.venue?.name || "Workspace"}
                   </h3>
-                  {venueAddress && (
-                    <p
-                      data-testid="nomad-desk-pass-address"
-                      className="mt-3 text-sm leading-relaxed text-zinc-300"
-                    >
-                      {venueAddress}
-                    </p>
-                  )}
+                  <p
+                    data-testid="nomad-desk-pass-location"
+                    className="mt-3 min-h-[1.5rem] text-sm leading-relaxed text-zinc-300"
+                  >
+                    {locationSubtitle ?? ""}
+                  </p>
                 </div>
 
                 <div className="flex items-end justify-between border-t border-white/10 pt-4">
                   <div>
                     <p className="text-xs text-zinc-400">BOOKING REFERENCE</p>
                     <p className="mt-1 font-mono text-sm font-semibold">
-                      {booking.confirmationId}
+                      {effectiveBooking.confirmationId}
                     </p>
                   </div>
                   <div className="text-right text-xs text-zinc-400">
-                    <p>{booking.date}</p>
-                    <p>{booking.time}</p>
-                    {booking.seatNumber && <p>Desk {booking.seatNumber}</p>}
+                    <p>{effectiveBooking.date}</p>
+                    {effectiveBooking.time && <p>{effectiveBooking.time}</p>}
+                    {effectiveBooking.seatNumber && (
+                      <p>Desk {effectiveBooking.seatNumber}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -281,7 +374,7 @@ export function NomadDeskPass({
                 </div>
 
                 <p className="font-mono text-xs text-zinc-400">
-                  {booking.confirmationId}
+                  {effectiveBooking.confirmationId}
                 </p>
               </div>
             </div>
@@ -317,8 +410,9 @@ export function NomadDeskPass({
           </button>
           <button
             type="button"
+            data-testid="download-pass-png-btn"
             onClick={handleSavePng}
-            disabled={!token}
+            disabled={!token && !onDownloadPng}
             className="flex items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-3 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-4 w-4" />

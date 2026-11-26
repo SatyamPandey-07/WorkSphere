@@ -1,61 +1,23 @@
-# Venue flagging API
-
-Reports an issue with a venue so the moderation team can review it.
+# Venue Flagging API
 
 ## Endpoint
 
 `POST /api/venues/{venueId}/flag`
 
-Authentication is required. The route uses the shared `apiHandler`
-middleware, so requests without a Clerk-authenticated user are rejected before
-the handler runs.
+This endpoint submits a venue issue report. Requests require authentication.
 
-### Request
-
-Content type: `application/json`
+## Request body
 
 ```json
 {
-  "reason": "no_wifi",
-  "details": "The advertised guest network is no longer available."
+  "reason": "permanently_closed"
 }
 ```
 
-| Field | Type | Required | Validation |
-| --- | --- | --- | --- |
-| `reason` | string | yes | Trimmed string. Must be between 5 and 18 characters in length and match one of the allowed enum values. |
-| `details` | string | no | Trimmed string. |
+The `reason` field must be a string containing between **10 and 500 characters**,
+inclusive.
 
-Allowed `reason` values and character lengths:
-
-- `other` (5 characters - minimum allowed length)
-- `no_wifi` (7 characters)
-- `duplicate` (9 characters)
-- `wrong_hours` (11 characters)
-- `wrong_address` (13 characters)
-- `permanently_closed` (18 characters - maximum allowed length)
-
-### Reason Validation Rules & Behavior
-
-The API performs strict validation on the `reason` field via Zod enum parsing in `src/app/api/venues/[venueId]/flag/route.ts` through the shared `apiHandler`:
-
-1. **Character Length Constraints:**
-   - **Minimum Length:** 5 characters (`"other"`).
-   - **Maximum Length:** 18 characters (`"permanently_closed"`).
-2. **Missing or Empty Reason:**
-   - If the `reason` field is omitted, null, or empty string (`""`), validation fails with HTTP `400 Bad Request`.
-3. **Reason Shorter than Minimum (< 5 characters):**
-   - Any value shorter than 5 characters cannot match any valid enum reason and is rejected with HTTP `400 Bad Request`.
-4. **Reason Longer than Maximum (> 18 characters):**
-   - Any string exceeding 18 characters cannot match any valid enum reason and is rejected with HTTP `400 Bad Request`.
-5. **Valid Reason Within Allowed Range (5–18 characters):**
-   - Must exactly equal one of the 6 allowed values: `permanently_closed`, `wrong_hours`, `no_wifi`, `wrong_address`, `duplicate`, or `other`. Any arbitrary string within this length range that does not match an allowed value is rejected.
-
-The optional `details` field is trimmed before persistence.
-| `reason` | string | yes | Trimmed and must be one of the values below. |
-| `details` | string | no | Trimmed string. |
-
-Allowed `reason` values:
+Valid reasons remain limited to the established venue flagging reason contract:
 
 - `permanently_closed`
 - `wrong_hours`
@@ -64,6 +26,51 @@ Allowed `reason` values:
 - `duplicate`
 - `other`
 
+## Reason length validation
+
+Before a venue flag is created, the API validates the character length of
+`reason`.
+
+- Reasons shorter than 10 characters are rejected.
+- Reasons longer than 500 characters are rejected.
+- The endpoint returns HTTP `400` for either length violation.
+- Valid values are at least 10 characters and no more than 500 characters.
+
+The validation occurs before venue lookup and flag persistence, so an
+invalid-length reason does not create a `FlaggedItem` record.
+
+## HTTP 400 validation response
+
+Validation failures use the standard API error structure:
+
+```json
+{
+  "success": false,
+  "error": "Reason must be at least 10 characters",
+  "code": "VALIDATION_FAILED",
+  "details": {
+    "reason": ["Reason must be at least 10 characters"]
+  }
+}
+```
+
+For a reason that exceeds the maximum, `error` and the `reason` detail entry
+describe the 500-character maximum instead.
+
+## Invalid reason length example
+
+The following request contains fewer than 10 characters:
+
+```bash
+curl -X POST "https://<host>/api/venues/venue-123/flag" \
+  -H "Authorization: Bearer <access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Too short"
+  }'
+```
+
+`Too short` is 9 characters, so the API responds with HTTP `400`:
 The selected reason must contain at least five non-whitespace characters
 before it can be accepted as a known reason. Because the server validates the
 reason against the enum as well, arbitrary free-form reasons are rejected.
@@ -131,6 +138,13 @@ Errors use the shared `apiError` format:
 ```json
 {
   "success": false,
+  "error": "Reason must be at least 10 characters",
+  "code": "VALIDATION_FAILED",
+  "details": {
+    "reason": ["Reason must be at least 10 characters"]
+  }
+}
+```
   "error": "Unauthorized",
   "code": "UNAUTHORIZED"
 }

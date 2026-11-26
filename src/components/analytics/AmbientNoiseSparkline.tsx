@@ -162,7 +162,10 @@ export function computeNoiseThresholdStats(
       if (series[i].dBA > peakDb) peakDb = series[i].dBA;
       if (series[i].dBA > thresholdDb) {
         const currentTs = parsedTimestamps[i] as number;
-        const prevTs = i > 0 ? (parsedTimestamps[i - 1] as number) : currentTs - ROLLING_WINDOW_MS;
+        const prevTs =
+          i > 0
+            ? (parsedTimestamps[i - 1] as number)
+            : currentTs - ROLLING_WINDOW_MS;
         const deltaMin = Math.max(1, Math.round((currentTs - prevTs) / 60_000));
         exceededDurationMinutes += deltaMin;
       }
@@ -246,11 +249,7 @@ export function AmbientNoiseSparkline({
         ? DEFAULT_LIVELY_THRESHOLD_DB
         : DEFAULT_QUIET_THRESHOLD_DB;
 
-  const {
-    rollingAverageDb,
-    peakDb,
-    exceededDurationLabel,
-  } = useMemo(
+  const { rollingAverageDb, peakDb, exceededDurationLabel } = useMemo(
     () => computeNoiseThresholdStats(hourlyDecibels, effectiveThresholdDb),
     [hourlyDecibels, effectiveThresholdDb],
   );
@@ -268,7 +267,10 @@ export function AmbientNoiseSparkline({
   const dbaRange = maxDba - minDba;
 
   // Compute Y coordinate for the dashed threshold line
-  const clampedThreshold = Math.max(minDba, Math.min(maxDba, effectiveThresholdDb));
+  const clampedThreshold = Math.max(
+    minDba,
+    Math.min(maxDba, effectiveThresholdDb),
+  );
   const thresholdY =
     padding.top +
     innerHeight -
@@ -387,6 +389,14 @@ export function AmbientNoiseSparkline({
             onMouseEnter={() => setShowAlertTooltip(true)}
             onMouseLeave={() => setShowAlertTooltip(false)}
           >
+            <span
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="sr-only"
+            >
+              {`Ambient noise threshold exceeded. ${alertAriaLabel}`}
+            </span>
             <button
               type="button"
               data-testid="noise-threshold-alert-badge"
@@ -620,7 +630,9 @@ export function AmbientNoiseSparkline({
                 cy={p.y}
                 r={hoveredIndex === p.index ? 4.5 : 2}
                 fill={
-                  hoveredIndex === p.index ? "#ffffff" : "url(#noiseLevelGradient)"
+                  hoveredIndex === p.index
+                    ? "#ffffff"
+                    : "url(#noiseLevelGradient)"
                 }
                 className="transition-all duration-150"
                 aria-hidden="true"

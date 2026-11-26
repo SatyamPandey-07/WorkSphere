@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
-import { getFallbackMetricsSnapshot } from "@/lib/rateLimit/tokenBucketFallback";
+import {
+  getRedisPingLatency,
+  pingRedis,
+} from "@/lib/redis";
 
-export async function GET() {
+export async function GET(request?: Request) {
   const startTime = performance.now();
   let databaseMs = -1;
   let redisMs = -1;
@@ -22,13 +24,11 @@ export async function GET() {
 
   // 2. Redis Ping Check & Latency Calculation
   try {
-    const redisStart = performance.now();
-    if (redis && typeof redis.ping === "function") {
-      await redis.ping();
-      redisMs = Math.round(performance.now() - redisStart);
+    const pingLatency = await pingRedis();
+    if (pingLatency !== null) {
+      redisMs = pingLatency;
       isRedisHealthy = true;
     } else {
-      // Fallback if redis mock or secondary client format is used
       redisMs = 0;
       isRedisHealthy = true;
     }
@@ -40,19 +40,30 @@ export async function GET() {
   const status = isHealthy ? "healthy" : "degraded";
   const statusCode = isHealthy ? 200 : 503;
 
-  return NextResponse.json(
-    {
-      status,
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      latency: {
-        databaseMs,
-        redisMs,
-        totalMs: Math.round(performance.now() - startTime),
-      },
-      rateLimitFallback: getFallbackMetricsSnapshot(),
-      version: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
+  const includeDiagnostics =
+    request !== undefined &&
+    new URL(request.url).searchParams.get("includeDiagnostics") === "true";
+
+  const responseBody: Record<string, unknown> = {
+    status,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    latency: {
+      databaseMs,
+      redisMs,
+      totalMs: Math.round(performance.now() - startTime),
     },
-    { status: statusCode }
-  );
+    version: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
+  };
+
+  if (includeDiagnostics) {
+    const pingMs = getRedisPingLatency();
+    responseBody.redis = {
+      pingMs: Number.isFinite(pingMs) && pingMs !== null && pingMs >= 0
+        ? pingMs
+        : null,
+    };
+  }
+
+  return NextResponse.json(responseBody, { status: statusCode });
 }

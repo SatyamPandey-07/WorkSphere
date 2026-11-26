@@ -744,6 +744,84 @@ export async function acquireSeatWebLock(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Structured Audit Events for Seat Hold Lease Extensions
+// ---------------------------------------------------------------------------
+
+export interface StaleFenceTokenAuditEvent {
+  id: string;
+  eventType: "STALE_FENCE_TOKEN_REJECTED";
+  timestamp: string;
+  seatId: string;
+  expectedFenceToken: string;
+  receivedFenceToken: string;
+  venueId?: string;
+  userId?: string;
+  reason: "STALE_TOKEN";
+}
+
+export type SeatHoldAuditListener = (event: StaleFenceTokenAuditEvent) => void;
+
+const seatHoldAuditListeners = new Set<SeatHoldAuditListener>();
+const seatHoldAuditBuffer: StaleFenceTokenAuditEvent[] = [];
+let seatHoldAuditSeq = 0;
+
+export function onSeatHoldAuditEvent(
+  listener: SeatHoldAuditListener,
+): () => void {
+  seatHoldAuditListeners.add(listener);
+  return () => {
+    seatHoldAuditListeners.delete(listener);
+  };
+}
+
+export function getSeatHoldAuditEvents(): StaleFenceTokenAuditEvent[] {
+  return [...seatHoldAuditBuffer];
+}
+
+export function clearSeatHoldAuditEvents(): void {
+  seatHoldAuditBuffer.length = 0;
+}
+
+export function emitStaleFenceTokenAuditEvent(params: {
+  seatId: string;
+  expectedFenceToken: string | bigint | number;
+  receivedFenceToken: string | bigint | number;
+  venueId?: string;
+  userId?: string;
+}): StaleFenceTokenAuditEvent {
+  seatHoldAuditSeq += 1;
+  const event: StaleFenceTokenAuditEvent = {
+    id:
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `seat-hold-audit-${Date.now()}-${seatHoldAuditSeq}`,
+    eventType: "STALE_FENCE_TOKEN_REJECTED",
+    timestamp: new Date().toISOString(),
+    seatId: params.seatId,
+    expectedFenceToken: String(params.expectedFenceToken),
+    receivedFenceToken: String(params.receivedFenceToken),
+    venueId: params.venueId,
+    userId: params.userId,
+    reason: "STALE_TOKEN",
+  };
+
+  seatHoldAuditBuffer.push(event);
+  if (seatHoldAuditBuffer.length > 500) {
+    seatHoldAuditBuffer.shift();
+  }
+
+  for (const listener of seatHoldAuditListeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.error("[SeatLock] Audit listener error:", err);
+    }
+  }
+
+  return event;
+}
+
 export const SEAT_LOCK_EXTEND_LUA = `
 local current = redis.call('GET', KEYS[1])
 if not current then return { 0, 'NOT_FOUND' } end
@@ -753,7 +831,17 @@ if not (ok and type(decoded) == 'table') then
   return { 0, 'INVALID_LOCK' }
 end
 
-if decoded.userId ~= ARGV[1] or tostring(decoded.fencingToken) ~= tostring(ARGV[2]) then
+if decoded.userId ~= ARGV[1] then
+  return { 0, 'UNAUTHORIZED' }
+end
+
+local incomingToken = tonumber(ARGV[2])
+local currentToken = tonumber(decoded.fencingToken) or 0
+if incomingToken and currentToken > 0 and incomingToken <= currentToken then
+  return { -2, 'STALE_TOKEN', tostring(currentToken) }
+end
+
+if tostring(decoded.fencingToken) ~= tostring(ARGV[2]) then
   return { 0, 'UNAUTHORIZED' }
 end
 if decoded.extensionUsed == true or decoded.extensionUsed == 1 or decoded.extensionUsed == 'true' then
@@ -785,6 +873,7 @@ export type ExtendSeatHoldReason =
   | "ALREADY_EXTENDED"
   | "TOO_CLOSE_TO_EXPIRY"
   | "INVALID_LOCK"
+  | "STALE_TOKEN"
   | "ERROR";
 
 export interface ExtendSeatHoldResult {
@@ -792,6 +881,8 @@ export interface ExtendSeatHoldResult {
   lock?: SeatLockData;
   remainingSeconds?: number;
   reason?: ExtendSeatHoldReason;
+  expectedFenceToken?: string;
+  receivedFenceToken?: string;
 }
 
 /**
@@ -823,6 +914,25 @@ export async function extendSeatHold(
       const [flag, rawLock, rawRemaining] = Array.isArray(rawResult)
         ? rawResult
         : [0, "ERROR", 0];
+
+      if (Number(flag) === -2 || String(rawLock) === "STALE_TOKEN") {
+        const expectedFenceToken =
+          rawRemaining !== undefined ? String(rawRemaining) : "";
+        emitStaleFenceTokenAuditEvent({
+          seatId,
+          expectedFenceToken,
+          receivedFenceToken: fencingToken,
+          venueId,
+          userId,
+        });
+        return {
+          success: false,
+          reason: "STALE_TOKEN",
+          expectedFenceToken,
+          receivedFenceToken: fencingToken,
+        };
+      }
+
       if (Number(flag) !== 1) {
         const reason = String(rawLock) as ExtendSeatHoldReason;
         return {
@@ -833,6 +943,7 @@ export async function extendSeatHold(
             "ALREADY_EXTENDED",
             "TOO_CLOSE_TO_EXPIRY",
             "INVALID_LOCK",
+            "STALE_TOKEN",
           ].includes(reason)
             ? reason
             : "ERROR",
@@ -866,8 +977,34 @@ export async function extendSeatHold(
   if (!current || now >= current.expiresAt) {
     return { success: false, reason: "NOT_FOUND" };
   }
+  if (current.userId !== userId) {
+    return { success: false, reason: "UNAUTHORIZED" };
+  }
+
+  const currentTokenNum = Number(current.fencingToken);
+  const receivedTokenNum = Number(fencingToken);
   if (
-    current.userId !== userId ||
+    Number.isFinite(currentTokenNum) &&
+    Number.isFinite(receivedTokenNum) &&
+    receivedTokenNum <= currentTokenNum
+  ) {
+    const expectedFenceToken = String(current.fencingToken);
+    emitStaleFenceTokenAuditEvent({
+      seatId,
+      expectedFenceToken,
+      receivedFenceToken: fencingToken,
+      venueId,
+      userId,
+    });
+    return {
+      success: false,
+      reason: "STALE_TOKEN",
+      expectedFenceToken,
+      receivedFenceToken: fencingToken,
+    };
+  }
+
+  if (
     !current.fencingToken ||
     String(current.fencingToken) !== String(fencingToken)
   ) {

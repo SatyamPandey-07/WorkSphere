@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { subscribeVenueAvailability } from "@/lib/reservations/event-bus";
+import {
+  subscribeVenueAvailability,
+  replayVenueAvailabilityAfter,
+} from "@/lib/reservations/event-bus";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
-function encodeSseFrame(event: string, data: unknown): Uint8Array {
+function encodeSseFrame(event: string, data: unknown, id?: string | number): Uint8Array {
   const encoder = new TextEncoder();
-  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const idLine = id !== undefined ? `id: ${id}\n` : "";
+  return encoder.encode(`${idLine}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 function parsePayload(rawPayload: unknown): Record<string, unknown> | null {
@@ -69,21 +73,47 @@ export async function GET(request: NextRequest) {
     cleanup();
   };
 
+  const lastEventId =
+    request.headers.get("last-event-id")?.trim() ??
+    request.nextUrl.searchParams.get("lastEventId")?.trim() ??
+    null;
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const safeEnqueue = (event: string, data: unknown) => {
+      const safeEnqueue = (event: string, data: unknown, id?: string | number) => {
         if (isClosed || request.signal.aborted) {
           cleanup();
           return;
         }
 
         try {
-          controller.enqueue(encodeSseFrame(event, data));
+          controller.enqueue(encodeSseFrame(event, data, id));
         } catch {
           // Controller was closed externally; clean up timer and subscription immediately
           cleanup();
         }
       };
+
+      if (lastEventId !== null && lastEventId !== "") {
+        const replay = replayVenueAvailabilityAfter(venueId, lastEventId);
+        if (replay.status === "RESYNC_REQUIRED") {
+          safeEnqueue("resync_required", {
+            reason: replay.reason,
+            latestCursor: replay.latestCursor,
+            venueId,
+          });
+        } else {
+          for (const ev of replay.events) {
+            const eventName =
+              ev.type === "DESK_HOLD_EXPIRED" ||
+              ev.type === "SEAT_HOLD_EXPIRED" ||
+              ev.type === "desk_reservation_expired"
+                ? "desk_expired"
+                : "availability";
+            safeEnqueue(eventName, ev.payload, ev.cursor);
+          }
+        }
+      }
 
       // Subscribe to shared venue availability event bus
       unsubscribe = subscribeVenueAvailability(
@@ -117,7 +147,11 @@ export async function GET(request: NextRequest) {
               : {}),
           };
 
-          safeEnqueue(eventName, finalPayload);
+          const eventId =
+            typeof payloadObj.cursor === "number" || typeof payloadObj.cursor === "string"
+              ? payloadObj.cursor
+              : undefined;
+          safeEnqueue(eventName, finalPayload, eventId);
         },
       );
 

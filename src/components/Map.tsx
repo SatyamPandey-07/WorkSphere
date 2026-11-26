@@ -137,7 +137,6 @@ function MapNavigationControls({
   );
 }
 
-
 function AutoCenter({
   markers,
   userLocation,
@@ -268,7 +267,10 @@ const HeatmapOverlay = createLayerComponent(createHeatLayer, updateHeatLayer);
  */
 function ResizeWatcher({ delay = 150 }: { delay?: number }) {
   const map = useMap();
-  const lastValidDimensionsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const lastValidDimensionsRef = useRef<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
   const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -284,7 +286,9 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
     };
 
     const performMapResize = () => {
-      const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+      if (!isActive) return;
+      const container =
+        typeof map.getContainer === "function" ? map.getContainer() : null;
       if (!container) return;
 
       const currentWidth = container.clientWidth || container.offsetWidth;
@@ -297,13 +301,18 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
         // Defer until the container dimension recovers in a subsequent frame
         cancelPendingWork();
         rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
+          if (!isActive) return;
           performMapResize();
         });
         return;
       }
 
       // Record valid dimensions
-      lastValidDimensionsRef.current = { width: currentWidth, height: currentHeight };
+      lastValidDimensionsRef.current = {
+        width: currentWidth,
+        height: currentHeight,
+      };
 
       try {
         const centerBeforeResize = map.getCenter();
@@ -314,15 +323,17 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
         if (centerBeforeResize) {
           map.setView(centerBeforeResize, zoomBeforeResize, { animate: false });
         }
-      } catch (err) {
+      } catch {
         // Safe fallback if map is in transient unmount state
       }
     };
 
     const handleResize = () => {
+      if (!isActive) return;
       cancelPendingWork();
 
-      const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+      const container =
+        typeof map.getContainer === "function" ? map.getContainer() : null;
       if (container) {
         const w = container.clientWidth || container.offsetWidth;
         const h = container.clientHeight || container.offsetHeight;
@@ -335,6 +346,8 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
           // Maintain map container stability by skipping premature invalidateSize
           // and scheduling recovery once layout settles.
           rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = null;
+            if (!isActive) return;
             handleResize();
           });
           return;
@@ -348,10 +361,12 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
     // Attach ResizeObserver to the map container element for sidebar width shifts
     let resizeObserver: ResizeObserver | null = null;
-    const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+    const container =
+      typeof map.getContainer === "function" ? map.getContainer() : null;
 
     if (container && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver((entries) => {
+        if (!isActive) return;
         if (!entries || entries.length === 0) {
           handleResize();
           return;
@@ -360,12 +375,16 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
         const entry = entries[0];
         const cr = entry.contentRect;
         const width = cr ? cr.width : (entry.target as HTMLElement).clientWidth;
-        const height = cr ? cr.height : (entry.target as HTMLElement).clientHeight;
+        const height = cr
+          ? cr.height
+          : (entry.target as HTMLElement).clientHeight;
 
         // Ignore transient zero-height or zero-width frames during sidebar toggle animations
         if (width <= 0 || height <= 0) {
           cancelPendingWork();
           rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = null;
+            if (!isActive) return;
             handleResize();
           });
           return;
@@ -380,6 +399,7 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
     window.addEventListener("resize", handleResize);
 
     return () => {
+      isActive = false;
       cancelPendingWork();
       if (resizeObserver) {
         resizeObserver.disconnect();
@@ -968,7 +988,10 @@ const Map = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (isEditableElement(e.target) || isEditableElement(document.activeElement)) {
+      if (
+        isEditableElement(e.target) ||
+        isEditableElement(document.activeElement)
+      ) {
         return;
       }
 
@@ -1100,7 +1123,9 @@ const Map = ({
         setRoutingError(null);
       } else {
         setOptimizedRoute(null);
-        setRoutingError(data.message || "Unable to find route between waypoints");
+        setRoutingError(
+          data.message || "Unable to find route between waypoints",
+        );
       }
     } catch (error) {
       if (requestId === routingRequestIdRef.current) {
@@ -1715,10 +1740,11 @@ const Map = ({
             aria-checked={isHighContrast}
             aria-label="Toggle high-contrast mode"
             onClick={toggleHighContrast}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${isHighContrast
-              ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
-              : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
-              }`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
+              isHighContrast
+                ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
+                : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            }`}
           >
             <Contrast className="w-3.5 h-3.5 text-current" />
             <span>High Contrast</span>
@@ -1748,7 +1774,10 @@ const Map = ({
         </div>
         {/* Forecast selector UI */}
         {showForecastControls && (
-          <div className="map-forecast-controls" data-testid="map-forecast-controls">
+          <div
+            className="map-forecast-controls"
+            data-testid="map-forecast-controls"
+          >
             <label htmlFor="day-select">Day</label>
             <select
               id="day-select"

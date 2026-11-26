@@ -567,4 +567,96 @@ sequenceDiagram
 
 - [`src/__tests__/features/zkp/zkpWorkerPoolRecovery.test.ts`](../../src/__tests__/features/zkp/zkpWorkerPoolRecovery.test.ts)
 - [`src/__tests__/components/StudentDiscountVerification.test.tsx`](../../src/__tests__/components/StudentDiscountVerification.test.tsx)
+- [`src/tests/components/student/StudentDiscountVerification.test.tsx`](../../src/tests/components/student/StudentDiscountVerification.test.tsx)
+
+---
+
+## 14. Contributor Troubleshooting Notes: SVG Progress Ring & Jest Worker Mocking
+
+[`StudentDiscountVerification`](../../src/components/student/StudentDiscountVerification.tsx) exposes two progress indicator variants (`"bar"` and `"ring"`) and supports deterministic Web Worker injection for unit testing.
+
+### 14.1 `bar` vs. `ring` Progress Variants & Geometry Constants
+
+- **Variant Selection (`ProgressIndicatorVariant`)**: Controlled by `defaultIndicatorVariant?: "bar" | "ring"` (defaults to `"bar"`). Users can toggle between views at runtime via the `"Toggle progress indicator style"` button (`"Ring View"` / `"Bar View"`).
+- **SVG Ring Geometry (`ring` mode)**:
+  - `ZKP_RING_RADIUS = 18` inside a `44x44` `<svg viewBox="0 0 44 44">` centered at `(22, 22)` with `strokeWidth={4}` and `-rotate-90` so progress sweeps clockwise from 12 o'clock.
+  - `ZKP_RING_CIRCUMFERENCE = Number((2 * Math.PI * ZKP_RING_RADIUS).toFixed(4))` (`113.0973`).
+  - `clampProgressPercent(rawProgress)` normalizes fractional values in `(0, 1]` to `[0, 100]`, rounds to the nearest integer, and returns `0` for `NaN` or non-finite inputs.
+  - `computeRingDashOffset(progressPercent, circumference = ZKP_RING_CIRCUMFERENCE)` calculates `Number((circumference * (1 - clamped / 100)).toFixed(4))` for the foreground `<circle data-testid="zkp-progress-ring-arc">`.
+- **DOM & Accessibility Selectors**:
+  - Percentage text: `data-testid="zkp-progress-label"` (always displays `{progress}%`).
+  - Ring variant: `data-testid="zkp-progress-ring"` (`role="progressbar"`, `aria-valuenow`) and `data-testid="zkp-progress-ring-arc"` (`stroke-dasharray`, `stroke-dashoffset`).
+  - Bar variant: `data-testid="zkp-progress-bar"` (`role="progressbar"`, `aria-valuenow`).
+- **Cancellation / Error Reset**: On cancel or worker error, `resetProgressOnFailure()` clears `onmessage`/`onerror`, calls `worker.terminate()`, and resets `progress` to `0` (`strokeDashoffset === ZKP_RING_CIRCUMFERENCE`).
+
+### 14.2 Mocking the ZKP Web Worker in Jest (`createWorker` Injection)
+
+Because Jest runs in a CommonJS `jsdom` environment where bundler-specific `new Worker(new URL(..., import.meta.url))` calls cannot execute natively, pass a mock `ZkpWorkerLike` implementation via the `createWorker` prop rather than instantiating a real browser `Worker`:
+
+```tsx
+import React from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  computeRingDashOffset,
+  StudentDiscountVerification,
+  ZKP_RING_CIRCUMFERENCE,
+  type ZkpWorkerLike,
+  type ZkpWorkerProgressMessage,
+} from "@/components/student/StudentDiscountVerification";
+
+function createMockWorker(): ZkpWorkerLike & {
+  emitMessage: (msg: ZkpWorkerProgressMessage) => void;
+  emitError: (message: string) => void;
+} {
+  const mock: ZkpWorkerLike & {
+    emitMessage: (msg: ZkpWorkerProgressMessage) => void;
+    emitError: (message: string) => void;
+  } = {
+    postMessage: jest.fn(),
+    terminate: jest.fn(),
+    onmessage: null,
+    onerror: null,
+    emitMessage(msg) {
+      mock.onmessage?.({ data: msg } as MessageEvent<ZkpWorkerProgressMessage>);
+    },
+    emitError(message) {
+      mock.onerror?.({ message } as ErrorEvent);
+    },
+  };
+  return mock;
+}
+
+it("updates the SVG progress ring and resets to 0% on cancel", () => {
+  const worker = createMockWorker();
+
+  render(
+    <StudentDiscountVerification
+      createWorker={() => worker}
+      defaultIndicatorVariant="ring"
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /verify student pass/i }));
+
+  act(() => {
+    worker.emitMessage({ type: "progress", progress: 50 });
+  });
+
+  const ring = screen.getByTestId("zkp-progress-ring");
+  const arc = screen.getByTestId("zkp-progress-ring-arc");
+  expect(ring.getAttribute("aria-valuenow")).toBe("50");
+  expect(arc.getAttribute("stroke-dasharray")).toBe(String(ZKP_RING_CIRCUMFERENCE));
+  expect(arc.getAttribute("stroke-dashoffset")).toBe(String(computeRingDashOffset(50)));
+
+  fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+  expect(worker.terminate).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("zkp-progress-label").textContent).toBe("0%");
+});
+```
+
+### 14.3 Common Troubleshooting Checks
+
+- **Ring arc does not animate or stays full**: Verify `progress` messages emit numeric values in `[0, 100]` (or `(0, 1]` fractional values); `NaN`, `undefined`, or non-numeric payloads clamp to `0`, keeping `strokeDashoffset === ZKP_RING_CIRCUMFERENCE`.
+- **Assertion mismatch on `stroke-dashoffset`**: Compare against `String(computeRingDashOffset(percent))` rather than unrounded floating-point math, because both `ZKP_RING_CIRCUMFERENCE` and `computeRingDashOffset` are fixed to 4 decimal places via `.toFixed(4)`.
+- **Jest fails before test runs (`import.meta` / `Worker is not defined`)**: Ensure tests inject `createWorker={() => mockWorker}` (or mock `@/components/student/createZkpWorker` when testing default worker creation).
 

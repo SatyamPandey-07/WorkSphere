@@ -1,6 +1,9 @@
 import {
+  AutonomousConciergeEngine,
   DEFAULT_MAX_TELEMETRY_AGE_MS,
   evaluateVenueConcierge,
+  type EnvironmentalSensorFeed,
+  type MemberWorkspaceSession,
 } from '@/lib/ai/autonomousConciergeEngine';
 import {
   GET,
@@ -10,6 +13,77 @@ import {
 
 describe('AI Concierge trusted telemetry & override enforcement', () => {
   const nowMs = new Date('2026-11-22T16:40:00.000Z').getTime();
+
+  it('exports the autonomous engine public API for zone comfort and rebalance passes', () => {
+    const sensors: EnvironmentalSensorFeed[] = [
+      {
+        venueId: 'venue-1',
+        zoneId: 'outdoor-terrace',
+        zoneName: 'Outdoor Terrace',
+        zoneType: 'outdoor_terrace',
+        temperatureC: 20,
+        humidityPercent: 50,
+        co2Ppm: 600,
+        decibelLevel: 50,
+        weatherCondition: 'rain_storm',
+        isDirectSunlight: false,
+        occupancyCount: 1,
+        maxCapacity: 10,
+      },
+      {
+        venueId: 'venue-1',
+        zoneId: 'quiet-library',
+        zoneName: 'Quiet Library',
+        zoneType: 'quiet_library',
+        temperatureC: 22,
+        humidityPercent: 45,
+        co2Ppm: 600,
+        decibelLevel: 40,
+        weatherCondition: 'clear',
+        isDirectSunlight: false,
+        occupancyCount: 2,
+        maxCapacity: 10,
+      },
+    ];
+    const sessions: MemberWorkspaceSession[] = [
+      {
+        memberId: 'member-1',
+        memberName: 'Test Member',
+        currentDeskId: 'desk-1',
+        currentZoneId: 'outdoor-terrace',
+        assignedZoneName: 'Outdoor Terrace',
+        deskType: 'outdoor_terrace',
+        preferences: {
+          autoPilotEnabled: true,
+          preferredNoiseLevel: 'moderate',
+          prefersNaturalLight: false,
+          temperatureComfortC: 22,
+        },
+        currentComfortIndex: 20,
+      },
+    ];
+
+    expect(AutonomousConciergeEngine.calculateZoneComfort(sensors[1])).toBe(
+      100,
+    );
+
+    const result = AutonomousConciergeEngine.runRebalanceOptimizationPass(
+      sensors,
+      sessions,
+    );
+
+    expect(result).toMatchObject({
+      displacedCount: 1,
+      avgComfortImprovement: 90,
+    });
+    expect(result.recommendations[0]).toMatchObject({
+      memberId: 'member-1',
+      recommendedZoneName: 'Quiet Library',
+      triggerReason: 'sudden_rain_hazard',
+      urgency: 'critical',
+      isAutoApplied: true,
+    });
+  });
 
   afterEach(() => {
     setConciergeTelemetryProvider(null);

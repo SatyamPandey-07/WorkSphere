@@ -8,6 +8,7 @@ export interface CopyToClipboardButtonProps {
   className?: string;
   label?: string;
   toastMessage?: string;
+  errorToastMessage?: string;
   ariaLabel?: string;
   onCopy?: (text: string) => void;
   disabled?: boolean;
@@ -18,12 +19,14 @@ export function CopyToClipboardButton({
   className = "",
   label = "Copy Address",
   toastMessage = "Address copied!",
+  errorToastMessage = "Unable to copy. Please copy manually.",
   ariaLabel,
   onCopy,
   disabled = false,
 }: CopyToClipboardButtonProps) {
   const [isCopied, setIsCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [showErrorToast, setShowErrorToast] = useState(false);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -45,17 +48,19 @@ export function CopyToClipboardButton({
     textArea.style.left = "0";
     textArea.style.position = "fixed";
 
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-
     try {
-      document.execCommand("copy");
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      return document.execCommand("copy");
     } catch (err) {
       console.error("Fallback: Oops, unable to copy", err);
+      return false;
+    } finally {
+      if (textArea.parentNode) {
+        textArea.parentNode.removeChild(textArea);
+      }
     }
-
-    document.body.removeChild(textArea);
   };
 
   // Requirement 2: Write text using navigator.clipboard
@@ -65,8 +70,11 @@ export function CopyToClipboardButton({
     if (disabled) return;
 
     if (!navigator.clipboard) {
-      fallbackCopyTextToClipboard(textToCopy);
-      triggerFeedback();
+      if (fallbackCopyTextToClipboard(textToCopy)) {
+        triggerFeedback();
+      } else {
+        triggerCopyError();
+      }
       return;
     }
 
@@ -76,8 +84,11 @@ export function CopyToClipboardButton({
     } catch (err) {
       console.error("Failed to copy text: ", err);
       // Try fallback if modern API fails for any reason
-      fallbackCopyTextToClipboard(textToCopy);
-      triggerFeedback();
+      if (fallbackCopyTextToClipboard(textToCopy)) {
+        triggerFeedback();
+      } else {
+        triggerCopyError();
+      }
     }
   };
 
@@ -88,6 +99,7 @@ export function CopyToClipboardButton({
     }
     setIsCopied(true);
     setShowToast(true);
+    setShowErrorToast(false);
     onCopy?.(textToCopy);
 
     // Reset back to normal after 2 seconds per issue criteria
@@ -95,6 +107,19 @@ export function CopyToClipboardButton({
       feedbackTimerRef.current = null;
       setIsCopied(false);
       setShowToast(false);
+    }, 2000);
+  };
+
+  const triggerCopyError = () => {
+    if (feedbackTimerRef.current !== null) {
+      clearTimeout(feedbackTimerRef.current);
+    }
+    setIsCopied(false);
+    setShowToast(false);
+    setShowErrorToast(true);
+    feedbackTimerRef.current = setTimeout(() => {
+      feedbackTimerRef.current = null;
+      setShowErrorToast(false);
     }, 2000);
   };
 
@@ -136,6 +161,15 @@ export function CopyToClipboardButton({
         >
           <Check className="w-4 h-4 text-green-400 dark:text-green-600" />
           {toastMessage}
+        </div>
+      )}
+      {showErrorToast && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 text-sm font-medium text-white bg-red-700 rounded-lg shadow-xl animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
+          {errorToastMessage}
         </div>
       )}
     </>

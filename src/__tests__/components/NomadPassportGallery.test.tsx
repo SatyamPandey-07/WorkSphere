@@ -7,13 +7,20 @@ jest.mock("canvas-confetti", () => ({
   default: jest.fn(),
 }));
 
+// Mock nomadProofClient for JSDOM test environment
+jest.mock("@/lib/zkp/nomadProofClient", () => ({
+  generateClientNomadProof: jest.fn(),
+}));
+
 // Mock Three.js / React Three Fiber coin subcomponent
 jest.mock("@/components/profile/NomadPassportCoin", () => ({
   __esModule: true,
   default: () => <div data-testid="mock-passport-coin">Coin</div>,
 }));
 
-import NomadPassportGallery, { playPoapMintChime } from "@/components/profile/NomadPassportGallery";
+import NomadPassportGallery, {
+  playPoapMintChime,
+} from "@/components/profile/NomadPassportGallery";
 
 describe("NomadPassportGallery Component & playPoapMintChime", () => {
   const mockSetValueAtTime = jest.fn();
@@ -54,6 +61,18 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (window as any).AudioContext = MockAudioContext;
+    global.fetch = jest.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            valid: true,
+            status: "verified",
+            signatureFingerprint: "mocked...fingerprint",
+            timestamp: "2024-03-01T12:00:00Z",
+          }),
+      }),
+    );
   });
 
   afterEach(() => {
@@ -98,10 +117,16 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
     it("renders gallery header and earned stamps section", () => {
       render(<NomadPassportGallery />);
 
-      expect(screen.getByText(/Proof-of-Productivity & Digital Nomad Passport/i)).toBeInTheDocument();
-      expect(screen.getByText(/Earned Passport Stamps & Country Badges/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Proof-of-Productivity & Digital Nomad Passport/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/Earned Passport Stamps & Country Badges/i),
+      ).toBeInTheDocument();
       expect(screen.getByText(/Portugal Country Stamp/i)).toBeInTheDocument();
-      expect(screen.getAllByText(/Second Home Coworking Lisboa/i).length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByText(/Second Home Coworking Lisboa/i).length,
+      ).toBeGreaterThan(0);
     });
 
     it("toggles celebration audio on and off", () => {
@@ -111,7 +136,10 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
       expect(soundBtn).toHaveAttribute("aria-label", "Mute celebratory chime");
 
       fireEvent.click(soundBtn);
-      expect(soundBtn).toHaveAttribute("aria-label", "Enable celebratory chime");
+      expect(soundBtn).toHaveAttribute(
+        "aria-label",
+        "Enable celebratory chime",
+      );
     });
 
     it("opens stamp inspection modal when clicking Preview button", () => {
@@ -122,6 +150,58 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
 
       expect(screen.getByTestId("stamp-preview-modal")).toBeInTheDocument();
       expect(screen.getByText(/Passport Stamp Preview/i)).toBeInTheDocument();
+    });
+
+    describe("Stamp Preview Modal Scrolling & Accessibility (Issue #9160)", () => {
+      it("establishes a single scroll container with overflow-y-auto, overflow-x-hidden, and max-h-[90vh]", () => {
+        render(<NomadPassportGallery />);
+
+        const previewBtns = screen.getAllByRole("button", { name: /Preview/i });
+        fireEvent.click(previewBtns[0]);
+
+        const outerDialog = screen.getByTestId("stamp-preview-modal");
+        expect(outerDialog).toBeInTheDocument();
+        expect(outerDialog).toHaveClass("overflow-hidden");
+        expect(outerDialog).not.toHaveClass("overflow-y-auto");
+
+        const innerContent = outerDialog.firstElementChild as HTMLElement;
+        expect(innerContent).toBeInTheDocument();
+        expect(innerContent).toHaveClass("overflow-y-auto");
+        expect(innerContent).toHaveClass("overflow-x-hidden");
+        expect(innerContent).toHaveClass("max-h-[90vh]");
+      });
+
+      it("closes modal on Escape key press", () => {
+        render(<NomadPassportGallery />);
+
+        const previewBtns = screen.getAllByRole("button", { name: /Preview/i });
+        fireEvent.click(previewBtns[0]);
+
+        expect(screen.getByTestId("stamp-preview-modal")).toBeInTheDocument();
+
+        fireEvent.keyDown(window, { key: "Escape" });
+
+        expect(screen.queryByTestId("stamp-preview-modal")).not.toBeInTheDocument();
+      });
+
+      it("closes modal on backdrop click and close button click", () => {
+        render(<NomadPassportGallery />);
+
+        const previewBtns = screen.getAllByRole("button", { name: /Preview/i });
+        fireEvent.click(previewBtns[0]);
+
+        const closeBtn = screen.getByRole("button", { name: /close modal/i });
+        fireEvent.click(closeBtn);
+
+        expect(screen.queryByTestId("stamp-preview-modal")).not.toBeInTheDocument();
+
+        // Reopen and test backdrop click
+        fireEvent.click(previewBtns[0]);
+        const backdrop = screen.getByTestId("stamp-preview-modal");
+        fireEvent.click(backdrop);
+
+        expect(screen.queryByTestId("stamp-preview-modal")).not.toBeInTheDocument();
+      });
     });
   });
 });

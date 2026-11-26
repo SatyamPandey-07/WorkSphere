@@ -1,0 +1,92 @@
+﻿import React from 'react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  computeRingDashOffset,
+  StudentDiscountVerification,
+  ZKP_RING_CIRCUMFERENCE,
+  type ZkpWorkerLike,
+  type ZkpWorkerProgressMessage,
+} from '@/components/student/StudentDiscountVerification';
+
+function createMockWorker(): ZkpWorkerLike & {
+  emitMessage: (msg: ZkpWorkerProgressMessage) => void;
+  emitError: (message: string) => void;
+} {
+  const mock: ZkpWorkerLike & {
+    emitMessage: (msg: ZkpWorkerProgressMessage) => void;
+    emitError: (message: string) => void;
+  } = {
+    postMessage: jest.fn(),
+    terminate: jest.fn(),
+    onmessage: null,
+    onerror: null,
+    emitMessage(msg) {
+      mock.onmessage?.({ data: msg } as MessageEvent<ZkpWorkerProgressMessage>);
+    },
+    emitError(message) {
+      mock.onerror?.({ message } as ErrorEvent);
+    },
+  };
+  return mock;
+}
+
+describe('StudentDiscountVerification ZKP progress ring & reset', () => {
+  it('renders animated SVG progress ring and updates strokeDashoffset with witness progress', () => {
+    const worker = createMockWorker();
+    render(<StudentDiscountVerification createWorker={() => worker} defaultIndicatorVariant="ring" />);
+    const ring = screen.getByTestId('zkp-progress-ring');
+    const arc = screen.getByTestId('zkp-progress-ring-arc');
+    expect(ring).toBeDefined();
+    expect(arc.getAttribute('stroke-dasharray')).toBe(String(ZKP_RING_CIRCUMFERENCE));
+    expect(arc.getAttribute('stroke-dashoffset')).toBe(String(computeRingDashOffset(0)));
+    fireEvent.click(screen.getByRole('button', { name: /verify student pass/i }));
+    act(() => {
+      worker.emitMessage({ type: 'progress', progress: 50 });
+    });
+    expect(ring.getAttribute('aria-valuenow')).toBe('50');
+    expect(arc.getAttribute('stroke-dashoffset')).toBe(String(computeRingDashOffset(50)));
+    expect(screen.getByTestId('zkp-progress-label').textContent).toBe('50%');
+  });
+
+  it('resets progress bar and ring to 0% when proof generation is cancelled or errors', () => {
+    const worker = createMockWorker();
+    render(<StudentDiscountVerification createWorker={() => worker} />);
+    fireEvent.click(screen.getByRole('button', { name: /verify student pass/i }));
+    act(() => {
+      worker.emitMessage({ type: 'progress', progress: 65 });
+    });
+    expect(screen.getByTestId('zkp-progress-label').textContent).toBe('65%');
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('zkp-progress-label').textContent).toBe('0%');
+    expect(screen.getByTestId('zkp-progress-bar').getAttribute('aria-valuenow')).toBe('0');
+  });
+
+  it('cancels active proof generation and resets progress to 0% when Escape is pressed', () => {
+    const worker = createMockWorker();
+    render(<StudentDiscountVerification createWorker={() => worker} />);
+
+    // Pressing Escape before generation starts does nothing
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(worker.terminate).not.toHaveBeenCalled();
+
+    // Start proof generation and advance progress
+    fireEvent.click(screen.getByRole('button', { name: /verify student pass/i }));
+    act(() => {
+      worker.emitMessage({ type: 'progress', progress: 42 });
+    });
+    expect(screen.getByTestId('zkp-progress-label').textContent).toBe('42%');
+
+    // Non-Escape keys do not cancel
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(worker.terminate).not.toHaveBeenCalled();
+    expect(screen.getByTestId('zkp-progress-label').textContent).toBe('42%');
+
+    // Pressing Escape cancels generation and resets progress to 0%
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('zkp-progress-label').textContent).toBe('0%');
+    expect(screen.getByTestId('zkp-progress-bar').getAttribute('aria-valuenow')).toBe('0');
+    expect(screen.getByRole('status').textContent).toMatch(/cancelled/i);
+  });
+});

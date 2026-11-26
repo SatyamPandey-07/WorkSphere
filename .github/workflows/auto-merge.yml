@@ -10,7 +10,7 @@ on:
     workflows: ["Continuous Integration"]
     types: [completed]
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -22,10 +22,15 @@ jobs:
   auto-merge-linked-pr:
     name: Check Issue Link & Auto-Merge
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Auto-merge if linked to an issue
         uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.AUTO_MERGE_PAT || secrets.GITHUB_TOKEN }}
           script: |
             try {
               const owner = context.repo.owner;
@@ -91,7 +96,7 @@ jobs:
                 const rawBody = pr.body || '';
                 const headRef = pr.head ? pr.head.ref : '';
 
-                const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+                const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
                 if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor)) {
                   console.log(`Skipping blocked user @${prAuthor} on PR #${prNumber}`);
                   continue;
@@ -145,8 +150,17 @@ jobs:
                   if (num !== prNumber) candidateIssueNumbers.add(num);
                 }
 
-                // Check branch ref (e.g. fix/issue-456 or issue-456)
-                const branchMatch = headRef.match(/(?:fix|close|resolve|issue)[-/](\d+)/i);
+                // Match any #<number> in title, e.g. "(#8915)"
+                const titleHashMatches = title.match(/#(\d+)/g);
+                if (titleHashMatches) {
+                  for (const thm of titleHashMatches) {
+                    const num = parseInt(thm.replace('#', ''), 10);
+                    if (num !== prNumber) candidateIssueNumbers.add(num);
+                  }
+                }
+
+                // Check branch ref (e.g. fix/issue-456 or issue-456 or feat-9035)
+                const branchMatch = headRef.match(/(?:fix|close|resolve|issue|feat|feature)[-/](\d+)/i);
                 if (branchMatch) {
                   const num = parseInt(branchMatch[1], 10);
                   if (num !== prNumber) candidateIssueNumbers.add(num);
@@ -168,7 +182,7 @@ jobs:
                       if (isMaintainer || assignees.includes(prAuthor)) {
                         linkedIssues.push(`#${num}`);
                       } else {
-                        console.log(`Issue #${num} is not assigned to PR author @${prAuthor}. Not counted for auto-merge.`);
+                        console.log(`Issue #${num} is not assigned to PR author @${prAuthor}. Only the contributor assigned to the issue can submit a PR for it.`);
                       }
                     } else {
                       console.log(`Reference #${num} is a Pull Request, not an Issue. Ignored.`);
@@ -222,18 +236,47 @@ jobs:
                   });
                 } catch (e) {}
 
-                // Auto-approve PR
+                // Auto-approve PR if not already approved
                 try {
-                  await github.rest.pulls.createReview({
+                  const existingReviews = await github.rest.pulls.listReviews({
                     owner,
                     repo,
-                    pull_number: prNumber,
-                    event: 'APPROVE',
-                    body: `✅ Auto-approved! This PR properly references assigned issue(s): ${linkedIssues.join(', ')}.`
+                    pull_number: prNumber
                   });
-                  console.log(`Auto-approved PR #${prNumber}`);
+                  const isAlreadyApproved = (existingReviews.data || []).some(
+                    r => r.state === 'APPROVED'
+                  );
+                  if (!isAlreadyApproved) {
+                    await github.rest.pulls.createReview({
+                      owner,
+                      repo,
+                      pull_number: prNumber,
+                      event: 'APPROVE',
+                      body: `✅ Auto-approved! This PR properly references assigned issue(s): ${linkedIssues.join(', ')}.`
+                    });
+                    console.log(`Auto-approved PR #${prNumber}`);
+                  } else {
+                    console.log(`PR #${prNumber} is already approved.`);
+                  }
                 } catch (approveErr) {
-                  console.warn('Auto-approve note (may already be approved):', approveErr.message);
+                  console.warn('Auto-approve note:', approveErr.message);
+                }
+
+                // Ensure PR author is assigned to the PR
+                try {
+                  const prDetails = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+                  const assignees = (prDetails.data.assignees || []).map(a => a.login.toLowerCase());
+                  if (!assignees.includes(prAuthor.toLowerCase())) {
+                    await github.rest.issues.addAssignees({
+                      owner,
+                      repo,
+                      issue_number: prNumber,
+                      assignees: [prAuthor]
+                    });
+                    console.log(`Auto-assigned author @${prAuthor} to PR #${prNumber} during auto-merge`);
+                  }
+                } catch (assignErr) {
+                  console.warn(`Could not assign PR author in auto-merge:`, assignErr.message);
                 }
 
                 // Ensure WOCS labels are applied
@@ -286,6 +329,26 @@ jobs:
                 if (prDetails.mergeable === false || prDetails.mergeable_state === 'dirty') {
                   console.log(`PR #${prNumber} has merge conflicts (state: ${prDetails.mergeable_state}). Skipping auto-merge.`);
                   continue;
+                }
+
+                // Ensure CI build-and-test checks have not failed on this PR
+                try {
+                  const checkRunsRes = await github.rest.checks.listForRef({
+                    owner,
+                    repo,
+                    ref: pr.head.sha
+                  });
+                  const checkRuns = checkRunsRes.data?.check_runs || [];
+                  const failedCheck = checkRuns.find(c =>
+                    c.conclusion === 'failure' &&
+                    (c.name.includes('build-and-test') || c.name.includes('Continuous Integration'))
+                  );
+                  if (failedCheck) {
+                    console.log(`PR #${prNumber} has failing check "${failedCheck.name}". Skipping auto-merge until resolved.`);
+                    continue;
+                  }
+                } catch (checkErr) {
+                  console.warn('Check runs query note:', checkErr.message);
                 }
 
                 // Execute squash merge with co-author attribution

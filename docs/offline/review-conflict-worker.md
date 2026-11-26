@@ -1,6 +1,6 @@
 # Engineering Guide: Background Web Worker Architecture for Multi-Device Review Conflict Resolution
 
-This technical specification details WorkSphere's background Web Worker sync engine for offline venue reviews, multi-device edit conflict detection, three-way merge resolution algorithms, error handling state transitions, and main-thread fallback mechanisms ([src/workers/reviewConflictSync.worker.ts](file:///c:/Users/admin/Desktop/workfere/src/workers/reviewConflictSync.worker.ts), [src/hooks/useReviewConflictWorker.ts](file:///c:/Users/admin/Desktop/workfere/src/hooks/useReviewConflictWorker.ts), and [src/lib/offlineReviewSync.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineReviewSync.ts)).
+This technical specification details WorkSphere's background Web Worker sync engine for offline venue reviews, multi-device edit conflict detection, three-way merge resolution algorithms, error handling state transitions, and main-thread fallback mechanisms ([src/workers/reviewConflictSync.worker.ts](../../src/workers/reviewConflictSync.worker.ts), [src/hooks/useReviewConflictWorker.ts](../../src/hooks/useReviewConflictWorker.ts), and [src/lib/offlineReviewSync.ts](../../src/lib/offlineReviewSync.ts)).
 
 ---
 
@@ -33,7 +33,7 @@ WorkSphere allows mobile and desktop users to write, update, and rate venue attr
 
 If a user edits a venue review on a mobile device while offline, and simultaneously updates or receives edits for the same review on another device or from another user, a **409 Conflict** occurs upon synchronization.
 
-To deliver zero UI lag and prevent blocking the main V8 rendering thread during heavy IndexedDB transactions, cryptographic payload hashing, and network polling, WorkSphere executes synchronization inside a dedicated **Web Worker** ([src/workers/reviewConflictSync.worker.ts](file:///c:/Users/admin/Desktop/workfere/src/workers/reviewConflictSync.worker.ts)).
+To deliver zero UI lag and prevent blocking the main V8 rendering thread during heavy IndexedDB transactions, cryptographic payload hashing, and network polling, WorkSphere executes synchronization inside a dedicated **Web Worker** ([src/workers/reviewConflictSync.worker.ts](../../src/workers/reviewConflictSync.worker.ts)).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -57,7 +57,7 @@ To deliver zero UI lag and prevent blocking the main V8 rendering thread during 
 
 ## 2. Web Worker Message Protocol Specification
 
-Communication between the main React application thread and the background worker operates over a strongly typed `postMessage` protocol defined in [src/workers/reviewConflictSync.worker.ts](file:///c:/Users/admin/Desktop/workfere/src/workers/reviewConflictSync.worker.ts#L55-L71).
+Communication between the main React application thread and the background worker operates over a strongly typed `postMessage` protocol defined in [src/workers/reviewConflictSync.worker.ts](../../src/workers/reviewConflictSync.worker.ts#L55-L71).
 
 ### Inbound Messages (Main Thread $\rightarrow$ Worker)
 
@@ -170,7 +170,7 @@ sequenceDiagram
 
 ## 3. Three-Way Merge Resolution Algorithm
 
-File: [src/lib/offlineReviewSync.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineReviewSync.ts#L653-L743)
+File: [src/lib/offlineReviewSync.ts](../../src/lib/offlineReviewSync.ts#L653-L743)
 
 When two devices modify the same venue review offline, a basic "last-write-wins" strategy risks overwriting unrelated fields edited on another device (e.g. Device A updates `wifiSpeed`, while Device B updates `noiseLevel`). WorkSphere resolves these conflicts using a **Three-Way Merge Algorithm**.
 
@@ -279,7 +279,7 @@ export function applyThreeWayMerge(
 
 ## 4. Error Handling & Lifecycle State Transitions
 
-File: [src/workers/reviewConflictSync.worker.ts](file:///c:/Users/admin/Desktop/workfere/src/workers/reviewConflictSync.worker.ts#L203-L290)
+File: [src/workers/reviewConflictSync.worker.ts](../../src/workers/reviewConflictSync.worker.ts#L203-L290)
 
 ### IndexedDB Queue Persistence
 
@@ -345,8 +345,8 @@ To prevent duplicate review creation when network dropouts occur mid-response:
 ## 5. Main-Thread Fallback & Resilience Strategy
 
 Files:
-- [src/hooks/useReviewConflictWorker.ts](file:///c:/Users/admin/Desktop/workfere/src/hooks/useReviewConflictWorker.ts#L73-L80)
-- [src/lib/offlineReviewSync.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineReviewSync.ts#L748-L820)
+- [src/hooks/useReviewConflictWorker.ts](../../src/hooks/useReviewConflictWorker.ts#L73-L80)
+- [src/lib/offlineReviewSync.ts](../../src/lib/offlineReviewSync.ts#L748-L820)
 
 ### Browser Feature Detection
 
@@ -389,7 +389,7 @@ document.addEventListener("visibilitychange", handleVisibilityChange);
 
 ## 6. Repository Code Reference Map
 
-- [src/workers/reviewConflictSync.worker.ts](file:///c:/Users/admin/Desktop/workfere/src/workers/reviewConflictSync.worker.ts) — Background Web Worker implementation, message protocol types, and IndexedDB sync handlers.
-- [src/hooks/useReviewConflictWorker.ts](file:///c:/Users/admin/Desktop/workfere/src/hooks/useReviewConflictWorker.ts) — React Client Hook instantiating worker, postMessage listeners, and UI toast triggers.
-- [src/lib/offlineReviewSync.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineReviewSync.ts) — Core Three-Way Merge algorithm (`applyThreeWayMerge`) and main-thread fallback resolution.
-- [src/lib/offline/repositories/reviewsRepository.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/offline/repositories/reviewsRepository.ts) — Typed IndexedDB repository for queued offline reviews.
+- [src/workers/reviewConflictSync.worker.ts](../../src/workers/reviewConflictSync.worker.ts) — Background Web Worker implementation, message protocol types, and IndexedDB sync handlers.
+- [src/hooks/useReviewConflictWorker.ts](../../src/hooks/useReviewConflictWorker.ts) — React Client Hook instantiating worker, postMessage listeners, and UI toast triggers.
+- [src/lib/offlineReviewSync.ts](../../src/lib/offlineReviewSync.ts) — Core Three-Way Merge algorithm (`applyThreeWayMerge`) and main-thread fallback resolution.
+- [src/lib/offline/repositories/reviewsRepository.ts](../../src/lib/offline/repositories/reviewsRepository.ts) — Typed IndexedDB repository for queued offline reviews.

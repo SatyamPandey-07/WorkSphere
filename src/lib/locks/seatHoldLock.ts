@@ -16,6 +16,8 @@
  * trips the key can expire (and be taken by another user) between the calls, and
  * the renewing user then silently overwrites the new owner's lock.
  */
+import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
+
 export const SEAT_LOCK_ACQUIRE_LUA = `
 local current = redis.call('GET', KEYS[1])
 if not current then
@@ -135,7 +137,6 @@ export async function acquireSeatWebLock(
       const currentLock = parseLockValue(rawLock);
 
       if (Number(flag) === 1) {
- fix/redlock-monotonic-fencing-drift
         const resolvedLock: SeatLockData = {
           ...(currentLock ?? lockPayload),
           driftAllowanceMs,
@@ -144,21 +145,13 @@ export async function acquireSeatWebLock(
         const resolvedToken = resolvedLock.fencingToken
           ? BigInt(resolvedLock.fencingToken)
           : initialToken;
+        scheduleSeatHoldExpiration(venueId, seatId, resolvedLock.expiresAt);
         return {
           success: true,
           lock: resolvedLock,
           fencingToken: resolvedToken,
           driftAllowanceMs,
         };
-
-        const finalLock = currentLock ?? lockPayload;
-        getRedisKeyspaceManager().registerDeskTimer(
-          venueId,
-          seatId,
-          finalLock.expiresAt,
-        );
-        return { success: true, lock: finalLock };
- main
       }
 
       const remainingSec = currentLock
@@ -219,20 +212,13 @@ export async function acquireSeatWebLock(
   };
 
   memoryLocks.set(key, lockPayload);
- fix/redlock-monotonic-fencing-drift
+  scheduleSeatHoldExpiration(venueId, seatId, lockPayload.expiresAt);
   return {
     success: true,
     lock: lockPayload,
     fencingToken: token,
     driftAllowanceMs,
   };
-  getRedisKeyspaceManager().registerDeskTimer(
-    venueId,
-    seatId,
-    lockPayload.expiresAt,
-  );
-  return { success: true, lock: lockPayload };
- main
 }
 
 /**
@@ -246,13 +232,15 @@ export async function releaseSeatWebLock(
   const key = getLockKey(venueId, seatId);
   const redis = getRedis();
 
-  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
-
   if (redis) {
     try {
       // Atomic compare-and-delete: never removes a lock owned by someone else.
       const released = await redis.eval(SEAT_LOCK_RELEASE_LUA, [key], [userId]);
-      return Number(released) === 1;
+      if (Number(released) === 1) {
+        cancelSeatHoldExpiration(venueId, seatId);
+        return true;
+      }
+      return false;
     } catch (err) {
       console.warn(
         "[SeatLock] Redis release failed, falling back to memory:",
@@ -265,6 +253,7 @@ export async function releaseSeatWebLock(
   const existing = memoryLocks.get(key);
   if (existing && existing.userId === userId) {
     memoryLocks.delete(key);
+    cancelSeatHoldExpiration(venueId, seatId);
     return true;
   }
   return false;
@@ -525,7 +514,7 @@ export interface SeatWebLockOptions {
 }
 
 /**
- * Hashed Timing Wheel for Seat Hold Expirations (#10455)
+ * Hashed Timing Wheel for Seat Hold Expirations (#10441, #10455)
  *
  * Implements a circular hashed timing wheel to schedule seat hold expirations and lock renewals
  * efficiently without creating thousands of disparate Node/browser timer handles.
@@ -545,6 +534,7 @@ export interface SeatWebLockOptions {
  *      - If `task.remainingRotations > 0`, decrement `remainingRotations--` and retain in the slot.
  *      - If `task.remainingRotations === 0`, remove from slot and execute callback.
  *   6. Supports cancellation, rescheduling, zero-delay execution, and arbitrary multi-revolution delays.
+ * 7. Delayed timer callbacks coalesce elapsed ticks into one deadline-ordered batch.
  */
 
 export interface TimingWheelTask {
@@ -574,6 +564,8 @@ export class HashedTimingWheel {
   private currentTick: number = 0;
   private timerHandle: ReturnType<typeof setInterval> | null = null;
   private isRunning: boolean = false;
+  private lastTickAtMs: number | null = null;
+  private scheduleVersion: number = 0;
 
   constructor(options?: HashedTimingWheelOptions) {
     this.wheelSize = Math.max(1, options?.wheelSize ?? 60);
@@ -645,6 +637,7 @@ export class HashedTimingWheel {
 
     this.slots[slotIndex].set(id, task);
     this.tasksById.set(id, task);
+    this.scheduleVersion += 1;
 
     return task;
   }
@@ -675,14 +668,110 @@ export class HashedTimingWheel {
     task.cancelled = true;
     this.slots[task.slotIndex].delete(id);
     this.tasksById.delete(id);
+    if (this.tasksById.size === 0) this.stop();
     return true;
   }
 
   /**
    * Advances the timing wheel by one tick and executes eligible tasks.
-   * Only executes tasks whose remainingRotations has reached 0 (and targetTick matches).
    */
   public advanceTick(): TimingWheelTask[] {
+    return this.advanceTicks(1);
+  }
+
+  /**
+   * Advances a coalesced window of ticks and executes every task due within it.
+   * Tasks fire in target-tick order, preserving insertion order for simultaneous
+   * expirations.
+   */
+  public advanceTicks(tickCount: number): TimingWheelTask[] {
+    if (!Number.isFinite(tickCount) || tickCount <= 0) return [];
+    const ticksToAdvance = Math.floor(tickCount);
+    if (ticksToAdvance <= 0) return [];
+
+    const targetTick = this.currentTick + ticksToAdvance;
+    if (!Number.isSafeInteger(targetTick)) return [];
+
+    if (ticksToAdvance === 1) {
+      return this.advanceOneTick();
+    }
+
+    const executedTasks: TimingWheelTask[] = [];
+    const queuedTasks = new Set<TimingWheelTask>();
+    const dueTasks = Array.from(this.tasksById.values())
+      .filter((task) => task.targetTick <= targetTick)
+      .sort((a, b) => a.targetTick - b.targetTick);
+    for (const task of dueTasks) queuedTasks.add(task);
+
+    let taskIndex = 0;
+    let observedScheduleVersion = this.scheduleVersion;
+    while (taskIndex < dueTasks.length) {
+      const nextTask = dueTasks[taskIndex];
+      if (!nextTask) break;
+      const dueTick = nextTask.targetTick;
+      this.currentTick = Math.max(this.currentTick, dueTick);
+      this.currentSlot = this.currentTick % this.wheelSize;
+
+      while (
+        taskIndex < dueTasks.length &&
+        dueTasks[taskIndex]?.targetTick === dueTick
+      ) {
+        const task = dueTasks[taskIndex];
+        taskIndex += 1;
+        if (!task) continue;
+        if (this.tasksById.get(task.id) !== task) continue;
+
+        this.slots[task.slotIndex].delete(task.id);
+        this.tasksById.delete(task.id);
+        task.remainingRotations = 0;
+        task.executed = true;
+        executedTasks.push(task);
+
+        try {
+          task.callback();
+        } catch (err) {
+          console.error(
+            `[HashedTimingWheel] Task ${task.id} execution error:`,
+            err,
+          );
+        }
+      }
+
+      if (this.scheduleVersion !== observedScheduleVersion) {
+        observedScheduleVersion = this.scheduleVersion;
+        const newlyDueTasks = Array.from(this.tasksById.values()).filter(
+          (task) =>
+            task.targetTick > this.currentTick &&
+            task.targetTick <= targetTick &&
+            !queuedTasks.has(task),
+        );
+        for (const task of newlyDueTasks) {
+          queuedTasks.add(task);
+          dueTasks.push(task);
+        }
+        dueTasks
+          .slice(taskIndex)
+          .sort((a, b) => a.targetTick - b.targetTick)
+          .forEach((task, index) => {
+            dueTasks[taskIndex + index] = task;
+          });
+      }
+    }
+
+    this.currentTick = Math.max(this.currentTick, targetTick);
+    this.currentSlot = this.currentTick % this.wheelSize;
+    for (const task of this.tasksById.values()) {
+      task.remainingRotations = Math.max(
+        0,
+        Math.floor((task.targetTick - this.currentTick - 1) / this.wheelSize),
+      );
+    }
+    if (this.tasksById.size === 0) this.stop();
+
+    return executedTasks;
+  }
+
+  private advanceOneTick(): TimingWheelTask[] {
     this.currentSlot = (this.currentSlot + 1) % this.wheelSize;
     this.currentTick += 1;
 
@@ -720,6 +809,7 @@ export class HashedTimingWheel {
       }
     }
 
+    if (this.tasksById.size === 0) this.stop();
     return executedTasks;
   }
 
@@ -729,8 +819,21 @@ export class HashedTimingWheel {
   public start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.lastTickAtMs = Date.now();
     this.timerHandle = setInterval(() => {
-      this.advanceTick();
+      const now = Date.now();
+      if (this.lastTickAtMs === null) {
+        this.lastTickAtMs = now;
+        return;
+      }
+
+      const ticksElapsed = Math.floor(
+        (now - this.lastTickAtMs) / this.tickDurationMs,
+      );
+      if (ticksElapsed <= 0) return;
+
+      this.lastTickAtMs += ticksElapsed * this.tickDurationMs;
+      this.advanceTicks(ticksElapsed);
     }, this.tickDurationMs);
     // Unref timer in Node environment so it doesn't block process exit
     if (this.timerHandle && typeof (this.timerHandle as any).unref === "function") {
@@ -747,6 +850,7 @@ export class HashedTimingWheel {
       this.timerHandle = null;
     }
     this.isRunning = false;
+    this.lastTickAtMs = null;
   }
 
   /**
@@ -760,6 +864,7 @@ export class HashedTimingWheel {
     this.tasksById.clear();
     this.currentSlot = 0;
     this.currentTick = 0;
+    this.scheduleVersion = 0;
   }
 
   public getTask(id: string): TimingWheelTask | undefined {
@@ -784,6 +889,40 @@ export const seatHoldTimingWheel = new HashedTimingWheel({
   wheelSize: 60,
   tickDurationMs: 1000,
 });
+
+function scheduleSeatHoldExpiration(
+  venueId: string,
+  seatId: string,
+  expiresAt: number,
+): void {
+  const taskId = getLockKey(venueId, seatId);
+  const schedule = () => {
+    const delayMs = Math.max(0, expiresAt - Date.now());
+    seatHoldTimingWheel.schedule(taskId, delayMs, () => {
+      if (Date.now() < expiresAt) {
+        schedule();
+        return;
+      }
+
+      getRedisKeyspaceManager().dispatchExpiration({
+        venueId,
+        deskId: seatId,
+        seatId,
+        rawKey: taskId,
+        timestamp: expiresAt,
+        source: "in_memory_simulation",
+      });
+    });
+  };
+
+  schedule();
+  if (seatHoldTimingWheel.getTaskCount() > 0) seatHoldTimingWheel.start();
+}
+
+function cancelSeatHoldExpiration(venueId: string, seatId: string): void {
+  seatHoldTimingWheel.cancel(getLockKey(venueId, seatId));
+  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
+}
 
 /**
  * Client-side Web Locks helper using Navigator.locks API.

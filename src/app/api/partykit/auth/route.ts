@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { timingSafeEqual } from "crypto";
+import {
+  defaultFolderAclCoordinator,
+  type AclRole,
+} from "@/lib/realtime/folderAclLease";
 
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_APP_URL,
@@ -97,7 +101,26 @@ export async function GET(req: NextRequest) {
     // `member` lets PartyKit tell real members from outsiders, who also get
     // role "VIEWER" (#3360: collection notes are members-only).
     if (membership) {
-      return NextResponse.json({ role: membership.role, member: true }, { headers: corsHeaders });
+      const role = (
+        membership.role === "OWNER" || membership.role === "EDITOR"
+          ? membership.role
+          : "VIEWER"
+      ) as AclRole;
+      const lease = defaultFolderAclCoordinator.issueLease(
+        userId,
+        folderId,
+        role,
+        true,
+      );
+      return NextResponse.json(
+        {
+          role: membership.role,
+          member: true,
+          aclVersion: lease.aclVersion,
+          leaseExpiresAt: lease.expiresAtMs,
+        },
+        { headers: corsHeaders },
+      );
     }
 
     // Check if they are the owner
@@ -107,10 +130,31 @@ export async function GET(req: NextRequest) {
     });
 
     if (folder && folder.ownerId === userId) {
-      return NextResponse.json({ role: "OWNER", member: true }, { headers: corsHeaders });
+      const lease = defaultFolderAclCoordinator.issueLease(
+        userId,
+        folderId,
+        "OWNER",
+        true,
+      );
+      return NextResponse.json(
+        {
+          role: "OWNER",
+          member: true,
+          aclVersion: lease.aclVersion,
+          leaseExpiresAt: lease.expiresAtMs,
+        },
+        { headers: corsHeaders },
+      );
     }
 
-    return NextResponse.json({ role: "VIEWER", member: false }, { headers: corsHeaders });
+    return NextResponse.json(
+      {
+        role: "VIEWER",
+        member: false,
+        aclVersion: defaultFolderAclCoordinator.getCurrentVersion(folderId, userId),
+      },
+      { headers: corsHeaders },
+    );
   } catch (err) {
     console.error("PartyKit Auth API error:", err);
     return NextResponse.json({ role: "VIEWER" }, { headers: corsHeaders });

@@ -125,8 +125,6 @@ export const telemetryReadingSchema = z
         message: "recordedAt must be a valid, finite date within supported range (2000-2100)",
       })
       .optional(),
-    timestamp: telemetryTimestampSchema.optional(),
-    recordedAt: telemetryTimestampSchema.optional(),
   })
   .refine((data) => data.value !== undefined || data.decibels !== undefined, {
     message: "Either value or decibels must be specified",

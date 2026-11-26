@@ -84,6 +84,28 @@ export interface FallbackMetricsSnapshot {
   exportedAt: string;
 }
 
+export interface FallbackTelemetrySnapshot {
+  active: boolean;
+  activationCount: number;
+  requestCount: number;
+  allowedCount: number;
+  rejectedCount: number;
+  totalDurationMs: number;
+  currentEpisodeDurationMs: number;
+  activeBuckets: number;
+  lastActivatedAtMs: number | null;
+  lastFallbackTimestamp: string | null;
+  byTier: Record<
+    string,
+    {
+      activationCount: number;
+      requestCount: number;
+      allowedCount: number;
+      rejectedCount: number;
+      activeBuckets: number;
+    }
+  >;
+}
 interface BucketEntry {
   tokens: number;
   lastRefillMs: number;
@@ -266,11 +288,7 @@ export class TokenBucketLimiter {
     }
 
     const burst = config.burstAllowance ?? 0;
-    if (
-      typeof burst !== "number" ||
-      !Number.isFinite(burst) ||
-      burst < 0
-    ) {
+    if (typeof burst !== "number" || !Number.isFinite(burst) || burst < 0) {
       throw new Error(
         `TokenBucketLimiter: burstAllowance must be a non-negative finite number, received: ${burst}`,
       );
@@ -298,8 +316,7 @@ export class TokenBucketLimiter {
     cost = 1,
     nowMonotonic?: number,
   ): FallbackRateLimitResult {
-    const safeCost =
-      Number.isFinite(cost) && cost >= 1 ? Math.floor(cost) : 1;
+    const safeCost = Number.isFinite(cost) && cost >= 1 ? Math.floor(cost) : 1;
     const now = resolveMonotonicNow(nowMonotonic);
 
     let entry = this.buckets.get(identifier);
@@ -340,8 +357,14 @@ export class TokenBucketLimiter {
 
     const resetSeconds = Math.max(
       1,
-      Math.ceil((this.effectiveCapacity - entry.tokens) / this.refillRatePerSecond),
+      Math.ceil(
+        (this.effectiveCapacity - entry.tokens) / this.refillRatePerSecond,
+      ),
     );
+
+    if (this.trackMetrics && !telemetryState.active) {
+      recordFallbackActivation(this.tierName, now);
+    }
 
     this.totalRequests += 1;
 
@@ -388,23 +411,6 @@ export class TokenBucketLimiter {
     this.totalRequests = 0;
     this.allowedRequests = 0;
     this.rejectedRequests = 0;
-  }
-
-  /**
-   * Returns per-limiter request and rejection counters.
-   */
-  public getMetrics(): {
-    requestCount: number;
-    allowedCount: number;
-    rejectedCount: number;
-    activeBuckets: number;
-  } {
-    return {
-      requestCount: this.instanceRequestCount,
-      allowedCount: this.instanceAllowedCount,
-      rejectedCount: this.instanceRejectedCount,
-      activeBuckets: this.buckets.size,
-    };
   }
 
   /**
@@ -481,20 +487,41 @@ export function isFallbackActive(): boolean {
  * the same outage episode.
  */
 export function recordFallbackActivation(
+  tierName: string,
+  nowMs?: number,
+): void;
+export function recordFallbackActivation(
   reason?: string,
   tierName?: string,
   nowMs?: number,
+): void;
+export function recordFallbackActivation(
+  reasonOrTier?: string,
+  tierOrNow?: string | number,
+  nowMs?: number,
 ): void {
-  const ts = normalizeTimestampMs(nowMs);
+  const legacyCall = typeof tierOrNow === "number";
+  const reason = legacyCall ? undefined : reasonOrTier;
+  const tierName = legacyCall
+    ? reasonOrTier
+    : typeof tierOrNow === "string"
+      ? tierOrNow
+      : undefined;
+
+  const ts = normalizeTimestampMs(legacyCall ? tierOrNow : nowMs);
+
   if (!telemetryState.active) {
     telemetryState.active = true;
     telemetryState.activationCount += 1;
     telemetryState.currentEpisodeStartMs = ts;
   }
+
   telemetryState.lastActivatedAtMs = ts;
+
   if (reason && reason.trim().length > 0) {
     telemetryState.lastReason = reason.trim();
   }
+
   if (tierName && tierName.trim().length > 0) {
     tierLastActivatedAtMs.set(tierName.trim(), ts);
   }
@@ -570,6 +597,44 @@ export function getFallbackMetricsSnapshot(
 }
 
 /**
+ * Returns fallback telemetry in the format consumed by system vitals.
+ * Adapts the canonical metrics snapshot without maintaining duplicate state.
+ */
+export function getFallbackTelemetrySnapshot(
+  nowMs?: number,
+): FallbackTelemetrySnapshot {
+  const snapshot = getFallbackMetricsSnapshot(nowMs);
+
+  const byTier: FallbackTelemetrySnapshot["byTier"] = {};
+
+  for (const [tier, metrics] of Object.entries(snapshot.tiers)) {
+    byTier[tier] = {
+      activationCount: metrics.lastActivatedAtMs !== null ? 1 : 0,
+      requestCount: metrics.totalRequests,
+      allowedCount: metrics.allowedRequests,
+      rejectedCount: metrics.rejectedRequests,
+      activeBuckets: metrics.activeBuckets,
+    };
+  }
+
+  return {
+    active: snapshot.active,
+    activationCount: snapshot.activationCount,
+    requestCount: snapshot.totalRequests,
+    allowedCount: snapshot.allowedRequests,
+    rejectedCount: snapshot.rejectedRequests,
+    totalDurationMs: snapshot.totalFallbackDurationMs,
+    currentEpisodeDurationMs: snapshot.activeFallbackDurationMs,
+    activeBuckets: snapshot.activeBucketCount,
+    lastActivatedAtMs: snapshot.lastActivatedAtMs,
+    lastFallbackTimestamp:
+      snapshot.lastActivatedAtMs !== null
+        ? new Date(snapshot.lastActivatedAtMs).toISOString()
+        : null,
+    byTier,
+  };
+}
+/**
  * Formats fallback telemetry in Prometheus/OpenMetrics text exposition format.
  */
 export function formatFallbackMetricsPrometheus(
@@ -638,6 +703,12 @@ export function getOrCreateFallbackLimiter(
   return limiter;
 }
 
+/**
+ * Resets fallback telemetry using the canonical metrics reset.
+ */
+export function resetFallbackTelemetry(): void {
+  resetFallbackMetrics();
+}
 /**
  * Clears cached fallback limiters and resets telemetry (for testing).
  */

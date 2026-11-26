@@ -1,6 +1,6 @@
 # MemoryAgent Context Compression, Vector Embedding Batching & HNSW Indexing Guide
 
-This document details the architectural design, vector embedding batching mechanisms, Hierarchical Navigable Small World (HNSW) indexing parameters and thresholds, semantic deduplication heuristics, and memory compaction lifecycle of **MemoryAgent** ([`src/lib/agents/MemoryAgent.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/agents/MemoryAgent.ts)) and the vector memory subsystem ([`src/lib/memory.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/memory.ts)) within WorkSphere's AI architecture.
+This document details the architectural design, vector embedding batching mechanisms, Hierarchical Navigable Small World (HNSW) indexing parameters and thresholds, semantic deduplication heuristics, and memory compaction lifecycle of **MemoryAgent** ([`src/lib/agents/MemoryAgent.ts`](../../src/lib/agents/MemoryAgent.ts)) and the vector memory subsystem ([`src/lib/memory.ts`](../../src/lib/memory.ts)) within WorkSphere's AI architecture.
 
 ---
 
@@ -84,7 +84,7 @@ Layer 0 (Base layer):    [A]─[B]─[C]─[D]─[E]─[F]─[G]─[H]─...─[
 
 ### 3.1 HNSW Graph Hyperparameters
 
-The in-memory HNSW index ([`src/lib/hnsw/hnsw.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/hnsw/hnsw.ts)) and PostgreSQL `pgvector` extension are parameterized with aligned configurations:
+The in-memory HNSW index ([`src/lib/hnsw/hnsw.ts`](../../src/lib/hnsw/hnsw.ts)) and PostgreSQL `pgvector` extension are parameterized with aligned configurations:
 
 | Parameter | Value | Scope | Description |
 | :--- | :--- | :--- | :--- |
@@ -98,7 +98,7 @@ The in-memory HNSW index ([`src/lib/hnsw/hnsw.ts`](file:///c:/Users/Rushabh%20Ma
 
 ### 3.2 Key Operational & Indexing Thresholds
 
-The table below summarizes the critical thresholds governing memory extraction, retrieval, deduplication, and compaction in [`MemoryAgent.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/agents/MemoryAgent.ts):
+The table below summarizes the critical thresholds governing memory extraction, retrieval, deduplication, and compaction in [`MemoryAgent.ts`](../../src/lib/agents/MemoryAgent.ts):
 
 | Threshold Constant | Value | Purpose & Operational Impact |
 | :--- | :--- | :--- |
@@ -198,15 +198,15 @@ stateDiagram-v2
 For low-latency mobile and edge query routing, WorkSphere supports in-memory HNSW cache serialization and SQ8 scalar quantization:
 
 - **Per-User Memory Cache**: `userHnswIndices = new Map<string, HNSWIndex>()` stores user-scoped graph instances.
-- **Binary Serialization**: [`src/lib/hnsw/hnswSerializer.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/hnsw/hnswSerializer.ts) serializes HNSW graphs into compact `ArrayBuffer` payloads for Redis or IndexedDB caching.
+- **Binary Serialization**: [`src/lib/hnsw/hnswSerializer.ts`](../../src/lib/hnsw/hnswSerializer.ts) serializes HNSW graphs into compact `ArrayBuffer` payloads for Redis or IndexedDB caching.
 - **Scalar Quantization (SQ8)**: Quantizes 32-bit floats into 8-bit unsigned integers (`uint8`), reducing memory footprint by **75%** with negligible recall loss ($< 1\%$).
 
 ---
 
 ## 8. Summary Reference of Related Modules
 
-- **Core Agent**: [`src/lib/agents/MemoryAgent.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/agents/MemoryAgent.ts)
-- **Vector Operations & Store**: [`src/lib/memory.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/memory.ts)
-- **HNSW Graph Implementation**: [`src/lib/hnsw/hnsw.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/hnsw/hnsw.ts)
-- **HNSW Type Definitions**: [`src/lib/hnsw/types.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/hnsw/types.ts)
-- **HNSW Comprehensive Guide**: [`docs/HNSW_VECTOR_SEARCH.md`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/docs/HNSW_VECTOR_SEARCH.md)
+- **Core Agent**: [`src/lib/agents/MemoryAgent.ts`](../../src/lib/agents/MemoryAgent.ts)
+- **Vector Operations & Store**: [`src/lib/memory.ts`](../../src/lib/memory.ts)
+- **HNSW Graph Implementation**: [`src/lib/hnsw/hnsw.ts`](../../src/lib/hnsw/hnsw.ts)
+- **HNSW Type Definitions**: [`src/lib/hnsw/types.ts`](../../src/lib/hnsw/types.ts)
+- **HNSW Comprehensive Guide**: [`docs/HNSW_VECTOR_SEARCH.md`](../HNSW_VECTOR_SEARCH.md)

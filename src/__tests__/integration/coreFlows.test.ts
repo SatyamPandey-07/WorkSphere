@@ -299,9 +299,22 @@ describeIfDb("core flows (real database)", () => {
     it("serves a PDF receipt only to the booking owner", async () => {
       const { GET } =
         await import("@/app/api/bookings/[bookingId]/download/route");
-      const booking = await prisma.booking.findFirst({
+      let booking = await prisma.booking.findFirst({
         where: { userId: USER_ID },
       });
+      if (!booking) {
+        booking = await prisma.booking.create({
+          data: {
+            userId: USER_ID,
+            venueId,
+            date: futureDate(2),
+            time: "10:00",
+            customerEmail: "it-user@example.com",
+            confirmationId: `IT-${Date.now()}-A`,
+            status: "CONFIRMED",
+          },
+        });
+      }
 
       const res = await GET(jsonRequest("http://localhost", "GET"), {
         params: Promise.resolve({ bookingId: booking.id }),
@@ -492,7 +505,12 @@ describeIfDb("core flows (real database)", () => {
         );
 
         expect(results).toEqual([
-          { endpointId: endpoint.id, status: "SUCCESS", statusCode: 204 },
+          {
+            channel: "webhook",
+            endpointId: endpoint.id,
+            status: "SUCCESS",
+            statusCode: 204,
+          },
         ]);
         expect(received).toHaveLength(1);
         const { headers, body } = received[0];

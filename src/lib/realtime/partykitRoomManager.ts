@@ -6,7 +6,7 @@
  * Handles network dropouts gracefully for nomadic workers switching connections.
  */
 
-import { ConnectionLifecycleState } from "./connectionState";
+import { seatSyncCoordinator } from "@/lib/offline/SeatSyncCoordinator";
 
 export type ConnectionStatus = "connected" | "reconnecting" | "offline";
 
@@ -42,10 +42,10 @@ export interface PartykitRoomManagerOptions {
   room: string;
   protocol?: "ws" | "wss";
   initialBackoffMs?: number; // Default 500ms
-  maxBackoffMs?: number;     // Default 30,000ms (30s)
-  maxRetries?: number;       // Default unlimited (0 = unlimited)
+  maxBackoffMs?: number; // Default 30,000ms (30s)
+  maxRetries?: number; // Default unlimited (0 = unlimited)
   socketFactory?: (url: string) => WebSocketLike;
-  randomFn?: () => number;   // Injectable for deterministic tests
+  randomFn?: () => number; // Injectable for deterministic tests
 }
 
 export interface ConnectionStateDetails {
@@ -69,7 +69,9 @@ export class PartykitRoomManager {
   private seats: Map<string, SeatCheckin> = new Map();
 
   // Listeners
-  private stateListeners: Set<(state: ConnectionStatus, details: ConnectionStateDetails) => void> = new Set();
+  private stateListeners: Set<
+    (state: ConnectionStatus, details: ConnectionStateDetails) => void
+  > = new Set();
   private messageListeners: Set<(data: unknown) => void> = new Set();
   private syncListeners: Set<(events: VenueRoomEvent[]) => void> = new Set();
 
@@ -78,13 +80,20 @@ export class PartykitRoomManager {
 
   constructor(options: PartykitRoomManagerOptions) {
     this.options = {
-      host: options.host ?? (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_PARTYKIT_HOST ? process.env.NEXT_PUBLIC_PARTYKIT_HOST : "localhost:1999"),
+      host:
+        options.host ??
+        (typeof process !== "undefined" &&
+        process.env?.NEXT_PUBLIC_PARTYKIT_HOST
+          ? process.env.NEXT_PUBLIC_PARTYKIT_HOST
+          : "localhost:1999"),
       room: options.room,
       protocol: options.protocol ?? "wss",
       initialBackoffMs: options.initialBackoffMs ?? 500,
       maxBackoffMs: options.maxBackoffMs ?? 30000,
       maxRetries: options.maxRetries ?? 0,
-      socketFactory: options.socketFactory ?? ((url: string) => new (globalThis as any).WebSocket(url)),
+      socketFactory:
+        options.socketFactory ??
+        ((url: string) => new (globalThis as any).WebSocket(url)),
       randomFn: options.randomFn ?? Math.random,
     };
 
@@ -126,10 +135,12 @@ export class PartykitRoomManager {
    * cap = min(maxBackoff, initialBackoff * 2^(attempt - 1))
    * delay = random(0, cap)
    */
-  public calculateBackoffDelay(attempt: number = this.reconnectAttempts): number {
+  public calculateBackoffDelay(
+    attempt: number = this.reconnectAttempts,
+  ): number {
     const cappedExp = Math.min(
       this.options.maxBackoffMs,
-      this.options.initialBackoffMs * Math.pow(2, Math.max(0, attempt - 1))
+      this.options.initialBackoffMs * Math.pow(2, Math.max(0, attempt - 1)),
     );
     // Full jitter formula: random value between 0 and capped exponential
     const delay = Math.floor(this.options.randomFn() * cappedExp);
@@ -196,7 +207,10 @@ export class PartykitRoomManager {
     if (this.isManuallyClosed) return;
 
     this.reconnectAttempts++;
-    if (this.options.maxRetries > 0 && this.reconnectAttempts > this.options.maxRetries) {
+    if (
+      this.options.maxRetries > 0 &&
+      this.reconnectAttempts > this.options.maxRetries
+    ) {
       this.transitionState("offline");
       return;
     }
@@ -224,7 +238,7 @@ export class PartykitRoomManager {
         type: "sync_request",
         lastSeq: this.lastSequenceId,
         epoch: this.epoch,
-      })
+      }),
     );
   }
 
@@ -242,8 +256,28 @@ export class PartykitRoomManager {
     // Handle initial full snapshot
     if (msg.type === "seat_snapshot" && Array.isArray(msg.seats)) {
       this.seats.clear();
+      const msgEpoch = typeof msg.epoch === "number" ? msg.epoch : this.epoch;
+      const msgSeq =
+        typeof msg.sequenceId === "number"
+          ? msg.sequenceId
+          : this.lastSequenceId;
       for (const seat of msg.seats) {
-        this.seats.set(seat.seatId, seat);
+        if (
+          seatSyncCoordinator.shouldAcceptUpdate(
+            this.options.room,
+            seat.seatId,
+            msgEpoch,
+            msgSeq,
+          )
+        ) {
+          seatSyncCoordinator.acceptUpdate(
+            this.options.room,
+            seat.seatId,
+            msgEpoch,
+            msgSeq,
+          );
+          this.seats.set(seat.seatId, seat);
+        }
       }
       if (typeof msg.sequenceId === "number") {
         this.lastSequenceId = msg.sequenceId;
@@ -264,8 +298,26 @@ export class PartykitRoomManager {
     // Handle full state fallback (e.g. history gap or epoch mismatch)
     if (msg.type === "sync_fallback" && Array.isArray(msg.seats)) {
       this.seats.clear();
+      const msgEpoch = typeof msg.epoch === "number" ? msg.epoch : this.epoch;
+      const msgSeq =
+        typeof msg.latestSeq === "number" ? msg.latestSeq : this.lastSequenceId;
       for (const seat of msg.seats) {
-        this.seats.set(seat.seatId, seat);
+        if (
+          seatSyncCoordinator.shouldAcceptUpdate(
+            this.options.room,
+            seat.seatId,
+            msgEpoch,
+            msgSeq,
+          )
+        ) {
+          seatSyncCoordinator.acceptUpdate(
+            this.options.room,
+            seat.seatId,
+            msgEpoch,
+            msgSeq,
+          );
+          this.seats.set(seat.seatId, seat);
+        }
       }
       if (typeof msg.latestSeq === "number") {
         this.lastSequenceId = msg.latestSeq;
@@ -278,7 +330,28 @@ export class PartykitRoomManager {
     // Handle incremental seat updates
     if (msg.type === "seat_update" && msg.event?.seat) {
       const event: VenueRoomEvent = msg.event;
-      this.seats.set(event.seat.seatId, event.seat);
+      const eventEpoch =
+        typeof event.epoch === "number" ? event.epoch : this.epoch;
+      const eventSeq =
+        typeof event.sequenceId === "number"
+          ? event.sequenceId
+          : this.lastSequenceId;
+      if (
+        seatSyncCoordinator.shouldAcceptUpdate(
+          this.options.room,
+          event.seat.seatId,
+          eventEpoch,
+          eventSeq,
+        )
+      ) {
+        seatSyncCoordinator.acceptUpdate(
+          this.options.room,
+          event.seat.seatId,
+          eventEpoch,
+          eventSeq,
+        );
+        this.seats.set(event.seat.seatId, event.seat);
+      }
       if (typeof event.sequenceId === "number") {
         this.lastSequenceId = Math.max(this.lastSequenceId, event.sequenceId);
       }
@@ -299,9 +372,29 @@ export class PartykitRoomManager {
 
     for (const evt of sorted) {
       if (evt.seat?.seatId) {
-        this.seats.set(evt.seat.seatId, evt.seat);
-        this.lastSequenceId = Math.max(this.lastSequenceId, evt.sequenceId);
-        appliedEvents.push(evt);
+        const evtEpoch = typeof evt.epoch === "number" ? evt.epoch : this.epoch;
+        const evtSeq =
+          typeof evt.sequenceId === "number"
+            ? evt.sequenceId
+            : this.lastSequenceId;
+        if (
+          seatSyncCoordinator.shouldAcceptUpdate(
+            this.options.room,
+            evt.seat.seatId,
+            evtEpoch,
+            evtSeq,
+          )
+        ) {
+          seatSyncCoordinator.acceptUpdate(
+            this.options.room,
+            evt.seat.seatId,
+            evtEpoch,
+            evtSeq,
+          );
+          this.seats.set(evt.seat.seatId, evt.seat);
+          this.lastSequenceId = Math.max(this.lastSequenceId, evt.sequenceId);
+          appliedEvents.push(evt);
+        }
       }
     }
 
@@ -319,7 +412,7 @@ export class PartykitRoomManager {
         seatId,
         userId,
         userName,
-      })
+      }),
     );
   }
 
@@ -333,11 +426,14 @@ export class PartykitRoomManager {
         type: "seat_checkout",
         seatId,
         userId,
-      })
+      }),
     );
   }
 
-  private transitionState(newState: ConnectionStatus, nextRetryDelayMs?: number): void {
+  private transitionState(
+    newState: ConnectionStatus,
+    nextRetryDelayMs?: number,
+  ): void {
     this.state = newState;
     const details: ConnectionStateDetails = {
       reconnectAttempts: this.reconnectAttempts,
@@ -349,7 +445,12 @@ export class PartykitRoomManager {
     this.stateListeners.forEach((listener) => listener(newState, details));
   }
 
-  public onStateChange(listener: (state: ConnectionStatus, details: ConnectionStateDetails) => void): () => void {
+  public onStateChange(
+    listener: (
+      state: ConnectionStatus,
+      details: ConnectionStateDetails,
+    ) => void,
+  ): () => void {
     this.stateListeners.add(listener);
     // Emit immediate current state
     listener(this.state, {
@@ -412,8 +513,10 @@ export class PartykitRoomManager {
     this.transitionState("offline");
 
     if (typeof window !== "undefined") {
-      if (this.onlineHandler) window.removeEventListener("online", this.onlineHandler);
-      if (this.offlineHandler) window.removeEventListener("offline", this.offlineHandler);
+      if (this.onlineHandler)
+        window.removeEventListener("online", this.onlineHandler);
+      if (this.offlineHandler)
+        window.removeEventListener("offline", this.offlineHandler);
     }
   }
 }

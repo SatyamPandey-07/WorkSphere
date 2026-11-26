@@ -1,6 +1,6 @@
 # WebXR Coordinate Space Mapping & Device Orientation Fallback Pipeline
 
-This document details the architecture, browser capability detection cascade, coordinate reference space hierarchy, mathematical quaternion transformations, and device sensor fallbacks in WorkSphere's Augmented Reality (AR) navigation subsystem ([`src/components/ar/`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/)).
+This document details the architecture, browser capability detection cascade, coordinate reference space hierarchy, mathematical quaternion transformations, and device sensor fallbacks in WorkSphere's Augmented Reality (AR) navigation subsystem ([`src/components/ar/`](../../src/components/ar/)).
 
 ---
 

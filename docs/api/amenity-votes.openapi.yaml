@@ -91,6 +91,68 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /api/venues/{venueId}/amenity-votes/leaderboard:
+    parameters:
+      - $ref: "#/components/parameters/VenueId"
+    get:
+      operationId: getVenueAmenityVoteLeaderboard
+      tags:
+        - Venue Amenity Votes
+      summary: Get venue amenity voting leaderboard and rankings
+      description: |
+        Retrieves the community contributor leaderboard and ranked amenity
+        validations for the specified venue.
+
+        Contributor Leaderboard:
+        Aggregates votes submitted across all amenity validations for the venue
+        grouped by contributor. Each entry reports upvotes, downvotes, total votes
+        (upvotes + downvotes), and the user's accurateVotes balance from their user
+        record. User names are formatted from profile details with fallbacks to
+        "Anonymous" (if name fields are empty) or "Unknown" (if no user profile
+        record exists). Entries are sorted strictly in descending order of totalVotes
+        and capped at the top 20 contributors. No secondary tie-breaker is applied.
+
+        Amenity Rankings:
+        Lists amenity validations for the venue. Each item details upvotes,
+        downvotes, total votes (upvotes + downvotes), and a confidenceScore. The
+        confidenceScore is calculated as Math.round((upvotes / total) * 100), or 100
+        if no votes exist. It represents the percentage of upvotes among recorded
+        votes rounded to the nearest integer, not a statistical confidence interval
+        or probability. Amenities are sorted primarily by descending upvotes and
+        secondarily by descending totalVotes. The amenities list is not artificially
+        capped.
+
+        Authentication & Middleware Behavior:
+        The route handler does not independently call Clerk's auth() method.
+        However, the endpoint is protected by WorkSphere's global Clerk middleware
+        because it is not in the public route matcher. Unauthenticated requests are
+        intercepted by middleware and redirected (HTTP 307 Temporary Redirect) to
+        /sign-in rather than returning a 401 Unauthorized JSON response. Authenticated
+        API requests require a valid Clerk session (represented by clerkBearerAuth
+        or first-party browser session cookies).
+      security:
+        - clerkBearerAuth: []
+      responses:
+        "200":
+          description: Venue contributor leaderboard and ranked amenity validations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmenityLeaderboardResponse"
+        "307":
+          description: |
+            Temporary redirect to /sign-in issued by Clerk middleware when
+            the request lacks an authenticated session.
+          headers:
+            Location:
+              description: Redirect URL to the sign-in page with return destination
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /api/venues/amenity-vote:
     get:
       operationId: getAmenityVoteEndpoint
@@ -346,6 +408,104 @@ components:
           maximum: 100
         hidden:
           type: boolean
+    AmenityLeaderboardEntry:
+      type: object
+      required:
+        - userId
+        - name
+        - upvotes
+        - downvotes
+        - totalVotes
+        - accurateVotes
+      properties:
+        userId:
+          type: string
+          description: Contributor user identifier
+        name:
+          type: string
+          description: Formatted user display name or fallback ("Anonymous" or "Unknown")
+        upvotes:
+          type: integer
+          minimum: 0
+          description: Total upvotes submitted across all amenity validations for this venue
+        downvotes:
+          type: integer
+          minimum: 0
+          description: Total downvotes submitted across all amenity validations for this venue
+        totalVotes:
+          type: integer
+          minimum: 0
+          description: Total votes (upvotes plus downvotes) cast by this contributor for this venue
+        accurateVotes:
+          type: integer
+          minimum: 0
+          description: Total accurate votes recorded on the user profile (defaults to 0 if user record is missing)
+    AmenityLeaderboardAmenity:
+      type: object
+      required:
+        - amenity
+        - upvotes
+        - downvotes
+        - totalVotes
+        - confidenceScore
+      properties:
+        amenity:
+          type: string
+          description: Amenity identifier
+        upvotes:
+          type: integer
+          minimum: 0
+          description: Total positive community validations for this amenity
+        downvotes:
+          type: integer
+          minimum: 0
+          description: Total negative community validations for this amenity
+        totalVotes:
+          type: integer
+          minimum: 0
+          description: Total validations (upvotes + downvotes) recorded for this amenity
+        confidenceScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Percentage of upvotes among recorded votes (0-100), rounded to the nearest
+            integer. Defaults to 100 when totalVotes is 0.
+    AmenityLeaderboardResponse:
+      type: object
+      required:
+        - success
+        - leaderboard
+        - amenities
+      properties:
+        success:
+          const: true
+        leaderboard:
+          type: array
+          maxItems: 20
+          description: Top contributors ordered descending by totalVotes (capped at 20 users)
+          items:
+            $ref: "#/components/schemas/AmenityLeaderboardEntry"
+        amenities:
+          type: array
+          description: Ranked venue amenity validations sorted by descending upvotes, then descending totalVotes
+          items:
+            $ref: "#/components/schemas/AmenityLeaderboardAmenity"
+      example:
+        success: true
+        leaderboard:
+          - userId: user_123
+            name: Example User
+            upvotes: 12
+            downvotes: 3
+            totalVotes: 15
+            accurateVotes: 8
+        amenities:
+          - amenity: wifi_speed
+            upvotes: 18
+            downvotes: 2
+            totalVotes: 20
+            confidenceScore: 90
     SuccessResponse:
       type: object
       required:

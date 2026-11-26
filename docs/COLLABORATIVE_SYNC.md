@@ -48,8 +48,9 @@ WorkSphere enables distributed teams to collaborate seamlessly on shared workspa
 1. **Zero-Lock Concurrency**: Multiple users can modify the exact same document, canvas, or seating layout concurrently without acquiring server-side locks or encountering edit collisions.
 2. **Local-First & Optimistic UI**: All user interactions mutate local CRDT structures immediately in memory ($0\text{ ms}$ user-perceived UI delay). Updates are streamed asynchronously across WebSockets.
 3. **Automatic Convergence**: Mathematical convergence guarantees that all clients receiving the same set of updates—regardless of network latency, packet reordering, or connection dropouts—resolve to identical state.
-4. **State-Based Ephemeral Awareness**: Presence data (cursor positions, selected seats, active typing indicators) is transmitted over lightweight binary frames and decays automatically upon disconnection.
-5. **Multi-Region Edge Routing**: PartyKit routes connections to the geographically closest edge server, minimizing WebSocket round-trip times (RTT) for international collaborators.
+4. **Causal Ordering & Deterministic Tie-Breaking**: When concurrent mutations conflict, causal precedence is evaluated using Vector Clocks and Hybrid Logical Clocks (HLC). For a detailed mathematical specification, see [Causal Ordering & Tie-Breaking](architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md).
+5. **State-Based Ephemeral Awareness**: Presence data (cursor positions, selected seats, active typing indicators) is transmitted over lightweight binary frames and decays automatically upon disconnection.
+6. **Multi-Region Edge Routing**: PartyKit routes connections to the geographically closest edge server, minimizing WebSocket round-trip times (RTT) for international collaborators.
 
 ---
 
@@ -711,3 +712,12 @@ describe('Yjs CRDT Convergence & State Vector Sync', () => {
   });
 });
 ```
+
+---
+
+## 11. State Vector Exchange, Differential Compaction & Awareness Specifications
+
+For comprehensive technical specifications covering state vector mechanics, differential updates, snapshot storage compaction, and ephemeral awareness lifecycle management, refer to the dedicated CRDT architecture guides:
+
+* [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md): In-depth specification detailing `Y.encodeStateVector`, `Y.encodeStateAsUpdate`, `Y.applyUpdate`, wire envelope formats (E2EE scratchpad, LZ77, and v2 deflate-raw codec), concurrency control via `AsyncRWLock`, and snapshot consolidation heuristics in `SnapshotManager`.
+* [Ephemeral Awareness Vector Clock Compaction & Garbage Collection](./crdt/AWARENESS_VECTOR_COMPACTION.md): Operational guide explaining monotonic presence tracking, 30s TTL peer expiration, tombstone retention, and the critical distinction between ephemeral awareness sweeping and durable Yjs document garbage collection (`doc.gc = true`).

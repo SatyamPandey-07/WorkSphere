@@ -169,6 +169,66 @@ describe("API: /api/venues/[venueId]/reviews SWR Caching & Invalidation (Issue #
       );
     });
 
+    it("uses a cursor and a look-ahead row to return the next page", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: mockUserId });
+      (prisma.venue.findFirst as jest.Mock).mockResolvedValue(mockDbVenue);
+      (prisma.venueRating.findMany as jest.Mock).mockResolvedValue([
+        { ...mockDbReviews[0], id: "rating-1" },
+        { ...mockDbReviews[0], id: "rating-2" },
+        { ...mockDbReviews[0], id: "rating-3" },
+      ]);
+      mockRedis.get.mockResolvedValue(null);
+
+      const req = new NextRequest(
+        `http://localhost:3000/api/venues/${mockVenueId}/reviews?limit=2`,
+      );
+      const res = await GET(req, {
+        params: Promise.resolve({ venueId: mockVenueId }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.reviews).toHaveLength(2);
+      expect(json.nextCursor).toBe("rating-2");
+      expect(json.hasMore).toBe(true);
+      expect(prisma.venueRating.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { venueId: mockVenueId },
+          take: 3,
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        }),
+      );
+    });
+
+    it("uses the supplied cursor and skips the cursor row", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: mockUserId });
+      (prisma.venue.findFirst as jest.Mock).mockResolvedValue(mockDbVenue);
+      (prisma.venueRating.findMany as jest.Mock).mockResolvedValue([
+        { ...mockDbReviews[0], id: "rating-3" },
+      ]);
+      mockRedis.get.mockResolvedValue(null);
+
+      const req = new NextRequest(
+        `http://localhost:3000/api/venues/${mockVenueId}/reviews?cursor=rating-2&limit=2`,
+      );
+      const res = await GET(req, {
+        params: Promise.resolve({ venueId: mockVenueId }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.reviews).toHaveLength(1);
+      expect(json.nextCursor).toBeNull();
+      expect(json.hasMore).toBe(false);
+      expect(prisma.venueRating.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cursor: { id: "rating-2" },
+          skip: 1,
+          take: 3,
+        }),
+      );
+    });
+
     it("serves immediately from Redis cache without querying database", async () => {
       (auth as jest.Mock).mockResolvedValue({ userId: mockUserId });
       (prisma.venue.findFirst as jest.Mock).mockResolvedValue(mockDbVenue);

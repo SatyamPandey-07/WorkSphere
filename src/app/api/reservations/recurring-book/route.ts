@@ -12,6 +12,10 @@ import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
 import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
 import { validateRecurringReservation } from "@/lib/booking/recurringReservationValidation";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -156,6 +160,7 @@ export async function POST(request: NextRequest) {
       skippedDates.push(bookingDate);
       continue;
     }
+    await invalidateVenueAvailability(venueAvailabilityCacheKey(venueId));
     created.push({
       id: booking.id,
       date: bookingDate,

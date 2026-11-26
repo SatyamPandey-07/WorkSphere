@@ -19,18 +19,20 @@ export interface IcsAlarm {
 
 /** Accepts positive RFC 5545 duration values expressed as a negative trigger. */
 export function isValidIcsAlarmTrigger(trigger: string): boolean {
-  const match = /^-P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/.exec(
-    trigger,
-  );
+  const match =
+    /^-P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/.exec(
+      trigger,
+    );
   if (!match) return false;
 
-  const [weeks, days, hours, minutes, seconds] = match.slice(1).map(
-    (value) => Number(value ?? 0),
-  );
+  const [weeks, days, hours, minutes, seconds] = match
+    .slice(1)
+    .map((value) => Number(value ?? 0));
   const hasDuration = weeks + days + hours + minutes + seconds > 0;
   const hasTimeComponent = hours + minutes + seconds > 0;
   const timeDesignatorIsValid = !trigger.includes("T") || hasTimeComponent;
-  const weeksAreExclusive = weeks === 0 || days + hours + minutes + seconds === 0;
+  const weeksAreExclusive =
+    weeks === 0 || days + hours + minutes + seconds === 0;
   return hasDuration && timeDesignatorIsValid && weeksAreExclusive;
 }
 
@@ -159,10 +161,26 @@ export const formatDateTimeForCalendar = (
   durationMinutes = 60,
   timeZone?: string,
 ): { start: string; end: string } => {
-  if (!dateStr || !timeStr) return { start: "", end: "" };
+  const invalidResult = { start: "", end: "" };
+
+  if (!dateStr || !timeStr) return invalidResult;
+
+  if (
+    !Number.isFinite(durationMinutes) ||
+    !Number.isInteger(durationMinutes) ||
+    durationMinutes <= 0
+  ) {
+    return invalidResult;
+  }
+
   const start = wallClockToDate(dateStr, timeStr, timeZone);
-  if (isNaN(start.getTime())) return { start: "", end: "" };
+  if (isNaN(start.getTime())) return invalidResult;
+
   const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+
+  if (!Number.isFinite(end.getTime()) || end.getTime() <= start.getTime()) {
+    return invalidResult;
+  }
 
   const format = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
 
@@ -317,7 +335,12 @@ export function generateICSContent(
     ...buildIcsAlarmLines(
       alarms ??
         (alarmMinutes !== undefined && alarmMinutes > 0
-          ? [{ trigger: `-PT${alarmMinutes}M`, description: `Reminder: ${summary}` }]
+          ? [
+              {
+                trigger: `-PT${alarmMinutes}M`,
+                description: `Reminder: ${summary}`,
+              },
+            ]
           : []),
       `Reminder: ${summary}`,
     ),

@@ -3,14 +3,22 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { invalidateXpLeaderboard } from "@/lib/leaderboards/xpLeaderboard";
 import { normalizeRequiredText } from "@/lib/amenityVoteInput";
+import {
+  evaluateAmenityConsensus,
+  recordSettlement,
+  AmenityConsensusEvaluation,
+  VERIFIED_EXPLORER_THRESHOLD,
+} from "@/lib/amenityVotes/consensusEngine";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
-const CONSENSUS_MIN_VOTES = 5;
-const CONSENSUS_THRESHOLD = 80;
-const VERIFIED_EXPLORER_THRESHOLD = 10;
 
-function buildResponse(amenity: string, upvotes: number, downvotes: number) {
+function buildResponse(
+  amenity: string,
+  upvotes: number,
+  downvotes: number,
+  consensus?: AmenityConsensusEvaluation,
+) {
   const totalVotes = upvotes + downvotes;
   const confidenceScore =
     totalVotes > 0 ? Math.round((upvotes / totalVotes) * 100) : 100;
@@ -24,6 +32,14 @@ function buildResponse(amenity: string, upvotes: number, downvotes: number) {
     downvotes,
     confidenceScore,
     hidden,
+    ...(consensus
+      ? {
+          consensusState: consensus.state,
+          statisticalConfidence: consensus.statisticalConfidence,
+          effectiveSampleSize: consensus.effectiveSampleSize,
+          settlementEligible: consensus.settlementEligible,
+        }
+      : {}),
   };
 }
 
@@ -31,18 +47,22 @@ async function trackAccurateContributions(
   validationId: string,
   upvotes: number,
   downvotes: number,
-) {
-  const total = upvotes + downvotes;
-  if (total < CONSENSUS_MIN_VOTES) return;
-
-  const confidence = Math.round((upvotes / total) * 100);
-  if (confidence < CONSENSUS_THRESHOLD) return;
-
-  const consensusIsUpvote = confidence >= CONSENSUS_THRESHOLD;
-
+): Promise<AmenityConsensusEvaluation | undefined> {
   const allVotes = await prisma.amenityVote.findMany({
     where: { validationId },
   });
+
+  const evaluation = evaluateAmenityConsensus(validationId, allVotes);
+
+  // Award finalized contribution credit only upon settlement eligibility
+  if (!evaluation.settlementEligible || !evaluation.snapshot) {
+    return evaluation;
+  }
+
+  const consensusIsUpvote = evaluation.consensusDirection === "upvote";
+  if (evaluation.consensusDirection === "inconclusive") {
+    return evaluation;
+  }
 
   const alreadyCredited = await prisma.userBadge.findMany({
     where: { badgeType: `accurate_${validationId}` },
@@ -80,6 +100,11 @@ async function trackAccurateContributions(
     }
     await invalidateXpLeaderboard();
   }
+
+  // Record settled snapshot
+  recordSettlement(evaluation.snapshot);
+
+  return evaluation;
 }
 
 export async function POST(request: Request) {
@@ -151,14 +176,14 @@ export async function POST(request: Request) {
         });
       }
 
-      await trackAccurateContributions(
+      const consensus = await trackAccurateContributions(
         validation.id,
         updated.upvotes,
         updated.downvotes,
       );
 
       return NextResponse.json(
-        buildResponse(amenity, updated.upvotes, updated.downvotes),
+        buildResponse(amenity, updated.upvotes, updated.downvotes, consensus),
       );
     }
 
@@ -181,14 +206,14 @@ export async function POST(request: Request) {
       });
     }
 
-    await trackAccurateContributions(
+    const consensus = await trackAccurateContributions(
       validation.id,
       updated.upvotes,
       updated.downvotes,
     );
 
     return NextResponse.json(
-      buildResponse(amenity, updated.upvotes, updated.downvotes),
+      buildResponse(amenity, updated.upvotes, updated.downvotes, consensus),
     );
   } catch (error: any) {
     console.error("POST /api/venues/amenity-vote error:", error);

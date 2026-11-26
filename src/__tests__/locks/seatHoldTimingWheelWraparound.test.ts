@@ -134,7 +134,104 @@ describe("HashedTimingWheel - Slot Wrap-Around Fix (#10455)", () => {
     });
   });
 
-  describe("3. Cancellation, Rescheduling, and Zero-Delay", () => {
+  describe("3. Coalesced Tick Advancement (#10441)", () => {
+    it("fires simultaneous expirations once in insertion order", () => {
+      const order: string[] = [];
+      const first = jest.fn(() => order.push("first"));
+      const second = jest.fn(() => order.push("second"));
+      const third = jest.fn(() => order.push("third"));
+
+      wheel.schedule("same-tick-1", 300, first);
+      wheel.schedule("same-tick-2", 300, second);
+      wheel.schedule("same-tick-3", 300, third);
+
+      const fired = wheel.advanceTicks(3);
+
+      expect(fired.map((task) => task.id)).toEqual([
+        "same-tick-1",
+        "same-tick-2",
+        "same-tick-3",
+      ]);
+      expect(order).toEqual(["first", "second", "third"]);
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(third).toHaveBeenCalledTimes(1);
+    });
+
+    it("coalesces a burst across consecutive ticks in deadline order", () => {
+      const order: string[] = [];
+      const late = jest.fn(() => order.push("late"));
+      const early = jest.fn(() => order.push("early"));
+      const middle = jest.fn(() => order.push("middle"));
+
+      wheel.schedule("late", 300, late);
+      wheel.schedule("early", 100, early);
+      wheel.schedule("middle", 200, middle);
+
+      const fired = wheel.advanceTicks(3);
+
+      expect(fired.map((task) => task.id)).toEqual(["early", "middle", "late"]);
+      expect(order).toEqual(["early", "middle", "late"]);
+      expect(wheel.getCurrentTick()).toBe(3);
+    });
+
+    it("catches up delayed timer ticks with one batch and does not repeat expirations", () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date(0));
+      const intervalSpy = jest.spyOn(global, "setInterval");
+      const callbacks = [jest.fn(), jest.fn(), jest.fn()];
+      wheel.schedule("delayed-1", 100, callbacks[0]);
+      wheel.schedule("delayed-2", 200, callbacks[1]);
+      wheel.schedule("delayed-3", 300, callbacks[2]);
+      wheel.start();
+
+      const timerCallback = intervalSpy.mock.calls[0]?.[0];
+      expect(typeof timerCallback).toBe("function");
+      const advanceTicksSpy = jest.spyOn(wheel, "advanceTicks");
+
+      try {
+        jest.setSystemTime(new Date(350));
+        if (typeof timerCallback === "function") timerCallback();
+
+        expect(advanceTicksSpy).toHaveBeenCalledTimes(1);
+        expect(advanceTicksSpy).toHaveBeenCalledWith(3);
+        expect(wheel.getCurrentTick()).toBe(3);
+        callbacks.forEach((callback) =>
+          expect(callback).toHaveBeenCalledTimes(1),
+        );
+
+        if (typeof timerCallback === "function") timerCallback();
+        expect(wheel.getCurrentTick()).toBe(3);
+        callbacks.forEach((callback) =>
+          expect(callback).toHaveBeenCalledTimes(1),
+        );
+      } finally {
+        wheel.reset();
+        intervalSpy.mockRestore();
+        jest.useRealTimers();
+      }
+    });
+
+    it("handles empty and invalid batches without skipping future expirations", () => {
+      const callback = jest.fn();
+      wheel.schedule("future", 1300, callback);
+
+      expect(wheel.advanceTicks(0)).toEqual([]);
+      expect(wheel.advanceTicks(Number.NaN)).toEqual([]);
+      expect(wheel.getCurrentTick()).toBe(0);
+
+      expect(wheel.advanceTicks(3)).toEqual([]);
+      expect(wheel.getCurrentTick()).toBe(3);
+      expect(wheel.getTask("future")?.remainingRotations).toBe(0);
+
+      expect(wheel.advanceTicks(10)).toHaveLength(1);
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(wheel.advanceTicks(20)).toEqual([]);
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("4. Cancellation, Rescheduling, and Zero-Delay", () => {
     it("executes zero-delay tasks immediately without waiting for a tick", () => {
       const cb = jest.fn();
       const task = wheel.schedule("task-zero", 0, cb);
@@ -188,7 +285,7 @@ describe("HashedTimingWheel - Slot Wrap-Around Fix (#10455)", () => {
     });
   });
 
-  describe("4. Singleton and Reset Isolation", () => {
+  describe("5. Singleton and Reset Isolation", () => {
     it("exports singleton seatHoldTimingWheel instance", () => {
       expect(seatHoldTimingWheel).toBeInstanceOf(HashedTimingWheel);
       expect(seatHoldTimingWheel.wheelSize).toBe(60);

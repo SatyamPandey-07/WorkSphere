@@ -513,6 +513,8 @@ const memoryLocks = new Map<string, SeatLockData>();
  * ARGV[2] = JSON payload for a brand-new lock
  * ARGV[3] = TTL in seconds
  */
+import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
+
 export const SEAT_LOCK_ACQUIRE_LUA = `
 local current = redis.call('GET', KEYS[1])
 if not current then
@@ -652,11 +654,7 @@ export async function acquireSeatWebLock(
         const resolvedToken = resolvedLock.fencingToken
           ? BigInt(resolvedLock.fencingToken)
           : initialToken;
-        getRedisKeyspaceManager().registerDeskTimer(
-          venueId,
-          seatId,
-          resolvedLock.expiresAt,
-        );
+        scheduleSeatHoldExpiration(venueId, seatId, resolvedLock.expiresAt);
         return {
           success: true,
           lock: resolvedLock,
@@ -731,314 +729,12 @@ export async function acquireSeatWebLock(
   };
 
   memoryLocks.set(key, lockPayload);
-  getRedisKeyspaceManager().registerDeskTimer(
-    venueId,
-    seatId,
-    lockPayload.expiresAt,
-  );
+  scheduleSeatHoldExpiration(venueId, seatId, lockPayload.expiresAt);
   return {
     success: true,
     lock: lockPayload,
     fencingToken: token,
     driftAllowanceMs,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Structured Audit Events for Seat Hold Lease Extensions
-// ---------------------------------------------------------------------------
-
-export interface StaleFenceTokenAuditEvent {
-  id: string;
-  eventType: "STALE_FENCE_TOKEN_REJECTED";
-  timestamp: string;
-  seatId: string;
-  expectedFenceToken: string;
-  receivedFenceToken: string;
-  venueId?: string;
-  userId?: string;
-  reason: "STALE_TOKEN";
-}
-
-export type SeatHoldAuditListener = (event: StaleFenceTokenAuditEvent) => void;
-
-const seatHoldAuditListeners = new Set<SeatHoldAuditListener>();
-const seatHoldAuditBuffer: StaleFenceTokenAuditEvent[] = [];
-let seatHoldAuditSeq = 0;
-
-export function onSeatHoldAuditEvent(
-  listener: SeatHoldAuditListener,
-): () => void {
-  seatHoldAuditListeners.add(listener);
-  return () => {
-    seatHoldAuditListeners.delete(listener);
-  };
-}
-
-export function getSeatHoldAuditEvents(): StaleFenceTokenAuditEvent[] {
-  return [...seatHoldAuditBuffer];
-}
-
-export function clearSeatHoldAuditEvents(): void {
-  seatHoldAuditBuffer.length = 0;
-}
-
-export function emitStaleFenceTokenAuditEvent(params: {
-  seatId: string;
-  expectedFenceToken: string | bigint | number;
-  receivedFenceToken: string | bigint | number;
-  venueId?: string;
-  userId?: string;
-}): StaleFenceTokenAuditEvent {
-  seatHoldAuditSeq += 1;
-  const event: StaleFenceTokenAuditEvent = {
-    id:
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `seat-hold-audit-${Date.now()}-${seatHoldAuditSeq}`,
-    eventType: "STALE_FENCE_TOKEN_REJECTED",
-    timestamp: new Date().toISOString(),
-    seatId: params.seatId,
-    expectedFenceToken: String(params.expectedFenceToken),
-    receivedFenceToken: String(params.receivedFenceToken),
-    venueId: params.venueId,
-    userId: params.userId,
-    reason: "STALE_TOKEN",
-  };
-
-  seatHoldAuditBuffer.push(event);
-  if (seatHoldAuditBuffer.length > 500) {
-    seatHoldAuditBuffer.shift();
-  }
-
-  for (const listener of seatHoldAuditListeners) {
-    try {
-      listener(event);
-    } catch (err) {
-      console.error("[SeatLock] Audit listener error:", err);
-    }
-  }
-
-  return event;
-}
-
-export const SEAT_LOCK_EXTEND_LUA = `
-local current = redis.call('GET', KEYS[1])
-if not current then return { 0, 'NOT_FOUND' } end
-
-local ok, decoded = pcall(cjson.decode, current)
-if not (ok and type(decoded) == 'table') then
-  return { 0, 'INVALID_LOCK' }
-end
-
-if decoded.userId ~= ARGV[1] then
-  return { 0, 'UNAUTHORIZED' }
-end
-
-local incomingToken = tonumber(ARGV[2])
-local currentToken = tonumber(decoded.fencingToken) or 0
-if incomingToken and currentToken > 0 and incomingToken <= currentToken then
-  return { -2, 'STALE_TOKEN', tostring(currentToken) }
-end
-
-if tostring(decoded.fencingToken) ~= tostring(ARGV[2]) then
-  return { 0, 'UNAUTHORIZED' }
-end
-if decoded.extensionUsed == true or decoded.extensionUsed == 1 or decoded.extensionUsed == 'true' then
-  return { 0, 'ALREADY_EXTENDED' }
-end
-
-local currentPttl = redis.call('PTTL', KEYS[1])
-if currentPttl <= 0 then
-  return { 0, 'NOT_FOUND' }
-end
-if currentPttl <= tonumber(ARGV[3]) then
-  return { 0, 'TOO_CLOSE_TO_EXPIRY' }
-end
-
-local extensionMs = tonumber(ARGV[4])
-local newPttl = currentPttl + extensionMs
-decoded.expiresAt = tonumber(ARGV[5]) + newPttl
-decoded.extensionUsed = true
-decoded.version = (tonumber(decoded.version) or 1) + 1
-
-local encoded = cjson.encode(decoded)
-redis.call('SET', KEYS[1], encoded, 'PX', newPttl)
-return { 1, encoded, newPttl }
-`;
-
-export type ExtendSeatHoldReason =
-  | "NOT_FOUND"
-  | "UNAUTHORIZED"
-  | "ALREADY_EXTENDED"
-  | "TOO_CLOSE_TO_EXPIRY"
-  | "INVALID_LOCK"
-  | "STALE_TOKEN"
-  | "ERROR";
-
-export interface ExtendSeatHoldResult {
-  success: boolean;
-  lock?: SeatLockData;
-  remainingSeconds?: number;
-  reason?: ExtendSeatHoldReason;
-  expectedFenceToken?: string;
-  receivedFenceToken?: string;
-}
-
-/**
- * Extends the current holder's checkout lease by exactly five minutes once.
- * The holder must present the fencing token returned when the lock was acquired.
- * Extension is rejected when 60 seconds or less remain.
- */
-export async function extendSeatHold(
-  venueId: string,
-  seatId: string,
-  userId: string,
-  fencingToken: string,
-): Promise<ExtendSeatHoldResult> {
-  if (!userId || !fencingToken) {
-    return { success: false, reason: "UNAUTHORIZED" };
-  }
-
-  const key = getLockKey(venueId, seatId);
-  const now = Date.now();
-  const redis = getRedis();
-
-  if (redis) {
-    try {
-      const rawResult = await redis.eval(
-        SEAT_LOCK_EXTEND_LUA,
-        [key],
-        [userId, fencingToken, "60000", "300000", String(now)],
-      );
-      const [flag, rawLock, rawRemaining] = Array.isArray(rawResult)
-        ? rawResult
-        : [0, "ERROR", 0];
-
-      if (Number(flag) === -2 || String(rawLock) === "STALE_TOKEN") {
-        const expectedFenceToken =
-          rawRemaining !== undefined ? String(rawRemaining) : "";
-        emitStaleFenceTokenAuditEvent({
-          seatId,
-          expectedFenceToken,
-          receivedFenceToken: fencingToken,
-          venueId,
-          userId,
-        });
-        return {
-          success: false,
-          reason: "STALE_TOKEN",
-          expectedFenceToken,
-          receivedFenceToken: fencingToken,
-        };
-      }
-
-      if (Number(flag) !== 1) {
-        const reason = String(rawLock) as ExtendSeatHoldReason;
-        return {
-          success: false,
-          reason: [
-            "NOT_FOUND",
-            "UNAUTHORIZED",
-            "ALREADY_EXTENDED",
-            "TOO_CLOSE_TO_EXPIRY",
-            "INVALID_LOCK",
-            "STALE_TOKEN",
-          ].includes(reason)
-            ? reason
-            : "ERROR",
-          remainingSeconds:
-            Number.isFinite(Number(rawRemaining)) && Number(rawRemaining) > 0
-              ? Math.ceil(Number(rawRemaining) / 1000)
-              : undefined,
-        };
-      }
-
-      const lock = parseLockValue(rawLock);
-      if (!lock) return { success: false, reason: "INVALID_LOCK" };
-      getRedisKeyspaceManager().registerDeskTimer(
-        venueId,
-        seatId,
-        lock.expiresAt,
-      );
-      return {
-        success: true,
-        lock,
-        remainingSeconds: Math.max(0, Math.ceil((lock.expiresAt - now) / 1000)),
-      };
-    } catch (error) {
-      console.error("[SeatLock] Redis lease extension failed:", error);
-      return { success: false, reason: "ERROR" };
-    }
-  }
-
-  pruneMemoryLocks(now);
-  const current = memoryLocks.get(key);
-  if (!current || now >= current.expiresAt) {
-    return { success: false, reason: "NOT_FOUND" };
-  }
-  if (current.userId !== userId) {
-    return { success: false, reason: "UNAUTHORIZED" };
-  }
-
-  const currentTokenNum = Number(current.fencingToken);
-  const receivedTokenNum = Number(fencingToken);
-  if (
-    Number.isFinite(currentTokenNum) &&
-    Number.isFinite(receivedTokenNum) &&
-    receivedTokenNum <= currentTokenNum
-  ) {
-    const expectedFenceToken = String(current.fencingToken);
-    emitStaleFenceTokenAuditEvent({
-      seatId,
-      expectedFenceToken,
-      receivedFenceToken: fencingToken,
-      venueId,
-      userId,
-    });
-    return {
-      success: false,
-      reason: "STALE_TOKEN",
-      expectedFenceToken,
-      receivedFenceToken: fencingToken,
-    };
-  }
-
-  if (
-    !current.fencingToken ||
-    String(current.fencingToken) !== String(fencingToken)
-  ) {
-    return { success: false, reason: "UNAUTHORIZED" };
-  }
-  if (current.extensionUsed) {
-    return { success: false, reason: "ALREADY_EXTENDED" };
-  }
-
-  const remainingMs = current.expiresAt - now;
-  if (remainingMs <= 60_000) {
-    return {
-      success: false,
-      reason: "TOO_CLOSE_TO_EXPIRY",
-      remainingSeconds: Math.max(0, Math.ceil(remainingMs / 1000)),
-    };
-  }
-
-  const updated: SeatLockData = {
-    ...current,
-    expiresAt: current.expiresAt + 300_000,
-    extensionUsed: true,
-    version: current.version + 1,
-  };
-  memoryLocks.set(key, updated);
-  getRedisKeyspaceManager().registerDeskTimer(
-    venueId,
-    seatId,
-    updated.expiresAt,
-  );
-  return {
-    success: true,
-    lock: { ...updated },
-    remainingSeconds: Math.ceil((updated.expiresAt - now) / 1000),
   };
 }
 
@@ -1053,12 +749,14 @@ export async function releaseSeatWebLock(
   const key = getLockKey(venueId, seatId);
   const redis = getRedis();
 
-  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
-
   if (redis) {
     try {
       const released = await redis.eval(SEAT_LOCK_RELEASE_LUA, [key], [userId]);
-      return Number(released) === 1;
+      if (Number(released) === 1) {
+        cancelSeatHoldExpiration(venueId, seatId);
+        return true;
+      }
+      return false;
     } catch (err) {
       console.warn(
         "[SeatLock] Redis release failed, falling back to memory:",
@@ -1070,6 +768,7 @@ export async function releaseSeatWebLock(
   const existing = memoryLocks.get(key);
   if (existing && existing.userId === userId) {
     memoryLocks.delete(key);
+    cancelSeatHoldExpiration(venueId, seatId);
     return true;
   }
   return false;
@@ -1308,6 +1007,423 @@ export interface SeatWebLockOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Hashed Timing Wheel for Seat Hold Expirations (#10441, #10455)
+ *
+ * Implements a circular hashed timing wheel to schedule seat hold expirations and lock renewals
+ * efficiently without creating thousands of disparate Node/browser timer handles.
+ *
+ * Wrap-Around Fix (#10455):
+ * - Problem: In a naive timing wheel, scheduling a task with delay `d > wheelSize` calculates
+ *   `targetSlot = (currentSlot + ticks) % wheelSize`. If the wheel does not track remaining complete
+ *   wheel rotations (`remainingRotations`), the task will be fired the first time the wheel's hand
+ *   visits `targetSlot` during revolution 0, prematurely executing tasks that requested delays
+ *   spanning multiple revolutions.
+ * - Solution:
+ *   1. Calculate total ticks: `ticks = Math.max(0, Math.floor(delayMs / tickDurationMs))`.
+ *   2. Target slot: `slotIndex = (currentSlot + ticks) % wheelSize`.
+ *   3. Complete revolutions: `rotations = Math.floor(ticks / wheelSize)`.
+ *   4. Each wheel tick advances `currentSlot = (currentSlot + 1) % wheelSize`.
+ *   5. For each task in the visited slot:
+ *      - If `task.remainingRotations > 0`, decrement `remainingRotations--` and retain in the slot.
+ *      - If `task.remainingRotations === 0`, remove from slot and execute callback.
+ *   6. Supports cancellation, rescheduling, zero-delay execution, and arbitrary multi-revolution delays.
+ * 7. Delayed timer callbacks coalesce elapsed ticks into one deadline-ordered batch.
+ */
+
+export interface TimingWheelTask {
+  id: string;
+  delayMs: number;
+  remainingRotations: number;
+  slotIndex: number;
+  targetTick: number;
+  callback: () => void | Promise<void>;
+  cancelled: boolean;
+  executed: boolean;
+}
+
+export interface HashedTimingWheelOptions {
+  /** Number of circular slots in the wheel (default: 60) */
+  wheelSize?: number;
+  /** Granularity of each tick in milliseconds (default: 1000ms = 1s) */
+  tickDurationMs?: number;
+}
+
+export class HashedTimingWheel {
+  public readonly wheelSize: number;
+  public readonly tickDurationMs: number;
+  private slots: Array<Map<string, TimingWheelTask>>;
+  private tasksById = new Map<string, TimingWheelTask>();
+  private currentSlot: number = 0;
+  private currentTick: number = 0;
+  private timerHandle: ReturnType<typeof setInterval> | null = null;
+  private isRunning: boolean = false;
+  private lastTickAtMs: number | null = null;
+  private scheduleVersion: number = 0;
+
+  constructor(options?: HashedTimingWheelOptions) {
+    this.wheelSize = Math.max(1, options?.wheelSize ?? 60);
+    this.tickDurationMs = Math.max(1, options?.tickDurationMs ?? 1000);
+    this.slots = Array.from({ length: this.wheelSize }, () => new Map<string, TimingWheelTask>());
+  }
+
+  /**
+   * Schedules a task to run after delayMs milliseconds.
+   * Correctly computes target slot and remaining rotations to prevent premature wrap-around execution.
+   */
+  public schedule(
+    id: string,
+    delayMs: number,
+    callback: () => void | Promise<void>,
+  ): TimingWheelTask {
+    // If a task with this id already exists, cancel it first (rescheduling)
+    if (this.tasksById.has(id)) {
+      this.cancel(id);
+    }
+
+    const safeDelay = Math.max(0, delayMs);
+    const ticks = Math.floor(safeDelay / this.tickDurationMs);
+
+    // Immediate execution for zero-delay (0 ticks)
+    if (ticks === 0 && safeDelay === 0) {
+      const task: TimingWheelTask = {
+        id,
+        delayMs: 0,
+        remainingRotations: 0,
+        slotIndex: this.currentSlot,
+        targetTick: this.currentTick,
+        callback,
+        cancelled: false,
+        executed: true,
+      };
+      try {
+        callback();
+      } catch (err) {
+        console.error(`[HashedTimingWheel] Task ${id} immediate execution error:`, err);
+      }
+      return task;
+    }
+
+    // Wrap-around calculation (#10455)
+    // Ticks at which the task should fire in absolute time
+    const targetTick = this.currentTick + Math.max(1, ticks);
+    // Target slot in the circular wheel
+    const slotIndex = targetTick % this.wheelSize;
+    // Calculate how many full revolutions of the wheel before reaching targetTick
+    // When the wheel visits slotIndex, targetTick may still be in a future revolution.
+    const ticksUntilTarget = targetTick - this.currentTick;
+    // Difference between target slot and current slot (modulo wheelSize)
+    const slotDistance = (slotIndex - this.currentSlot + this.wheelSize) % this.wheelSize;
+    const remainingRotations = Math.floor(
+      (ticksUntilTarget - (slotDistance === 0 ? this.wheelSize : slotDistance)) / this.wheelSize,
+    );
+
+    const task: TimingWheelTask = {
+      id,
+      delayMs: safeDelay,
+      remainingRotations: Math.max(0, remainingRotations),
+      slotIndex,
+      targetTick,
+      callback,
+      cancelled: false,
+      executed: false,
+    };
+
+    this.slots[slotIndex].set(id, task);
+    this.tasksById.set(id, task);
+    this.scheduleVersion += 1;
+
+    return task;
+  }
+
+  /**
+   * Reschedules an existing task with a new delay.
+   */
+  public reschedule(
+    id: string,
+    newDelayMs: number,
+    newCallback?: () => void | Promise<void>,
+  ): TimingWheelTask | null {
+    const existing = this.tasksById.get(id);
+    const callback = newCallback || existing?.callback;
+    if (!callback) return null;
+
+    this.cancel(id);
+    return this.schedule(id, newDelayMs, callback);
+  }
+
+  /**
+   * Cancels a scheduled task by ID.
+   */
+  public cancel(id: string): boolean {
+    const task = this.tasksById.get(id);
+    if (!task) return false;
+
+    task.cancelled = true;
+    this.slots[task.slotIndex].delete(id);
+    this.tasksById.delete(id);
+    if (this.tasksById.size === 0) this.stop();
+    return true;
+  }
+
+  /**
+   * Advances the timing wheel by one tick and executes eligible tasks.
+   */
+  public advanceTick(): TimingWheelTask[] {
+    return this.advanceTicks(1);
+  }
+
+  /**
+   * Advances a coalesced window of ticks and executes every task due within it.
+   * Tasks fire in target-tick order, preserving insertion order for simultaneous
+   * expirations.
+   */
+  public advanceTicks(tickCount: number): TimingWheelTask[] {
+    if (!Number.isFinite(tickCount) || tickCount <= 0) return [];
+    const ticksToAdvance = Math.floor(tickCount);
+    if (ticksToAdvance <= 0) return [];
+
+    const targetTick = this.currentTick + ticksToAdvance;
+    if (!Number.isSafeInteger(targetTick)) return [];
+
+    if (ticksToAdvance === 1) {
+      return this.advanceOneTick();
+    }
+
+    const executedTasks: TimingWheelTask[] = [];
+    const queuedTasks = new Set<TimingWheelTask>();
+    const dueTasks = Array.from(this.tasksById.values())
+      .filter((task) => task.targetTick <= targetTick)
+      .sort((a, b) => a.targetTick - b.targetTick);
+    for (const task of dueTasks) queuedTasks.add(task);
+
+    let taskIndex = 0;
+    let observedScheduleVersion = this.scheduleVersion;
+    while (taskIndex < dueTasks.length) {
+      const nextTask = dueTasks[taskIndex];
+      if (!nextTask) break;
+      const dueTick = nextTask.targetTick;
+      this.currentTick = Math.max(this.currentTick, dueTick);
+      this.currentSlot = this.currentTick % this.wheelSize;
+
+      while (
+        taskIndex < dueTasks.length &&
+        dueTasks[taskIndex]?.targetTick === dueTick
+      ) {
+        const task = dueTasks[taskIndex];
+        taskIndex += 1;
+        if (!task) continue;
+        if (this.tasksById.get(task.id) !== task) continue;
+
+        this.slots[task.slotIndex].delete(task.id);
+        this.tasksById.delete(task.id);
+        task.remainingRotations = 0;
+        task.executed = true;
+        executedTasks.push(task);
+
+        try {
+          task.callback();
+        } catch (err) {
+          console.error(
+            `[HashedTimingWheel] Task ${task.id} execution error:`,
+            err,
+          );
+        }
+      }
+
+      if (this.scheduleVersion !== observedScheduleVersion) {
+        observedScheduleVersion = this.scheduleVersion;
+        const newlyDueTasks = Array.from(this.tasksById.values()).filter(
+          (task) =>
+            task.targetTick > this.currentTick &&
+            task.targetTick <= targetTick &&
+            !queuedTasks.has(task),
+        );
+        for (const task of newlyDueTasks) {
+          queuedTasks.add(task);
+          dueTasks.push(task);
+        }
+        dueTasks
+          .slice(taskIndex)
+          .sort((a, b) => a.targetTick - b.targetTick)
+          .forEach((task, index) => {
+            dueTasks[taskIndex + index] = task;
+          });
+      }
+    }
+
+    this.currentTick = Math.max(this.currentTick, targetTick);
+    this.currentSlot = this.currentTick % this.wheelSize;
+    for (const task of this.tasksById.values()) {
+      task.remainingRotations = Math.max(
+        0,
+        Math.floor((task.targetTick - this.currentTick - 1) / this.wheelSize),
+      );
+    }
+    if (this.tasksById.size === 0) this.stop();
+
+    return executedTasks;
+  }
+
+  private advanceOneTick(): TimingWheelTask[] {
+    this.currentSlot = (this.currentSlot + 1) % this.wheelSize;
+    this.currentTick += 1;
+
+    const currentSlotTasks = this.slots[this.currentSlot];
+    const executedTasks: TimingWheelTask[] = [];
+
+    // Snapshot keys to allow safe mutation/deletion during iteration
+    const taskIds = Array.from(currentSlotTasks.keys());
+
+    for (const id of taskIds) {
+      const task = currentSlotTasks.get(id);
+      if (!task || task.cancelled || task.executed) {
+        currentSlotTasks.delete(id);
+        this.tasksById.delete(id);
+        continue;
+      }
+
+      // Check remaining revolutions (#10455 wrap-around fix)
+      if (task.remainingRotations > 0) {
+        task.remainingRotations -= 1;
+        // Retain in current slot for next revolution
+        continue;
+      }
+
+      // Elapsed rotations completed: execute task
+      currentSlotTasks.delete(id);
+      this.tasksById.delete(id);
+      task.executed = true;
+      executedTasks.push(task);
+
+      try {
+        task.callback();
+      } catch (err) {
+        console.error(`[HashedTimingWheel] Task ${id} execution error:`, err);
+      }
+    }
+
+    if (this.tasksById.size === 0) this.stop();
+    return executedTasks;
+  }
+
+  /**
+   * Starts the internal background timer.
+   */
+  public start(): void {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    this.lastTickAtMs = Date.now();
+    this.timerHandle = setInterval(() => {
+      const now = Date.now();
+      if (this.lastTickAtMs === null) {
+        this.lastTickAtMs = now;
+        return;
+      }
+
+      const ticksElapsed = Math.floor(
+        (now - this.lastTickAtMs) / this.tickDurationMs,
+      );
+      if (ticksElapsed <= 0) return;
+
+      this.lastTickAtMs += ticksElapsed * this.tickDurationMs;
+      this.advanceTicks(ticksElapsed);
+    }, this.tickDurationMs);
+    // Unref timer in Node environment so it doesn't block process exit
+    if (this.timerHandle && typeof (this.timerHandle as any).unref === "function") {
+      (this.timerHandle as any).unref();
+    }
+  }
+
+  /**
+   * Stops the internal background timer.
+   */
+  public stop(): void {
+    if (this.timerHandle) {
+      clearInterval(this.timerHandle);
+      this.timerHandle = null;
+    }
+    this.isRunning = false;
+    this.lastTickAtMs = null;
+  }
+
+  /**
+   * Clears all tasks and resets wheel position.
+   */
+  public reset(): void {
+    this.stop();
+    for (const slot of this.slots) {
+      slot.clear();
+    }
+    this.tasksById.clear();
+    this.currentSlot = 0;
+    this.currentTick = 0;
+    this.scheduleVersion = 0;
+  }
+
+  public getTask(id: string): TimingWheelTask | undefined {
+    return this.tasksById.get(id);
+  }
+
+  public getCurrentSlot(): number {
+    return this.currentSlot;
+  }
+
+  public getCurrentTick(): number {
+    return this.currentTick;
+  }
+
+  public getTaskCount(): number {
+    return this.tasksById.size;
+  }
+}
+
+/** Global singleton seat hold timing wheel (60 slots @ 1s per tick = 60s per revolution) */
+export const seatHoldTimingWheel = new HashedTimingWheel({
+  wheelSize: 60,
+  tickDurationMs: 1000,
+});
+
+function scheduleSeatHoldExpiration(
+  venueId: string,
+  seatId: string,
+  expiresAt: number,
+): void {
+  const taskId = getLockKey(venueId, seatId);
+  const schedule = () => {
+    const delayMs = Math.max(0, expiresAt - Date.now());
+    seatHoldTimingWheel.schedule(taskId, delayMs, () => {
+      if (Date.now() < expiresAt) {
+        schedule();
+        return;
+      }
+
+      getRedisKeyspaceManager().dispatchExpiration({
+        venueId,
+        deskId: seatId,
+        seatId,
+        rawKey: taskId,
+        timestamp: expiresAt,
+        source: "in_memory_simulation",
+      });
+    });
+  };
+
+  schedule();
+  if (seatHoldTimingWheel.getTaskCount() > 0) seatHoldTimingWheel.start();
+}
+
+function cancelSeatHoldExpiration(venueId: string, seatId: string): void {
+  seatHoldTimingWheel.cancel(getLockKey(venueId, seatId));
+  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
+}
+
+/**
+ * Client-side Web Locks helper using Navigator.locks API.
+ * Holds an exclusive lock named `seat-hold:${venueId}:${seatId}` for as long as the seat is held,
+ * ensuring that if the tab or worker terminates unexpectedly, the lock is released immediately (#5489).
+ * Includes timeout fallback and AbortController cancellation to prevent indefinite hangs (#4921).
+ */
 export async function withSeatWebLock<T>(
   venueId: string,
   seatId: string,

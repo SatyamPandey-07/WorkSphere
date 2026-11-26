@@ -21,7 +21,7 @@ export type ClerkWebhookEvent =
 
 export interface ClerkEmailAddress {
   id: string;
-  email_address: string;
+  email_address?: string | null;
   verification?: {
     status?: string;
     [key: string]: unknown;
@@ -36,7 +36,7 @@ export interface ClerkUserData {
   image_url?: string | null;
   has_image?: boolean;
   primary_email_address_id?: string | null;
-  email_addresses?: ClerkEmailAddress[];
+  email_addresses?: ClerkEmailAddress[] | null;
   [key: string]: unknown;
 }
 
@@ -53,18 +53,21 @@ export interface WebhookVerificationHeaders {
 }
 
 export class WebhookVerificationError extends Error {
-  constructor(message: string, public readonly statusCode: number = 400) {
+  constructor(
+    message: string,
+    public readonly statusCode: number = 400,
+  ) {
     super(message);
     this.name = "WebhookVerificationError";
   }
 }
 
 /**
- * Resolves the primary email address from Clerk's payload.
+ * Safely extracts the primary email address from Clerk's payload using null-safe traversal.
  * Priority:
- * 1. Match item in `email_addresses` where `id === primary_email_address_id`
- * 2. Fall back to the first email address in `email_addresses`
- * 3. Return null if no email address exists or cannot be resolved.
+ * 1. Match entry in `email_addresses` where `id === primary_email_address_id`
+ * 2. Fall back to the first valid email address in `email_addresses`
+ * 3. Return null if `email_addresses` is empty, missing, or contains no valid email.
  */
 export function resolvePrimaryEmail(
   emailAddresses?: ClerkEmailAddress[] | null,
@@ -74,20 +77,18 @@ export function resolvePrimaryEmail(
     return null;
   }
 
-  if (primaryEmailAddressId) {
-    const primary = emailAddresses.find(
-      (entry) => entry && entry.id === primaryEmailAddressId,
-    );
-    if (primary?.email_address) {
-      return primary.email_address;
-    }
-  }
+  const primaryEmail =
+    emailAddresses.find((e) => e?.id === primaryEmailAddressId)
+      ?.email_address ||
+    emailAddresses[0]?.email_address ||
+    null;
 
-  return emailAddresses[0]?.email_address || null;
+  return primaryEmail || null;
 }
 
 /**
- * Normalizes user profile details, providing initials-based fallback avatars when image is absent.
+ * Normalizes user profile details, providing initials-based fallback avatars when image is absent
+ * and gracefully handling null/empty email addresses.
  */
 export function resolveUserProfile(data: ClerkUserData): {
   id: string;
@@ -96,11 +97,11 @@ export function resolveUserProfile(data: ClerkUserData): {
   lastName: string | null;
   imageUrl: string;
 } {
-  const firstName = data.first_name || null;
-  const lastName = data.last_name || null;
+  const firstName = data?.first_name ?? null;
+  const lastName = data?.last_name ?? null;
   const email = resolvePrimaryEmail(
-    data.email_addresses,
-    data.primary_email_address_id,
+    data?.email_addresses,
+    data?.primary_email_address_id,
   );
 
   const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
@@ -108,7 +109,7 @@ export function resolveUserProfile(data: ClerkUserData): {
     initials || "WS",
   )}&background=6366f1&color=fff`;
 
-  const imageUrl = data.image_url
+  const imageUrl = data?.image_url
     ? data.image_url
         .replace(/(\?|&)sz=\d+/, "$1sz=150")
         .replace(/(\?|&)width=\d+/, "$1width=150")
@@ -123,15 +124,40 @@ export function resolveUserProfile(data: ClerkUserData): {
   };
 }
 
+export async function handleUserUpdated(
+  data: ClerkUserData,
+  db: UserUpsertClient,
+): Promise<{
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  imageUrl: string;
+}> {
+  const profile = resolveUserProfile(data);
+
+  await db.user.upsert({
+    where: { id: profile.id },
+    update: {
+      email: profile.email,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      imageUrl: profile.imageUrl,
+    },
+    create: {
+      id: profile.id,
+      email: profile.email,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      imageUrl: profile.imageUrl,
+    },
+  });
+
+  return profile;
+}
+
 /**
  * Verifies Clerk webhook signature using official Svix / standardwebhooks verification mechanism.
- * (svix v2 core verification is built on standardwebhooks Webhook class).
- *
- * @param rawBody - Exact raw text of incoming request body.
- * @param headers - Svix headers: svix-id, svix-timestamp, svix-signature.
- * @param signingSecret - Secret key. Defaults to CLERK_WEBHOOK_SIGNING_SECRET or CLERK_WEBHOOK_SECRET.
- * @returns Parsed and validated ClerkWebhookEvent.
- * @throws WebhookVerificationError on missing headers, invalid signature, stale timestamp, or invalid JSON.
  */
 export function verifyClerkWebhook(
   rawBody: string,

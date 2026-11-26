@@ -21,3 +21,32 @@ export function getRedis(): Redis | null {
 }
 
 export const redis = getRedis();
+
+let latestRedisPingLatencyMs: number | null = null;
+
+export async function pingRedis(): Promise<number | null> {
+  if (!redis || typeof redis.ping !== "function") {
+    latestRedisPingLatencyMs = null;
+    return null;
+  }
+
+  const startTime = performance.now();
+  try {
+    await redis.ping();
+    const pingMs = Math.round(performance.now() - startTime);
+    latestRedisPingLatencyMs =
+      Number.isFinite(pingMs) && pingMs >= 0 ? pingMs : null;
+    return latestRedisPingLatencyMs;
+  } catch {
+    latestRedisPingLatencyMs = null;
+    throw new Error("Redis ping failed");
+  }
+}
+
+export function getRedisPingLatency(): number | null {
+  return Number.isFinite(latestRedisPingLatencyMs) &&
+    latestRedisPingLatencyMs !== null &&
+    latestRedisPingLatencyMs >= 0
+    ? latestRedisPingLatencyMs
+    : null;
+}

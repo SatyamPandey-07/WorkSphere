@@ -48,12 +48,12 @@ export const StarRating: React.FC<StarRatingProps> = ({
   const effectiveReviews = totalReviews ?? reviewCount;
   const numericRating = typeof rating === "number" ? rating : null;
 
+  const normalizedRating = Math.max(0, Math.min(5, Number(rating) || 0));
+  const roundedRating = Math.round(normalizedRating * 2) / 2;
+
   // Guard: unrated if review count is 0, rating is null/undefined/0/NaN, or negative (#9761)
   const isUnrated =
-    numericRating === null ||
-    isNaN(numericRating) ||
-    numericRating <= 0 ||
-    effectiveReviews === 0;
+    numericRating === null || normalizedRating === 0 || effectiveReviews === 0;
 
   const starSizeClass = STAR_SIZE_MAP[size] || STAR_SIZE_MAP.md;
   const textSizeClass = TEXT_SIZE_MAP[size] || TEXT_SIZE_MAP.md;
@@ -88,7 +88,7 @@ export const StarRating: React.FC<StarRatingProps> = ({
     );
   }
 
-  const clampedRating = Math.max(0, Math.min(maxStars, numericRating));
+  const clampedRating = Math.min(maxStars, roundedRating);
   const accessibleLabel = `${clampedRating.toFixed(1)} out of ${maxStars} stars${
     typeof effectiveReviews === "number" ? ` (${effectiveReviews} reviews)` : ""
   }`;

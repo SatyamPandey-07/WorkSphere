@@ -1,35 +1,43 @@
-﻿import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { VenueSearchInput } from '@/components/search/VenueSearchInput';
+import React, { useState } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { VenueSearchInput } from "@/components/search/VenueSearchInput";
 
-describe('VenueSearchInput', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
+describe("VenueSearchInput Escape & aria-expanded sync", () => {
+  it("closes dropdown on Escape and keeps aria-expanded synced on blur and re-focus", () => {
+    const Harness = () => {
+      const [query, setQuery] = useState("");
+      return (
+        <div>
+          <VenueSearchInput
+            value={query}
+            onChange={setQuery}
+            historyItems={["Bandra West", "Powai Hub"]}
+          />
+          <button type="button" data-testid="after-input-btn">
+            Next Focusable
+          </button>
+        </div>
+      );
+    };
 
-  it('submits search query with active amenities and handles storage errors gracefully', () => {
-    const onQueryParamsChange = jest.fn();
-    const setItemSpy = jest
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new Error('QuotaExceededError');
-      });
+    render(<Harness />);
+    const input = screen.getByTestId("venue-search-input");
 
-    render(
-      <VenueSearchInput
-        existingSearchParams="sort=rating"
-        activeAmenities={['outdoorPatio']}
-        onQueryParamsChange={onQueryParamsChange}
-      />
-    );
+    fireEvent.focus(input);
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("venue-search-history-dropdown")).toBeTruthy();
 
-    const input = screen.getByTestId('venue-search-input');
-    fireEvent.change(input, { target: { value: '  quiet cafe  ' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: "Escape", code: "Escape" });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("venue-search-history-dropdown")).toBeNull();
 
-    expect(onQueryParamsChange).toHaveBeenCalledWith(
-      'sort=rating&q=quiet+cafe&amenities=outdoorPatio'
-    );
-    setItemSpy.mockRestore();
+    fireEvent.blur(input, {
+      relatedTarget: screen.getByTestId("after-input-btn"),
+    });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.focus(input);
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("venue-search-history-dropdown")).toBeTruthy();
   });
 });

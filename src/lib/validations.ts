@@ -173,6 +173,8 @@ export const venueCreateSchema = z.object({
   hasOutlets: z.boolean().optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]).optional(),
   hasErgonomic: z.boolean().optional(),
+  hasStandingDesk: z.boolean().optional(),
+  hasExternalMonitor: z.boolean().optional(),
   singleOriginBeans: z.boolean().optional(),
   specialtyEspresso: z.boolean().optional(),
   oatAlmondMilk: z.boolean().optional(),
@@ -363,6 +365,31 @@ export const syncFavoriteTagsSchema = z.object({
     .min(1)
     .max(200),
 });
+
+export const MAX_BULK_FAVORITE_OPERATIONS = 100;
+
+export const syncFavoriteOperationSchema = z.object({
+  venueId: z
+    .string()
+    .trim()
+    .min(1, "venueId must be a non-empty string")
+    .max(128),
+  action: z.enum(["add", "remove"]),
+  timestamp: z.number().finite().nonnegative(),
+});
+
+export const bulkFavoriteSyncSchema = z.object({
+  operations: z
+    .array(syncFavoriteOperationSchema)
+    .min(1, "operations must contain at least one operation")
+    .max(
+      MAX_BULK_FAVORITE_OPERATIONS,
+      `Maximum ${MAX_BULK_FAVORITE_OPERATIONS} operations allowed per request`,
+    ),
+});
+
+export type SyncFavoriteOperation = z.infer<typeof syncFavoriteOperationSchema>;
+export type BulkFavoriteSync = z.infer<typeof bulkFavoriteSyncSchema>;
 
 // Location schema
 export const locationSchema = z.object({

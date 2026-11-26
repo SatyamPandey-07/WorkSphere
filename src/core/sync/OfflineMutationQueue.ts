@@ -11,6 +11,10 @@ import {
   calculateFullJitterBackoff,
   calculateDecorrelatedJitterBackoff,
 } from "@/lib/utils/backoff";
+import {
+  openDatabaseWithMigration,
+  assertConnectionUsable,
+} from "@/lib/offline/migrationCoordinator";
 
 export const DEFAULT_SYNC_TAG = "sync-offline-mutations";
 export const DEFAULT_MAX_RETRIES = 5;
@@ -208,48 +212,39 @@ export class InMemoryMutationStorage implements OfflineMutationStorage {
 }
 
 export const OFFLINE_MUTATIONS_DB_NAME = "WorkSphereOfflineMutationsDB";
+export const OFFLINE_MUTATIONS_DB_VERSION = 2;
 export const OFFLINE_MUTATIONS_STORE_NAME = "offline_mutations";
 
 /**
  * Persistent IndexedDB storage for offline mutations.
- * Falls back to InMemoryMutationStorage if IndexedDB is blocked or unavailable.
+ * Uses the coordinated migration pipeline when IndexedDB is present, and
+ * falls back to InMemoryMutationStorage only when IndexedDB is unavailable.
  */
 export class IndexedDBMutationStorage implements OfflineMutationStorage {
   private inMemoryFallback = new InMemoryMutationStorage();
 
   private async getDB(): Promise<IDBDatabase | null> {
     if (typeof indexedDB === "undefined") return null;
-    return new Promise((resolve) => {
-      try {
-        const req = indexedDB.open(OFFLINE_MUTATIONS_DB_NAME, 1);
-        req.onupgradeneeded = (e) => {
-          const db = (e.target as IDBOpenDBRequest).result;
-          if (!db.objectStoreNames.contains(OFFLINE_MUTATIONS_STORE_NAME)) {
-            db.createObjectStore(OFFLINE_MUTATIONS_STORE_NAME, {
-              keyPath: "id",
-            });
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(null);
-      } catch {
-        resolve(null);
-      }
+    const db = await openDatabaseWithMigration(OFFLINE_MUTATIONS_DB_NAME, {
+      context: "page",
+      targetVersion: OFFLINE_MUTATIONS_DB_VERSION,
     });
+    assertConnectionUsable(OFFLINE_MUTATIONS_DB_NAME, db);
+    return db;
   }
 
   async getItem(id: string): Promise<OfflineMutation | undefined> {
     const db = await this.getDB();
     if (!db) return this.inMemoryFallback.getItem(id);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
         const tx = db.transaction(OFFLINE_MUTATIONS_STORE_NAME, "readonly");
         const store = tx.objectStore(OFFLINE_MUTATIONS_STORE_NAME);
         const req = store.get(id);
         req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(undefined);
-      } catch {
-        resolve(undefined);
+        req.onerror = () => reject(req.error);
+      } catch (err) {
+        reject(err);
       }
     });
   }
@@ -257,15 +252,15 @@ export class IndexedDBMutationStorage implements OfflineMutationStorage {
   async getAll(): Promise<OfflineMutation[]> {
     const db = await this.getDB();
     if (!db) return this.inMemoryFallback.getAll();
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
         const tx = db.transaction(OFFLINE_MUTATIONS_STORE_NAME, "readonly");
         const store = tx.objectStore(OFFLINE_MUTATIONS_STORE_NAME);
         const req = store.getAll();
         req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => resolve([]);
-      } catch {
-        resolve([]);
+        req.onerror = () => reject(req.error);
+      } catch (err) {
+        reject(err);
       }
     });
   }
@@ -273,15 +268,17 @@ export class IndexedDBMutationStorage implements OfflineMutationStorage {
   async saveItem(mutation: OfflineMutation): Promise<void> {
     const db = await this.getDB();
     if (!db) return this.inMemoryFallback.saveItem(mutation);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
         const tx = db.transaction(OFFLINE_MUTATIONS_STORE_NAME, "readwrite");
         const store = tx.objectStore(OFFLINE_MUTATIONS_STORE_NAME);
         store.put(mutation);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () =>
+          reject(tx.error || new DOMException("Transaction aborted", "AbortError"));
+      } catch (err) {
+        reject(err);
       }
     });
   }
@@ -289,15 +286,17 @@ export class IndexedDBMutationStorage implements OfflineMutationStorage {
   async removeItem(id: string): Promise<void> {
     const db = await this.getDB();
     if (!db) return this.inMemoryFallback.removeItem(id);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
         const tx = db.transaction(OFFLINE_MUTATIONS_STORE_NAME, "readwrite");
         const store = tx.objectStore(OFFLINE_MUTATIONS_STORE_NAME);
         store.delete(id);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () =>
+          reject(tx.error || new DOMException("Transaction aborted", "AbortError"));
+      } catch (err) {
+        reject(err);
       }
     });
   }
@@ -305,15 +304,17 @@ export class IndexedDBMutationStorage implements OfflineMutationStorage {
   async clear(): Promise<void> {
     const db = await this.getDB();
     if (!db) return this.inMemoryFallback.clear();
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
         const tx = db.transaction(OFFLINE_MUTATIONS_STORE_NAME, "readwrite");
         const store = tx.objectStore(OFFLINE_MUTATIONS_STORE_NAME);
         store.clear();
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () =>
+          reject(tx.error || new DOMException("Transaction aborted", "AbortError"));
+      } catch (err) {
+        reject(err);
       }
     });
   }

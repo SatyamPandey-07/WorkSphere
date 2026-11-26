@@ -91,77 +91,12 @@ describe("GET /api/venues - Search and Pagination", () => {
     });
   });
 
-  it("filters fallback results by the canonical standing desk validation", async () => {
-    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
-    (prisma.venue.findMany as jest.Mock).mockResolvedValue([
-      { id: "desk-venue", name: "Adjustable Desk Workspace" },
-    ]);
+  it("should apply ergonomic presets in fallback mode", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
 
     const req = new NextRequest(
-      "http://localhost/api/venues?standingDesk=true&wifi=true",
-    );
-    const res = await GET(req);
-
-    expect(res.status).toBe(200);
-    expect(prisma.venue.count).toHaveBeenCalledWith({
-      where: {
-        AND: [
-          { wifiQuality: { gte: 3 } },
-          {
-            validations: {
-              some: {
-                amenity: {
-                  equals: "standing_desk",
-                  mode: "insensitive",
-                },
-                upvotes: { gt: 0 },
-              },
-            },
-          },
-        ],
-      },
-    });
-  });
-
-  it("accepts Standing Desk in coordinate search filters", async () => {
-    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
-    (prisma.venue.findMany as jest.Mock).mockResolvedValue([
-      { id: "desk-venue", name: "Adjustable Desk Workspace" },
-    ]);
-
-    const req = new NextRequest(
-      "http://localhost/api/venues?lat=47.6&lng=-122.3&standingDesk=true",
-    );
-    const res = await GET(req);
-
-    expect(res.status).toBe(200);
-    expect(prisma.venue.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          validations: {
-            some: {
-              amenity: {
-                equals: "standing_desk",
-                mode: "insensitive",
-              },
-              upvotes: { gt: 0 },
-            },
-          },
-        }),
-      }),
-    );
-  });
-
-  it("applies the standing desk filter after text-search ranking", async () => {
-    (prisma.$queryRaw as jest.Mock).mockResolvedValue([
-      { id: "desk-venue", score: 0.03 },
-    ]);
-    (prisma.venue.findMany as jest.Mock).mockResolvedValue([
-      { id: "desk-venue", name: "Adjustable Desk Workspace" },
-    ]);
-
-    const req = new NextRequest(
-      "http://localhost/api/venues?query=adjustable&standingDesk=true",
+      "http://localhost/api/venues?standingDesk=true&externalMonitor=1&ergonomic=true",
     );
     const res = await GET(req);
 
@@ -169,16 +104,11 @@ describe("GET /api/venues - Search and Pagination", () => {
     expect(prisma.venue.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          validations: {
-            some: {
-              amenity: {
-                equals: "standing_desk",
-                mode: "insensitive",
-              },
-              upvotes: { gt: 0 },
-            },
-          },
-          id: { in: ["desk-venue"] },
+          AND: [
+            { hasErgonomic: true },
+            { hasStandingDesk: true },
+            { hasExternalMonitor: true },
+          ],
         },
       }),
     );
@@ -384,6 +314,27 @@ describe("GET /api/venues - Search and Pagination", () => {
         where: expect.objectContaining({
           latitude: expect.any(Object),
           longitude: expect.any(Object),
+        }),
+      }),
+    );
+  });
+
+  it("should apply ergonomic presets in coordinate mode", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?lat=35.6762&lng=139.6503&standingDesk=true&externalMonitor=true&ergonomic=true",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          hasErgonomic: true,
+          hasStandingDesk: true,
+          hasExternalMonitor: true,
         }),
       }),
     );

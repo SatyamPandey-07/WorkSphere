@@ -15,3 +15,6 @@ export { default as RadarSweepLayer } from "./RadarSweepLayer";
 
 export * from "./MapShortcutLegend";
 export { default as MapShortcutLegend } from "./MapShortcutLegend";
+
+export * from "./VenueHexMapLayer";
+export { default as VenueHexMapLayer } from "./VenueHexMapLayer";

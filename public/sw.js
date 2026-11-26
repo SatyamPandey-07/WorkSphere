@@ -17,6 +17,7 @@ const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const VENUE_PHOTO_CACHE_NAME = "worksphere-venue-photos-v1";
+const VENUE_PHOTO_META_DB_NAME = "worksphere-venue-photo-cache-lru";
 const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
 const CACHE_VERSION = "v2";
 const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
@@ -318,9 +319,9 @@ async function handleFetch(request, event, url) {
   if (isAllowlistedPublicApi) {
     try {
       const response = await fetch(request);
-      if (response.ok && isCacheablePublicResponse(response)) {
-        const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
-        cache.put(request, response.clone());
+      if (response.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        await cacheApiMetadata(cache, request, response);
       }
       return response;
     } catch {
@@ -372,22 +373,19 @@ async function handleFetch(request, event, url) {
   } else if (isVenuePhoto) {
     const cache = await caches.open(VENUE_PHOTO_CACHE_NAME);
     const cached = await cache.match(request);
-    const revalidatePromise = fetch(request)
-      .then(async (networkResponse) => {
-        if (
-          networkResponse &&
-          (networkResponse.status === 200 || networkResponse.status === 0)
-        ) {
-          await cache.put(request, networkResponse.clone());
-        }
-        return networkResponse;
-      })
-      .catch(() => null);
-
+    const revalidatePromise = revalidateVenuePhoto(cache, request).catch(
+      (err) => {
+        console.warn("[SW] Venue photo fetch or cache failed:", err);
+        return null;
+      },
+    );
     if (cached) {
       if (event && event.waitUntil) {
         event.waitUntil(revalidatePromise);
       }
+      touchVenuePhotoTimestamp(request.url).catch((err) => {
+        console.warn("[SW] Failed to update venue photo cache age:", err);
+      });
       return cached;
     }
     const fresh = await revalidatePromise;
@@ -461,6 +459,247 @@ async function handleFetch(request, event, url) {
     }
   }
 }
+
+let venuePhotoDbPromise = null;
+let venuePhotoWriteQueue = Promise.resolve();
+
+function withVenuePhotoWriteLock(callback) {
+  const operation = venuePhotoWriteQueue.then(() => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.locks &&
+      typeof navigator.locks.request === "function"
+    ) {
+      return navigator.locks.request(
+        "worksphere-venue-photo-cache-write",
+        callback,
+      );
+    }
+    return callback();
+  });
+  venuePhotoWriteQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
+}
+
+function openVenuePhotoMetadataDb() {
+  if (venuePhotoDbPromise) return venuePhotoDbPromise;
+  venuePhotoDbPromise = new Promise((resolve, reject) => {
+    try {
+      const request = indexedDB.open(VENUE_PHOTO_META_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("entries")) {
+          request.result.createObjectStore("entries", { keyPath: "url" });
+        }
+      };
+      request.onsuccess = () => {
+        request.result.onversionchange = () => {
+          request.result.close();
+          venuePhotoDbPromise = null;
+        };
+        resolve(request.result);
+      };
+      request.onerror = () => {
+        venuePhotoDbPromise = null;
+        reject(request.error || new Error("Unable to open venue photo metadata"));
+      };
+    } catch (error) {
+      venuePhotoDbPromise = null;
+      reject(error);
+    }
+  });
+  return venuePhotoDbPromise;
+}
+
+function isQuotaExceededError(error) {
+  return (
+    error &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014)
+  );
+}
+
+async function writeVenuePhotoTimestamp(url) {
+  const db = await openVenuePhotoMetadataDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction("entries", "readwrite");
+    transaction.objectStore("entries").put({ url, lastAccessed: Date.now() });
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+async function touchVenuePhotoTimestamp(url) {
+  await withVenuePhotoWriteLock(() => writeVenuePhotoTimestamp(url));
+}
+
+async function readVenuePhotoTimestamps() {
+  const db = await openVenuePhotoMetadataDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("entries", "readonly");
+    const request = transaction.objectStore("entries").getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function evictOldestVenuePhotos(cache) {
+  const requests = (await cache.keys()).filter(
+    (request) =>
+      request.url.includes("res.cloudinary.com") ||
+      request.url.includes("images.pexels.com"),
+  );
+  if (requests.length === 0) return 0;
+
+  const records = await readVenuePhotoTimestamps();
+  const timestamps = new Map(
+    records.map((record) => [record.url, record.lastAccessed]),
+  );
+  const metadataDb = await openVenuePhotoMetadataDb();
+  const requestUrls = new Set(requests.map((request) => request.url));
+  const staleRecords = records.filter((record) => !requestUrls.has(record.url));
+  const unknownRequests = requests.filter(
+    (request) => !timestamps.has(request.url),
+  );
+
+  if (staleRecords.length > 0 || unknownRequests.length > 0) {
+    await new Promise((resolve, reject) => {
+      const transaction = metadataDb.transaction("entries", "readwrite");
+      const store = transaction.objectStore("entries");
+      for (const record of staleRecords) {
+        store.delete(record.url);
+      }
+      for (const request of unknownRequests) {
+        // Legacy cache entries without timestamps are treated as the oldest.
+        store.put({ url: request.url, lastAccessed: 0 });
+        timestamps.set(request.url, 0);
+      }
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  const evictionCount = Math.min(
+    requests.length,
+    Math.max(1, Math.ceil(requests.length * 0.2)),
+  );
+  const oldest = requests
+    .slice()
+    .sort(
+      (requestA, requestB) =>
+        (timestamps.get(requestA.url) || 0) -
+          (timestamps.get(requestB.url) || 0) ||
+        requestA.url.localeCompare(requestB.url),
+    )
+    .slice(0, evictionCount);
+  let evictedCount = 0;
+
+  for (const request of oldest) {
+    if (await cache.delete(request)) {
+      evictedCount += 1;
+      await new Promise((resolve, reject) => {
+        const transaction = metadataDb.transaction("entries", "readwrite");
+        transaction.objectStore("entries").delete(request.url);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }
+  }
+
+  return evictedCount;
+}
+
+function cacheVenuePhoto(cache, request, response) {
+  return withVenuePhotoWriteLock(async () => {
+    try {
+      await cache.put(request, response.clone());
+    } catch (error) {
+      if (!isQuotaExceededError(error)) throw error;
+
+      console.warn(
+        "[SW] Venue photo cache quota exceeded; evicting the oldest photos and retrying once.",
+      );
+      try {
+        await evictOldestVenuePhotos(cache);
+      } catch (evictionError) {
+        console.warn("[SW] Unable to evict venue photos after quota error:", evictionError);
+      }
+
+      try {
+        await cache.put(request, response.clone());
+      } catch (retryError) {
+        if (!isQuotaExceededError(retryError)) throw retryError;
+        console.warn(
+          "[SW] Venue photo cache retry still exceeded quota; serving the image without caching it.",
+        );
+        return false;
+      }
+    }
+
+    try {
+      await writeVenuePhotoTimestamp(request.url);
+    } catch (metadataError) {
+      console.warn("[SW] Failed to save venue photo cache age:", metadataError);
+    }
+    return true;
+  });
+}
+
+async function cacheApiMetadata(cache, request, response) {
+  try {
+    await cache.put(request, response.clone());
+    return;
+  } catch (error) {
+    if (!isQuotaExceededError(error)) {
+      console.warn(
+        "[SW] Failed to cache API metadata; returning the network response:",
+        error,
+      );
+      return;
+    }
+
+    console.warn(
+      "[SW] API metadata cache quota exceeded; evicting venue photos before retrying.",
+    );
+    try {
+      const photoCache = await caches.open(VENUE_PHOTO_CACHE_NAME);
+      await withVenuePhotoWriteLock(() => evictOldestVenuePhotos(photoCache));
+    } catch (evictionError) {
+      console.warn(
+        "[SW] Unable to free venue-photo storage for API metadata:",
+        evictionError,
+      );
+    }
+
+    try {
+      await cache.put(request, response.clone());
+    } catch (retryError) {
+      console.warn(
+        "[SW] API metadata cache retry failed; returning the network response:",
+        retryError,
+      );
+    }
+  }
+}
+
+async function revalidateVenuePhoto(cache, request) {
+  const networkResponse = await fetch(request);
+  if (
+    networkResponse &&
+    (networkResponse.status === 200 || networkResponse.status === 0)
+  ) {
+    await cacheVenuePhoto(cache, request, networkResponse);
+  }
+  return networkResponse;
+}
+
 // Background Sync for offline actions
 self.addEventListener("sync", (event) => {
   if (event.tag === "sync-crdt") {
@@ -1182,28 +1421,59 @@ function calculateSWDecorrelatedJitter(prevDelay) {
   return Math.round(effectiveBase + (ceiling - effectiveBase) * Math.random());
 }
 
+function ensureSwMutationsSchema(db, tx) {
+  let store = null;
+  if (!db.objectStoreNames.contains("offline_mutations")) {
+    store = db.createObjectStore("offline_mutations", { keyPath: "id" });
+  } else if (tx) {
+    try {
+      store = tx.objectStore("offline_mutations");
+    } catch {}
+  }
+  if (store) {
+    if (!store.indexNames.contains("status")) {
+      store.createIndex("status", "status", { unique: false });
+    }
+    if (!store.indexNames.contains("timestamp")) {
+      store.createIndex("timestamp", "timestamp", { unique: false });
+    }
+  }
+}
+
 async function getOfflineMutationsFromDB() {
   if (typeof indexedDB === "undefined") return [];
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 2);
       req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains("offline_mutations")) {
-          db.createObjectStore("offline_mutations", { keyPath: "id" });
-        }
+        ensureSwMutationsSchema(e.target.result, e.target.transaction);
+      };
+      req.onblocked = () => {
+        console.warn("[SW] WorkSphereOfflineMutationsDB upgrade blocked");
       };
       req.onsuccess = () => {
         const db = req.result;
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
         if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.close();
           resolve([]);
           return;
         }
         const tx = db.transaction("offline_mutations", "readonly");
         const store = tx.objectStore("offline_mutations");
         const getReq = store.getAll();
-        getReq.onsuccess = () => resolve(getReq.result || []);
-        getReq.onerror = () => resolve([]);
+        getReq.onsuccess = () => {
+          db.close();
+          resolve(getReq.result || []);
+        };
+        getReq.onerror = () => {
+          db.close();
+          resolve([]);
+        };
       };
       req.onerror = () => resolve([]);
     } catch {
@@ -1216,17 +1486,32 @@ async function removeOfflineMutationFromDB(id) {
   if (typeof indexedDB === "undefined") return;
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 2);
+      req.onupgradeneeded = (e) => {
+        ensureSwMutationsSchema(e.target.result, e.target.transaction);
+      };
       req.onsuccess = () => {
         const db = req.result;
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
         if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.close();
           resolve();
           return;
         }
         const tx = db.transaction("offline_mutations", "readwrite");
         tx.objectStore("offline_mutations").delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          resolve();
+        };
       };
       req.onerror = () => resolve();
     } catch {
@@ -1392,6 +1677,8 @@ async function syncNomadCheckins() {
               "Idempotency-Key": item.idempotencyKey,
               "X-Client-Nonce": item.clientNonce,
               "X-Signed-Timestamp": item.signedTimestamp,
+              "X-Device-Id": item.deviceId || "device_default",
+              "X-Protocol-Version": String(item.protocolVersion || 2),
             },
             body: JSON.stringify({
               seatId: item.seatId,
@@ -1401,6 +1688,9 @@ async function syncNomadCheckins() {
               clientNonce: item.clientNonce,
               signedTimestamp: item.signedTimestamp,
               idempotencyKey: item.idempotencyKey,
+              deviceId: item.deviceId || "device_default",
+              protocolVersion: item.protocolVersion || 2,
+              signature: item.signature || item.signedTimestamp,
             }),
           });
 
@@ -1667,16 +1957,90 @@ async function syncFavoriteVenuesOccupancy() {
   }
 }
 
-// IndexedDB helpers
+// IndexedDB helpers (synchronized with src/lib/offline/migrations/migrationRegistry.ts)
 let swDb = null;
+let swMigrationUpgradeInProgress = false;
+let swMigrationChannel = null;
+
+function initSwMigrationCoordination() {
+  if (typeof BroadcastChannel === "undefined" || swMigrationChannel) return;
+  try {
+    swMigrationChannel = new BroadcastChannel(
+      "worksphere:idb-migration-coordination",
+    );
+    swMigrationChannel.onmessage = (event) => {
+      const msg = event.data;
+      if (!msg || msg.dbName !== "worksphere-offline") return;
+      if (
+        msg.type === "UPGRADE_REQUESTED" ||
+        msg.type === "UPGRADE_BLOCKED" ||
+        msg.type === "CLOSE_CONNECTION"
+      ) {
+        swMigrationUpgradeInProgress = true;
+        if (swDb) {
+          try {
+            swDb.close();
+          } catch {}
+          swDb = null;
+        }
+        try {
+          swMigrationChannel.postMessage({
+            type: "CONNECTION_CLOSED",
+            dbName: "worksphere-offline",
+            targetVersion: msg.targetVersion,
+            senderId: "sw",
+            timestamp: Date.now(),
+          });
+        } catch {}
+      } else if (
+        msg.type === "UPGRADE_COMPLETED" ||
+        msg.type === "UPGRADE_FAILED"
+      ) {
+        swMigrationUpgradeInProgress = false;
+      }
+    };
+  } catch {
+    swMigrationChannel = null;
+  }
+}
+
+initSwMigrationCoordination();
+
 function openIndexedDB() {
+  if (swMigrationUpgradeInProgress && swDb) {
+    try {
+      swDb.close();
+    } catch {}
+    swDb = null;
+  }
   if (swDb) return Promise.resolve(swDb);
+
+  const ensureStore = (db, tx, name, keyOpts, indexes) => {
+    let store = null;
+    if (!db.objectStoreNames.contains(name)) {
+      store = db.createObjectStore(name, keyOpts);
+    } else if (tx) {
+      try {
+        store = tx.objectStore(name);
+      } catch {}
+    }
+    if (store && Array.isArray(indexes)) {
+      for (const idx of indexes) {
+        if (!store.indexNames.contains(idx.name)) {
+          store.createIndex(idx.name, idx.keyPath, {
+            unique: Boolean(idx.unique),
+          });
+        }
+      }
+    }
+  };
+
   return new Promise((resolve, reject) => {
     try {
       const request = indexedDB.open("worksphere-offline", 9);
 
       request.onblocked = () => {
-        console.warn("[SW] IndexedDB upgrade blocked");
+        console.warn("[SW] IndexedDB upgrade blocked; yielding local handle");
         if (swDb) {
           try {
             swDb.close();
@@ -1690,7 +2054,9 @@ function openIndexedDB() {
       request.onsuccess = () => {
         swDb = request.result;
         swDb.onversionchange = () => {
-          swDb.close();
+          try {
+            swDb.close();
+          } catch {}
           swDb = null;
         };
         resolve(swDb);
@@ -1698,137 +2064,146 @@ function openIndexedDB() {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const tx = event.target.transaction;
+        const oldVersion = event.oldVersion || 0;
+        const newVersion = event.newVersion || 9;
 
-        // Venues store
-        if (!db.objectStoreNames.contains("venues")) {
-          const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
-          venuesStore.createIndex("type", "type", { unique: false });
-          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        if (tx) {
+          tx.onabort = (e) => {
+            console.warn("[SW] Upgrade transaction aborted", tx.error || e);
+          };
+          tx.onerror = (e) => {
+            console.warn("[SW] Upgrade transaction error", tx.error || e);
+          };
         }
 
-        // Favorites store
-        if (!db.objectStoreNames.contains("favorites")) {
-          const favoritesStore = db.createObjectStore("favorites", {
-            keyPath: "id",
-          });
-          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+          if (swDb === db) swDb = null;
+        };
 
-        // Search history store
-        if (!db.objectStoreNames.contains("searches")) {
-          const searchesStore = db.createObjectStore("searches", {
-            keyPath: "query",
-          });
-          searchesStore.createIndex("timestamp", "timestamp", {
-            unique: false,
-          });
-        }
+        const steps = [
+          {
+            version: 1,
+            run: () => {
+              ensureStore(db, tx, "venues", { keyPath: "id" }, [
+                { name: "type", keyPath: "type" },
+                { name: "savedAt", keyPath: "savedAt" },
+              ]);
+              ensureStore(db, tx, "favorites", { keyPath: "id" }, [
+                { name: "savedAt", keyPath: "savedAt" },
+              ]);
+              ensureStore(db, tx, "searches", { keyPath: "query" }, [
+                { name: "timestamp", keyPath: "timestamp" },
+              ]);
+              ensureStore(db, tx, "pendingActions", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            },
+          },
+          {
+            version: 2,
+            run: () => {
+              ensureStore(db, tx, "imageCacheLRU", { keyPath: "url" }, [
+                { name: "lastAccessed", keyPath: "lastAccessed" },
+              ]);
+            },
+          },
+          {
+            version: 3,
+            run: () => {
+              ensureStore(db, tx, "receiptExports", { keyPath: "bookingId" }, [
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+            },
+          },
+          {
+            version: 4,
+            run: () => {
+              if (db.objectStoreNames.contains("pending-actions")) {
+                db.deleteObjectStore("pending-actions");
+              }
+              ensureStore(db, tx, "pendingFavorites", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            },
+          },
+          {
+            version: 5,
+            run: () => {
+              ensureStore(
+                db,
+                tx,
+                "availabilityDeltas",
+                { keyPath: "venueId" },
+                [{ name: "timestamp", keyPath: "timestamp" }],
+              );
+            },
+          },
+          {
+            version: 6,
+            run: () => {
+              ensureStore(db, tx, "recentlyViewedVenues", { keyPath: "id" }, [
+                { name: "viewedAt", keyPath: "viewedAt" },
+              ]);
+            },
+          },
+          {
+            version: 7,
+            run: () => {
+              ensureStore(db, tx, "pendingReviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+              ensureStore(db, tx, "preference_rankings", { keyPath: "id" });
+              ensureStore(db, tx, "queued_reviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+              ensureStore(db, tx, "unsyncedReviewDrafts", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "review.venueId" },
+                { name: "quarantinedAt", keyPath: "quarantinedAt" },
+              ]);
+            },
+          },
+          {
+            version: 8,
+            run: () => {
+              ensureStore(db, tx, "pendingReviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+            },
+          },
+          {
+            version: 9,
+            run: () => {
+              ensureStore(db, tx, "pendingCheckins", { keyPath: "id" }, [
+                { name: "seatId", keyPath: "seatId" },
+                {
+                  name: "idempotencyKey",
+                  keyPath: "idempotencyKey",
+                  unique: true,
+                },
+                { name: "status", keyPath: "status" },
+                { name: "timestamp", keyPath: "timestamp" },
+              ]);
+            },
+          },
+        ];
 
-        // Migration
-        if (db.objectStoreNames.contains("pending-actions")) {
-          db.deleteObjectStore("pending-actions");
-        }
-
-        // Pending actions store (unified name)
-        if (!db.objectStoreNames.contains("pendingActions")) {
-          db.createObjectStore("pendingActions", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Image Cache LRU store
-        if (!db.objectStoreNames.contains("imageCacheLRU")) {
-          const lruStore = db.createObjectStore("imageCacheLRU", {
-            keyPath: "url",
-          });
-          lruStore.createIndex("lastAccessed", "lastAccessed", {
-            unique: false,
-          });
-        }
-
-        // Receipt exports store for offline background sync (Issue #1069)
-        if (!db.objectStoreNames.contains("receiptExports")) {
-          const receiptStore = db.createObjectStore("receiptExports", {
-            keyPath: "bookingId",
-          });
-          receiptStore.createIndex("status", "status", { unique: false });
-          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Pending favorites store
-        if (!db.objectStoreNames.contains("pendingFavorites")) {
-          db.createObjectStore("pendingFavorites", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Availability deltas store for periodic background sync (Issue #1126)
-        if (!db.objectStoreNames.contains("availabilityDeltas")) {
-          const deltaStore = db.createObjectStore("availabilityDeltas", {
-            keyPath: "venueId",
-          });
-          deltaStore.createIndex("timestamp", "timestamp", { unique: false });
-        }
-
-        // Recently viewed venues store (Issue #3512)
-        if (!db.objectStoreNames.contains("recentlyViewedVenues")) {
-          const recentStore = db.createObjectStore("recentlyViewedVenues", {
-            keyPath: "id",
-          });
-          recentStore.createIndex("viewedAt", "viewedAt", { unique: false });
-        }
-
-        // Dedicated offline reviews store (Issue #3366)
-        if (!db.objectStoreNames.contains("pendingReviews")) {
-          const reviewStore = db.createObjectStore("pendingReviews", {
-            keyPath: "id",
-          });
-          reviewStore.createIndex("venueId", "venueId", { unique: false });
-          reviewStore.createIndex("status", "status", { unique: false });
-          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Preference rankings store (Issue #4102)
-        if (!db.objectStoreNames.contains("preference_rankings")) {
-          db.createObjectStore("preference_rankings", { keyPath: "id" });
-        }
-
-        // Queued reviews store (Issue #3469)
-        if (!db.objectStoreNames.contains("queued_reviews")) {
-          const queuedStore = db.createObjectStore("queued_reviews", {
-            keyPath: "id",
-          });
-          queuedStore.createIndex("venueId", "venueId", { unique: false });
-          queuedStore.createIndex("status", "status", { unique: false });
-          queuedStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Unsynced review drafts store (Issue #3469)
-        if (!db.objectStoreNames.contains("unsyncedReviewDrafts")) {
-          const draftsStore = db.createObjectStore("unsyncedReviewDrafts", {
-            keyPath: "id",
-          });
-          draftsStore.createIndex("venueId", "review.venueId", {
-            unique: false,
-          });
-          draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
-            unique: false,
-          });
-        }
-
-        // Pending check-ins for offline background sync (Issue #7427)
-        if (!db.objectStoreNames.contains("pendingCheckins")) {
-          const checkinStore = db.createObjectStore("pendingCheckins", {
-            keyPath: "id",
-          });
-          checkinStore.createIndex("seatId", "seatId", { unique: false });
-          checkinStore.createIndex("idempotencyKey", "idempotencyKey", {
-            unique: true,
-          });
-          checkinStore.createIndex("status", "status", { unique: false });
-          checkinStore.createIndex("timestamp", "timestamp", { unique: false });
+        for (const step of steps) {
+          if (step.version > oldVersion && step.version <= newVersion) {
+            step.run();
+          }
         }
       };
     } catch (err) {

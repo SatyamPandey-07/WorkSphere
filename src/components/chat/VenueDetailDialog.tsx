@@ -57,6 +57,12 @@ export function VenueDetailDialog({
 }: VenueDetailDialogProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(true);
+  const [photoAttribution, setPhotoAttribution] = useState<{
+    photographer?: string;
+    photographerUrl?: string;
+    photoUrl?: string;
+    source?: string;
+  } | null>(null);
   const [liveScore, setLiveScore] = useState<number | null>(null);
   const [airQuality, setAirQuality] = useState<AirQualityReading | null>(null);
   const [imageError, setImageError] = useState(false);
@@ -314,6 +320,7 @@ export function VenueDetailDialog({
     setLiveScore(venue.score ?? null);
     setAirQuality(null);
     setPhotoLoading(true);
+    setPhotoAttribution(null);
     setImageError(false);
     setBrokenMenuPhotos({});
     setActiveTab("overview");
@@ -333,9 +340,31 @@ export function VenueDetailDialog({
           throw new Error("Failed to load venue photo");
         }
         setPhotoUrl(response.url);
+
+        const photographerHeader = response.headers.get("X-Photo-Photographer");
+        const photographer = photographerHeader
+          ? decodeURIComponent(photographerHeader)
+          : undefined;
+        const photographerUrl =
+          response.headers.get("X-Photo-Photographer-Url") || undefined;
+        const photoPageUrl =
+          response.headers.get("X-Photo-Page-Url") || undefined;
+        const source =
+          response.headers.get("X-Photo-Source") ||
+          (photographer ? "pexels" : undefined);
+
+        if (photographer || photoPageUrl || source === "pexels") {
+          setPhotoAttribution({
+            photographer,
+            photographerUrl,
+            photoUrl: photoPageUrl,
+            source: "pexels",
+          });
+        }
       })
       .catch(() => {
         setPhotoUrl(null);
+        setPhotoAttribution(null);
       })
       .finally(() => {
         setPhotoLoading(false);
@@ -847,6 +876,7 @@ export function VenueDetailDialog({
           airQuality={airQuality}
           displayPhoto={displayPhoto}
           photoLoading={photoLoading}
+          photoAttribution={photoAttribution}
           setImageError={setImageError}
           sentiment={sentiment}
           activeTab={activeTab}

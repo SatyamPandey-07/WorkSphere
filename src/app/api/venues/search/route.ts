@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
 import {
   getLatestVenueTimestamp,
   generateETag,
@@ -96,7 +97,8 @@ interface ParsedSpatial {
 function parseSpatialParams(searchParams: URLSearchParams): ParsedSpatial {
   const latStr = searchParams.get("lat");
   const lngStr = searchParams.get("lng");
-  const radiusStr = searchParams.get("radiusMeters");
+  const radiusKmStr = searchParams.get("radiusKm");
+  const radiusMetersStr = searchParams.get("radiusMeters");
 
   if (latStr === null && lngStr === null) {
     return { radiusMeters: DEFAULT_SEARCH_RADIUS_METERS };
@@ -127,8 +129,10 @@ function parseSpatialParams(searchParams: URLSearchParams): ParsedSpatial {
   }
 
   let radiusMeters = DEFAULT_SEARCH_RADIUS_METERS;
+  const radiusStr = radiusKmStr !== null ? radiusKmStr : radiusMetersStr;
+  const radiusMultiplier = radiusKmStr !== null ? 1000 : 1;
   if (radiusStr !== null) {
-    const parsed = parseFloat(radiusStr);
+    const parsed = parseFloat(radiusStr) * radiusMultiplier;
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return {
         radiusMeters: DEFAULT_SEARCH_RADIUS_METERS,
@@ -214,12 +218,12 @@ export async function GET(request: NextRequest) {
         parseLimit(searchParams.get("limit"), 20),
         MAX_SPATIAL_RESULT_LIMIT,
       );
-      venues = (await searchVenuesNearby(
-        spatial.lat,
-        spatial.lng,
-        spatial.radiusMeters,
+      venues = (await searchVenuesNearby({
+        latitude: spatial.lat,
+        longitude: spatial.lng,
+        radiusMeters: spatial.radiusMeters,
         limit,
-      )) as unknown as Record<string, unknown>[];
+      })) as unknown as Record<string, unknown>[];
     } else if (q) {
       const limit = Math.min(
         parseLimit(searchParams.get("limit"), 20),
@@ -272,7 +276,32 @@ export async function GET(request: NextRequest) {
         console.warn("Phonetic venue search fallback:", err);
       }
     } else if (id) {
-      venues = [{ id, name: "Workspace Venue", address: "Sample Address" }];
+      const venue = await prisma.venue.findUnique({
+        where: { id },
+      });
+      if (!venue) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Venue not found",
+            count: 0,
+            venues: [],
+            results: [],
+            data: [],
+          },
+          { status: 404, headers: responseHeaders },
+        );
+      }
+      venues = [venue as unknown as Record<string, unknown>];
+    }
+
+    const minWifiSpeedParam = searchParams.get("minWifiSpeed");
+    if (minWifiSpeedParam && !isNaN(Number(minWifiSpeedParam))) {
+      const minSpeed = parseFloat(minWifiSpeedParam);
+      venues = venues.filter((v: any) => {
+        const speed = v.wifiSpeed ?? v.amenities?.wifiSpeed;
+        return typeof speed === "number" && speed >= minSpeed;
+      });
     }
 
     // 4. Return response with caching headers
@@ -329,13 +358,23 @@ export async function POST(request: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Invalid semantic search parameters', details: parsed.error.flatten() },
-        { status: 400 }
+        {
+          error: "Invalid semantic search parameters",
+          details: parsed.error.flatten(),
+        },
+        { status: 400 },
       );
     }
 
-    const { query, latitude, longitude, radiusMeters, maxNoiseDb, amenities, limit } =
-      parsed.data;
+    const {
+      query,
+      latitude,
+      longitude,
+      radiusMeters,
+      maxNoiseDb,
+      amenities,
+      limit,
+    } = parsed.data;
 
     // Pass request.signal to your hybrid/embedding search runner so client aborts
     // immediately cancel upstream Groq/OpenAI embedding API calls:
@@ -351,7 +390,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       query,
       results: [], // Replace with `results` from hybridSearch
-      filters: { latitude, longitude, radiusMeters, maxNoiseDb, amenities, limit },
+      filters: {
+        latitude,
+        longitude,
+        radiusMeters,
+        maxNoiseDb,
+        amenities,
+        limit,
+      },
     });
   } catch (error: unknown) {
     if (isAbortError(error) || request.signal.aborted) {
@@ -359,10 +405,10 @@ export async function POST(request: NextRequest) {
       return new NextResponse(null, { status: 499 });
     }
 
-    console.error('[SemanticVenueSearch] Error:', error);
+    console.error("[SemanticVenueSearch] Error:", error);
     return NextResponse.json(
-      { error: 'Failed to execute semantic venue search' },
-      { status: 500 }
+      { error: "Failed to execute semantic venue search" },
+      { status: 500 },
     );
   }
 }

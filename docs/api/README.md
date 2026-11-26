@@ -13,7 +13,16 @@ WorkSphere enforces per-client / per-key rate limits using Redis token buckets (
 | `X-RateLimit-Reset`     | Integer / Epoch Seconds        | Unix timestamp (in seconds) when the rate-limit window or bucket refill resets.                                          |
 | `Retry-After`           | Integer (seconds) or HTTP-date | Recommended wait time before retrying a `429` request—either seconds until retry or an HTTP date string (`IMF-fixdate`). |
 
-### TypeScript / JavaScript Example: Parsing `Retry-After` & Exponential Backoff
+- [Date filter formats](./DATE_FILTER_FORMATS.md) — supported calendar dates, RFC 3339 timestamps, relative windows, aliases, and 400 error responses.
+- [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
+- [Bookings](./bookings.md)
+- [Cafe orders](./cafe-orders.md)
+- [Message translation](./message-translation.md)
+- [Partition export](./partition-export.md)
+- [Semantic search](./semantic-search.md)
+- [Solana Pay](./solana-pay.md)
+- [Telemetry](./telemetry.md)
+- [Telemetry Batch Ingestion](./telemetry-batch.md)
 
 ```typescript
 export interface RetryAfterOptions {
@@ -136,5 +145,7 @@ done
 - [Venue WiFi Spectrum & RF Diagnostics Guide](../venues/WIFI_SPECTRUM_DIAGNOSTICS.md) — RF spectrum bands, channel width degradation models, RSSI/SNR signal thresholds, and Wi-Fi prediction API response schemas.
 - [Solana Escrow Settlement and Refund Runbook](../solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow lifecycle, confirmation levels, refunds, and RPC failover for crypto seat deposits.
 - [Seat Hold Lease Extension API](./SEAT_HOLD_LEASE_EXTENSION.md) — extend a checkout seat hold once by five minutes using the holder's fencing token; request, errors, Redis key and sequence diagram.
+- [Venue Reviews Redaction and Privacy Guarantees](./VENUE_REVIEWS_PRIVACY.md) — what anonymous and signed-in callers receive from the reviews endpoint, recursive `userId` redaction, caching, and change checklist.
+- [Telemetry Gateway Fail-Closed Authentication](./TELEMETRY_GATEWAY_AUTH.md) — how the batch telemetry endpoint authenticates gateways, when it returns 503 or 401, and a checklist for changing auth.
 - [Spatial Geo-Query Guide](../search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate schema, bounding-box and radius search geometry, Haversine and PostGIS distance, and spatial index notes.
 ```

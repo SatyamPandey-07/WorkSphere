@@ -26,6 +26,7 @@ export const PRESET_OPTIONS: { key: DatePresetKey; label: string; testId: string
   { key: 'today', label: 'Today', testId: 'date-preset-today' },
   { key: 'tomorrow', label: 'Tomorrow', testId: 'date-preset-tomorrow' },
   { key: 'weekend', label: 'This Weekend', testId: 'date-preset-weekend' },
+  { key: 'nextMonday', label: 'Next Monday', testId: 'date-preset-next-monday' },
 ];
 
 export function BookingDatePicker({

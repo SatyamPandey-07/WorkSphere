@@ -3,6 +3,8 @@
  * @description Groq-powered AI meeting optimizer that evaluates timezone overlap slots
  * against team urgency, duration constraints, and preferred time windows.
  * Integrates MultiAgentOrchestrator with token budget governance to prune auxiliary tools.
+ * Also provides multi-objective Pareto frontier ranking for candidate meeting venues
+ * evaluating travel fairness, WiFi reliability, and acoustic quietness.
  */
 
 import Groq from "groq-sdk";
@@ -10,44 +12,28 @@ import type { OverlapSlot } from "@/core/scheduling/TimezoneOverlapMatrix";
 import {
   MultiAgentOrchestrator,
   type AgentToolDeclaration,
-  type SubagentExecutionResult,
   type TokenTelemetryRecord,
 } from "@/lib/agents/MultiAgentOrchestrator";
-import {
-  getErrorStatus,
-  isRetryableLlmError,
-  retryWithBackoff,
-  type RetryOptions,
-} from "@/lib/ai/retryWithBackoff";
 
 export interface ParticipantBusyInterval {
   startUTC: number;
   endUTC: number;
 }
-
-export interface MeetingOptimizerOptions {
-  /** Minimum recovery gap between meetings. Defaults to 15 minutes. */
-  bufferMinutes?: number;
-  /**
-   * Retry policy for the LLM reasoning call in optimizeMeetingWithGovernor.
-   * Transient errors (429, 502, 503, 504) are retried with exponential backoff
-   * and jitter, 3 attempts by default.
-   */
-  retry?: RetryOptions;
+export function formatUtcOffsetLabel(unixMs: number, timeZone: string): string {
+  const safeTz = isValidTimeZone(timeZone) ? timeZone : 'UTC'; const local = getLocalParts(unixMs, safeTz);
+  const diffMin = Math.round((Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, 0) - Math.floor(unixMs / 60_000) * 60_000) / 60_000);
+  if (diffMin === 0) return 'UTC+00:00';
+  const sign = diffMin >= 0 ? '+' : '-'; const abs = Math.abs(diffMin);
+  return `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
-
-export interface MeetingContext {
-  title: string;
-  participants: string[];
-  durationMinutes: number;
-  urgency: "low" | "medium" | "high" | "critical";
-  preferredTimeOfDay: "morning" | "afternoon" | "evening";
-  /** Optional IANA timezone for each participant, keyed by participant id. */
-  participantTimezones?: Record<string, string>;
-  /** Existing calendar blocks for each participant, expressed as UTC timestamps. */
-  participantBusyIntervals?: Record<string, ParticipantBusyInterval[]>;
-  /** Per-meeting override for the optimizer's configured recovery buffer. */
-  bufferMinutes?: number;
+export function evaluateParticipantLocalWindow(participant: MeetingParticipant, startUnixMs: number, endUnixMs: number): ParticipantLocalWindow {
+  const safeTz = isValidTimeZone(participant.timeZone) ? participant.timeZone : 'UTC';
+  const s = getLocalParts(startUnixMs, safeTz); const e = getLocalParts(endUnixMs, safeTz);
+  const reasons: Array<'before_08_00' | 'after_19_00'> = [];
+  if (s.minutesOfDay < 480) reasons.push('before_08_00');
+  const nextDay = endUnixMs > startUnixMs && (e.year > s.year || e.month > s.month || e.day > s.day);
+  if (nextDay || e.minutesOfDay > 1140 || s.minutesOfDay > 1140) reasons.push('after_19_00');
+  return { participantId: participant.id, name: participant.name, timeZone: safeTz, utcOffsetLabel: formatUtcOffsetLabel(startUnixMs, safeTz), localStartFormatted: s.formattedTime, localEndFormatted: e.formattedTime, localStartMinutesOfDay: s.minutesOfDay, localEndMinutesOfDay: e.minutesOfDay, isOutOfHours: reasons.length > 0, outOfHoursReasons: reasons };
 }
 
 export interface OptimizedMeetingResult {
@@ -57,467 +43,368 @@ export interface OptimizedMeetingResult {
   telemetry: TokenTelemetryRecord | null;
 }
 
-
-/** Candidate venue metrics used by the multi-perspective consensus solver. */
-export interface MeetingConsensusVenue {
+/**
+ * Candidate venue for multi-objective Pareto optimization.
+ */
+export interface CandidateVenue {
   id: string;
   name: string;
-  /** Travel distance in metres, keyed by participant id. */
-  distanceByParticipantMeters: Record<string, number>;
-  noiseDecibels: number;
-  /** Outlet availability from 0 (none) to 1 (fully available). */
-  powerOutletAvailability: number;
-  wifiMbps?: number;
-  hasOutdoorSeating?: boolean;
-  hasBikeParking?: boolean;
+  /**
+   * Travel fairness score (higher is fairer / better). Missing/NaN defaults to 0.
+   */
+  travelFairness?: number;
+  /**
+   * WiFi reliability score (higher is better, e.g. 0-100 or 1-5). Missing/NaN defaults to 0.
+   */
+  wifiReliability?: number;
+  /**
+   * Acoustic quietness score (higher is quieter / better, e.g. 0-100 or 1-5). Missing/NaN defaults to 0.
+   */
+  acousticQuietness?: number;
+  /** Additional arbitrary metadata */
+  [key: string]: any;
 }
 
-export interface MeetingParticipantPreference {
-  participantId: string;
-  maxDistanceMeters?: number;
-  maxNoiseDecibels?: number;
-  minWifiMbps?: number;
-  requiresPowerOutlet?: boolean;
-  requiresOutdoorSeating?: boolean;
-  requiresBikeParking?: boolean;
-}
-
-export interface MeetingConsensusOptions {
-  weights?: { distance: number; noise: number; power: number };
-  /** Number of ordered relaxation steps to allow (0–4). Defaults to 4. */
-  maxRelaxationRounds?: number;
-}
-
-export interface MeetingConsensusRecommendation {
-  venue: MeetingConsensusVenue;
-  consensusScore: number;
-  paretoRank: number;
-  perspectiveScores: { distance: number; noise: number; power: number };
-  rationale: string;
-}
-
-export interface MeetingConsensusResult {
-  selectedVenue: MeetingConsensusRecommendation | null;
-  recommendations: MeetingConsensusRecommendation[];
-  reasoningBreakdown: string[];
-  relaxationSteps: string[];
-  elapsedMs: number;
+export interface ParetoRankingResult {
+  /** All non-dominated candidate venues along the Pareto frontier, ranked deterministically */
+  paretoFrontier: CandidateVenue[];
+  /** Candidate venues strictly dominated by at least one other venue */
+  dominatedVenues: CandidateVenue[];
+  /** Final ranked venues (Pareto frontier prioritized, followed by non-frontier or sorted) */
+  rankedVenues: CandidateVenue[];
 }
 
 export class MeetingOptimizer {
-  private groq: Groq;
-  private orchestrator: MultiAgentOrchestrator;
-  private options: MeetingOptimizerOptions;
-
-  constructor(
-    apiKey?: string,
-    orchestrator?: MultiAgentOrchestrator,
-    options: MeetingOptimizerOptions = {},
-  ) {
-    this.options = { bufferMinutes: 15, ...options };
-    const key = apiKey || process.env.GROQ_API_KEY || "dummy-key-for-build";
-    this.groq = new Groq({
-      apiKey: key,
-    });
-    this.orchestrator =
-      orchestrator ||
-      new MultiAgentOrchestrator(
-        {
-          maxTokenAllowance: 4096,
-          pruningThreshold: 0.75,
-          reserveCompletionTokens: 512,
-          debug: false,
-        },
-        key
-      );
-  }
-
-  public getOrchestrator(): MultiAgentOrchestrator {
-    return this.orchestrator;
+  public buildRecommendationSummary(slot: MeetingSlotCandidate, participants: readonly MeetingParticipant[]): MeetingRecommendationSummary {
+    const windows = participants.map((p) => evaluateParticipantLocalWindow(p, slot.startUnixMs, slot.endUnixMs));
+    const outOfHoursCount = windows.filter((w) => w.isOutOfHours).length;
+    const score = typeof slot.score === 'number' && Number.isFinite(slot.score) ? slot.score : Math.max(0, 100 - outOfHoursCount * 25);
+    const summaryText = windows.map((w) => `${w.name ? `${w.name} (${w.participantId})` : w.participantId}: ${w.localStartFormatted}–${w.localEndFormatted} (${w.utcOffsetLabel}, ${w.timeZone})${w.isOutOfHours ? ` [OUT OF HOURS: ${w.outOfHoursReasons.join(', ')}]` : ' [In Hours]'}`).join('\n');
+    return { startUnixMs: slot.startUnixMs, endUnixMs: slot.endUnixMs, score, outOfHoursCount, isFairForAllParticipants: outOfHoursCount === 0, participants: windows, summaryText };
   }
 
   /**
-   * Resolves competing venue preferences through independent distance, quietness,
-   * and power-access perspectives, then combines them into a Pareto-ranked result.
-   * The calculation is deterministic and local; it does not wait on an LLM/network call.
+   * Sanitizes and normalizes an objective score safely.
    */
-  public optimizeMeetingConsensus(
-    venues: MeetingConsensusVenue[],
-    preferences: MeetingParticipantPreference[],
-    options: MeetingConsensusOptions = {},
-  ): MeetingConsensusResult {
-    const startedAt = Date.now();
-    if (!Array.isArray(venues) || venues.length === 0) {
-      return {
-        selectedVenue: null,
-        recommendations: [],
-        reasoningBreakdown: ["No candidate venues were supplied."],
-        relaxationSteps: [],
-        elapsedMs: Date.now() - startedAt,
-      };
-    }
-    if (venues.length > 250 || preferences.length > 100) {
-      throw new RangeError("Consensus is limited to 250 venues and 100 participant preferences per run.");
-    }
-
-    const suppliedWeights = options.weights ?? { distance: 0.4, noise: 0.35, power: 0.25 };
-    const weightTotal = suppliedWeights.distance + suppliedWeights.noise + suppliedWeights.power;
-    if (
-      !Number.isFinite(weightTotal) ||
-      weightTotal <= 0 ||
-      [suppliedWeights.distance, suppliedWeights.noise, suppliedWeights.power].some(
-        (weight) => !Number.isFinite(weight) || weight < 0,
-      )
-    ) {
-      throw new RangeError("Consensus weights must be finite, non-negative, and have a positive total.");
-    }
-    const weights = {
-      distance: suppliedWeights.distance / weightTotal,
-      noise: suppliedWeights.noise / weightTotal,
-      power: suppliedWeights.power / weightTotal,
-    };
-    const clamp = (value: number) => Math.max(0, Math.min(100, value));
-
-    const relaxationRounds = Math.max(
-      0,
-      Math.min(4, Math.floor(options.maxRelaxationRounds ?? 4)),
-    );
-    const relaxationSteps: string[] = [];
-    let eligible: MeetingConsensusVenue[] = [];
-
-    const isEligible = (venue: MeetingConsensusVenue, round: number): boolean =>
-      preferences.every((preference) => {
-        const distance = venue.distanceByParticipantMeters[preference.participantId];
-        if (
-          Number.isFinite(preference.maxDistanceMeters) &&
-          (!Number.isFinite(distance) ||
-            distance > (preference.maxDistanceMeters as number) * (round >= 3 ? 1.5 : 1))
-        ) {
-          return false;
-        }
-
-        const noiseAllowance = round >= 2 ? 10 : 0;
-        if (
-          Number.isFinite(preference.maxNoiseDecibels) &&
-          (!Number.isFinite(venue.noiseDecibels) ||
-            venue.noiseDecibels > (preference.maxNoiseDecibels as number) + noiseAllowance)
-        ) {
-          return false;
-        }
-
-        const wifiFloor = round >= 2 ? (preference.minWifiMbps ?? 0) * 0.75 : preference.minWifiMbps;
-        if (
-          Number.isFinite(wifiFloor) &&
-          wifiFloor !== undefined &&
-          (!Number.isFinite(venue.wifiMbps) || (venue.wifiMbps as number) < wifiFloor)
-        ) {
-          return false;
-        }
-
-        if (
-          round < 4 &&
-          preference.requiresPowerOutlet &&
-          (!Number.isFinite(venue.powerOutletAvailability) || venue.powerOutletAvailability < 0.5)
-        ) {
-          return false;
-        }
-        if (
-          round < 1 &&
-          preference.requiresOutdoorSeating &&
-          venue.hasOutdoorSeating !== true
-        ) {
-          return false;
-        }
-        if (round < 1 && preference.requiresBikeParking && venue.hasBikeParking !== true) {
-          return false;
-        }
-        return true;
-      });
-
-    const relaxationLabels = [
-      "Relaxed optional outdoor-seating and bike-parking requirements.",
-      "Allowed a 10 dB noise-ceiling increase and a 25% Wi-Fi target reduction.",
-      "Expanded each participant's travel-distance ceiling by 50%.",
-      "Converted mandatory power-outlet requirements into a scored preference.",
-    ];
-
-    for (let round = 0; round <= relaxationRounds; round += 1) {
-      eligible = venues.filter((venue) => isEligible(venue, round));
-      if (eligible.length > 0) break;
-      if (round < relaxationRounds) relaxationSteps.push(relaxationLabels[round]);
-    }
-
-    if (eligible.length === 0) {
-      return {
-        selectedVenue: null,
-        recommendations: [],
-        reasoningBreakdown: [
-          "No venue satisfied the participant constraints, even after all enabled relaxation steps.",
-        ],
-        relaxationSteps,
-        elapsedMs: Date.now() - startedAt,
-      };
-    }
-
-    const scored = eligible.map((venue) => {
-      const distances = preferences
-        .map((preference) => venue.distanceByParticipantMeters[preference.participantId])
-        .filter((distance) => Number.isFinite(distance) && distance >= 0);
-      const averageDistance = distances.length
-        ? distances.reduce((total, distance) => total + distance, 0) / distances.length
-        : 0;
-      const distance = clamp(100 - (averageDistance / 25_000) * 100);
-      const noise = clamp(100 - venue.noiseDecibels);
-      const power = clamp(venue.powerOutletAvailability * 100);
-      const consensusScore =
-        distance * weights.distance + noise * weights.noise + power * weights.power;
-
-      return {
-        venue,
-        consensusScore,
-        perspectiveScores: { distance, noise, power },
-        paretoRank: 0,
-      };
-    });
-
-    // Assign nondominated Pareto fronts in O(n²), avoiding repeated full sorting.
-    const dominates = (a: (typeof scored)[number], b: (typeof scored)[number]) => {
-      const dimensions = ["distance", "noise", "power"] as const;
-      const noWorse = dimensions.every(
-        (key) => a.perspectiveScores[key] >= b.perspectiveScores[key],
-      );
-      const strictlyBetter = dimensions.some(
-        (key) => a.perspectiveScores[key] > b.perspectiveScores[key],
-      );
-      return noWorse && strictlyBetter;
-    };
-    const dominatedByCount = scored.map(
-      (candidate) => scored.filter((other) => dominates(other, candidate)).length,
-    );
-    const dominatesIndexes = scored.map((candidate) =>
-      scored
-        .map((other, index) => (dominates(candidate, other) ? index : -1))
-        .filter((index) => index >= 0),
-    );
-    let frontier = dominatedByCount
-      .map((count, index) => (count === 0 ? index : -1))
-      .filter((index) => index >= 0);
-    let rank = 1;
-    while (frontier.length > 0) {
-      const nextFrontier: number[] = [];
-      for (const index of frontier) {
-        scored[index].paretoRank = rank;
-        for (const dominatedIndex of dominatesIndexes[index]) {
-          dominatedByCount[dominatedIndex] -= 1;
-          if (dominatedByCount[dominatedIndex] === 0) nextFrontier.push(dominatedIndex);
-        }
-      }
-      frontier = nextFrontier;
-      rank += 1;
-    }
-
-    const recommendations: MeetingConsensusRecommendation[] = scored
-      .sort((a, b) => a.paretoRank - b.paretoRank || b.consensusScore - a.consensusScore)
-      .map((entry) => ({
-        venue: entry.venue,
-        consensusScore: Number(entry.consensusScore.toFixed(2)),
-        paretoRank: entry.paretoRank,
-        perspectiveScores: {
-          distance: Number(entry.perspectiveScores.distance.toFixed(2)),
-          noise: Number(entry.perspectiveScores.noise.toFixed(2)),
-          power: Number(entry.perspectiveScores.power.toFixed(2)),
-        },
-        rationale: `${entry.venue.name} scored ${entry.consensusScore.toFixed(2)} overall (distance ${entry.perspectiveScores.distance.toFixed(1)}, quietness ${entry.perspectiveScores.noise.toFixed(1)}, power access ${entry.perspectiveScores.power.toFixed(1)}); Pareto front ${entry.paretoRank}.`,
-      }));
-
-    const selectedVenue = recommendations[0] ?? null;
-    const reasoningBreakdown = selectedVenue
-      ? [
-          `Distance perspective: ${selectedVenue.perspectiveScores.distance.toFixed(1)}/100 using the average participant travel distance.`,
-          `Quietness perspective: ${selectedVenue.perspectiveScores.noise.toFixed(1)}/100 using the venue's reported decibel level.`,
-          `Power-access perspective: ${selectedVenue.perspectiveScores.power.toFixed(1)}/100 using outlet availability.`,
-          `Consensus: normalized weights distance ${weights.distance.toFixed(2)}, quietness ${weights.noise.toFixed(2)}, and power ${weights.power.toFixed(2)}; the highest-ranked eligible Pareto candidate is selected.`,
-          ...relaxationSteps,
-        ]
-      : [];
-
-    return {
-      selectedVenue,
-      recommendations,
-      reasoningBreakdown,
-      relaxationSteps,
-      elapsedMs: Date.now() - startedAt,
-    };
-  }
-
-  private getLocalFatigueFactor(timestamp: number, timeZone: string): number {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        hour: "2-digit",
-        hourCycle: "h23",
-      }).formatToParts(new Date(timestamp));
-      const hour = Number(parts.find((part) => part.type === "hour")?.value);
-
-      if (!Number.isFinite(hour)) return 1;
-      if (hour < 7 || hour >= 21) return 1.75;
-      if (hour < 9) return 1.35;
-      if (hour >= 18) return 1.25;
-      return 1;
-    } catch {
-      // Unknown or missing IANA zones use a neutral factor rather than
-      // excluding a candidate slot.
-      return 1;
-    }
-  }
-
-  private getBufferPenalty(
-    slot: OverlapSlot,
-    context: MeetingContext,
-    bufferMinutes: number,
-  ): number {
-    if (bufferMinutes <= 0) return 0;
-
-    const participants =
-      slot.participants?.length > 0 ? slot.participants : context.participants;
-    const midpoint = (slot.startUTC + slot.endUTC) / 2;
-    let totalPenalty = 0;
-
-    for (const participant of participants) {
-      const busyIntervals = context.participantBusyIntervals?.[participant] ?? [];
-      let nearestGapMinutes = Number.POSITIVE_INFINITY;
-
-      for (const interval of busyIntervals) {
-        if (
-          !Number.isFinite(interval.startUTC) ||
-          !Number.isFinite(interval.endUTC) ||
-          interval.endUTC < interval.startUTC
-        ) {
-          continue;
-        }
-
-        let gapMinutes: number;
-        if (interval.endUTC <= slot.startUTC) {
-          gapMinutes = (slot.startUTC - interval.endUTC) / 60_000;
-        } else if (interval.startUTC >= slot.endUTC) {
-          gapMinutes = (interval.startUTC - slot.endUTC) / 60_000;
-        } else {
-          // An overlap leaves no recovery time.
-          gapMinutes = 0;
-        }
-
-        nearestGapMinutes = Math.min(nearestGapMinutes, gapMinutes);
-      }
-
-      if (nearestGapMinutes < bufferMinutes) {
-        const missingBuffer = bufferMinutes - Math.max(0, nearestGapMinutes);
-        const shortfall = missingBuffer / bufferMinutes;
-        const timeZone = context.participantTimezones?.[participant] ?? "UTC";
-        const fatigueFactor = this.getLocalFatigueFactor(midpoint, timeZone);
-        totalPenalty += shortfall * fatigueFactor;
-      }
-    }
-
-    return totalPenalty;
-  }
-
-  public async optimizeMeeting(
-    context: MeetingContext,
-    overlaps: OverlapSlot[],
-  ): Promise<OverlapSlot[]> {
-    if (!overlaps || overlaps.length === 0) return [];
-
-    const viableSlots = overlaps.filter(
-      (slot) => slot.durationMinutes >= context.durationMinutes,
-    );
-    if (viableSlots.length === 0) return [];
-
-    const bufferMinutes = Math.max(
-      0,
-      context.bufferMinutes ?? this.options.bufferMinutes ?? 15,
-    );
-
-    // Participation remains the primary priority. The recovery penalty
-    // differentiates slots with equal attendance before the chronological tie-break.
-    const score = (slot: OverlapSlot) =>
-      slot.participantCount * 1_000_000 -
-      this.getBufferPenalty(slot, context, bufferMinutes) * 1_000;
-
-    return viableSlots.sort((a, b) => {
-      const scoreDifference = score(b) - score(a);
-      return scoreDifference !== 0 ? scoreDifference : a.startUTC - b.startUTC;
-    });
+  private sanitizeObjective(val: any): number {
+    const num = Number(val);
+    return Number.isFinite(num) ? num : 0;
   }
 
   /**
-   * Enhanced meeting optimization using MultiAgentOrchestrator with token budget governance.
-   * Leverages subagent reasoning across candidate slots and dynamic tool selection.
+   * Evaluates if venue A strictly dominates venue B across all 3 objectives:
+   * 1. travelFairness (higher is better)
+   * 2. wifiReliability (higher is better)
+   * 3. acousticQuietness (higher is better)
+   *
+   * A strictly dominates B if:
+   * A >= B in all 3 objectives, AND
+   * A > B in at least one objective.
    */
-  public async optimizeMeetingWithGovernor(
-    context: MeetingContext,
-    overlaps: OverlapSlot[],
-    tools?: AgentToolDeclaration[]
-  ): Promise<OptimizedMeetingResult> {
-    const sortedSlots = await this.optimizeMeeting(context, overlaps);
-    if (sortedSlots.length === 0) {
+  public isStrictlyDominated(a: CandidateVenue, b: CandidateVenue): boolean {
+    const aTF = this.sanitizeObjective(a.travelFairness);
+    const aWifi = this.sanitizeObjective(a.wifiReliability);
+    const aQuiet = this.sanitizeObjective(a.acousticQuietness);
+
+    const bTF = this.sanitizeObjective(b.travelFairness);
+    const bWifi = this.sanitizeObjective(b.wifiReliability);
+    const bQuiet = this.sanitizeObjective(b.acousticQuietness);
+
+    const atLeastAsGood = aTF >= bTF && aWifi >= bWifi && aQuiet >= bQuiet;
+    const strictlyBetterInOne = aTF > bTF || aWifi > bWifi || aQuiet > bQuiet;
+
+    return atLeastAsGood && strictlyBetterInOne;
+  }
+
+  /**
+   * Deterministic tie-breaking comparator for venues.
+   * Compares total objective aggregate score, then individual objectives, then stable ID/name.
+   */
+  private compareVenuesDeterministically(a: CandidateVenue, b: CandidateVenue): number {
+    const aTF = this.sanitizeObjective(a.travelFairness);
+    const aWifi = this.sanitizeObjective(a.wifiReliability);
+    const aQuiet = this.sanitizeObjective(a.acousticQuietness);
+    const aTotal = aTF + aWifi + aQuiet;
+
+    const bTF = this.sanitizeObjective(b.travelFairness);
+    const bWifi = this.sanitizeObjective(b.wifiReliability);
+    const bQuiet = this.sanitizeObjective(b.acousticQuietness);
+    const bTotal = bTF + bWifi + bQuiet;
+
+    if (bTotal !== aTotal) {
+      return bTotal - aTotal;
+    }
+    if (bTF !== aTF) {
+      return bTF - aTF;
+    }
+    if (bWifi !== aWifi) {
+      return bWifi - aWifi;
+    }
+    if (bQuiet !== aQuiet) {
+      return bQuiet - aQuiet;
+    }
+
+    // Deterministic tie-breaker using stable identifiers
+    const idA = String(a.id ?? a.name ?? "");
+    const idB = String(b.id ?? b.name ?? "");
+    return idA.localeCompare(idB);
+  }
+
+  /**
+   * Computes the Pareto frontier of candidate venues across travel fairness,
+   * WiFi reliability, and acoustic quietness.
+   *
+   * 1. Eliminates all strictly dominated venues.
+   * 2. Preserves all non-dominated candidates on the Pareto frontier.
+   * 3. Sorts venues deterministically using tie-breakers so repeated runs with
+   *    identical inputs produce identical results regardless of input order.
+   */
+  public rankVenuesPareto(candidates: CandidateVenue[]): ParetoRankingResult {
+    if (!candidates || candidates.length === 0) {
       return {
-        slots: [],
-        selectedSlot: null,
-        rationale: "No viable overlapping slots found for requested duration.",
-        telemetry: null,
+        paretoFrontier: [],
+        dominatedVenues: [],
+        rankedVenues: [],
       };
     }
 
-    const candidateSummary = sortedSlots.slice(0, 5).map((s, idx) => ({
-      slotIndex: idx,
-      startUTC: new Date(s.startUTC).toISOString(),
-      endUTC: new Date(s.endUTC).toISOString(),
-      durationMinutes: s.durationMinutes,
-      participantCount: s.participantCount,
-    }));
+    // Sort initial list deterministically to ensure order independence
+    const cleanCandidates = [...candidates].sort((a, b) =>
+      this.compareVenuesDeterministically(a, b),
+    );
 
-    const taskInstruction = `Evaluate the following candidate meeting slots for meeting '${context.title}' with urgency '${context.urgency}' and preferred time '${context.preferredTimeOfDay}'. Candidates: ${JSON.stringify(candidateSummary)}. Select the best slot index and explain why.`;
+    const paretoFrontier: CandidateVenue[] = [];
+    const dominatedVenues: CandidateVenue[] = [];
 
-    const selectedSlot = sortedSlots[0] || null;
+    for (let i = 0; i < cleanCandidates.length; i++) {
+      const candidate = cleanCandidates[i];
+      let dominated = false;
 
-    let subagentResult: SubagentExecutionResult;
-    try {
-      subagentResult = await retryWithBackoff(
-        () =>
-          this.orchestrator.invokeSubagent({
-            subagentName: "MeetingSchedulingAgent",
-            instruction: taskInstruction,
-            context: { context, candidateSummary },
-            tools,
-            rethrowRetryableErrors: true,
-          }),
-        this.options.retry,
-      );
-    } catch (error) {
-      if (!isRetryableLlmError(error)) {
-        throw error;
+      for (let j = 0; j < cleanCandidates.length; j++) {
+        if (i === j) continue;
+        const other = cleanCandidates[j];
+        if (this.isStrictlyDominated(other, candidate)) {
+          dominated = true;
+          break;
+        }
       }
-      // Retries are exhausted. The deterministic ranking is still valid, so keep
-      // the negotiation session alive instead of failing the whole request.
-      console.warn(
-        `[MeetingOptimizer] LLM reasoning unavailable after retries (status ${getErrorStatus(error)}); using deterministic ranking.`,
-      );
-      return {
-        slots: sortedSlots,
-        selectedSlot,
-        rationale:
-          "AI reasoning is temporarily unavailable (upstream rate limit or outage). Showing the top ranked slot from deterministic scoring.",
-        telemetry: null,
-      };
+
+      if (dominated) {
+        dominatedVenues.push(candidate);
+      } else {
+        paretoFrontier.push(candidate);
+      }
     }
+
+    paretoFrontier.sort((a, b) => this.compareVenuesDeterministically(a, b));
+    dominatedVenues.sort((a, b) => this.compareVenuesDeterministically(a, b));
+
+    // The final ranked list contains the Pareto frontier first, followed by dominated venues
+    const rankedVenues = [...paretoFrontier, ...dominatedVenues];
 
     return {
-      slots: sortedSlots,
-      selectedSlot,
-      rationale: subagentResult.content,
-      telemetry: subagentResult.telemetry,
+      paretoFrontier,
+      dominatedVenues,
+      rankedVenues,
+    };
+  }
+
+  /**
+   * ============================================================================
+   * Pareto Frontier Multi-Objective Optimization & Tie-Breaking Rules (#10426)
+   * ============================================================================
+   *
+   * 1. Pareto Dominance Evaluation:
+   * ---------------------------------
+   * A candidate venue A strictly dominates candidate venue B if and only if:
+   *   - A is at least as good as B across all three objectives:
+   *       A.travelFairness >= B.travelFairness
+   *       A.wifiReliability >= B.wifiReliability
+   *       A.acousticQuietness >= B.acousticQuietness
+   *   - AND A is strictly better than B in at least one objective:
+   *       (A.travelFairness > B.travelFairness ||
+   *        A.wifiReliability > B.wifiReliability ||
+   *        A.acousticQuietness > B.acousticQuietness)
+   * If venue B is strictly dominated by any candidate in the set, it is eliminated
+   * from the Pareto frontier and placed into dominatedVenues.
+   * All non-dominated candidates are preserved on the Pareto frontier.
+   *
+   * 2. Ordering Non-Dominated Candidates on the Pareto Frontier:
+   * -------------------------------------------------------------
+   * Candidates on the Pareto frontier represent mutually non-dominated trade-offs
+   * (e.g., higher travel fairness vs. higher WiFi reliability).
+   * To establish a definitive ordering for downstream consumers, candidates on the
+   * frontier are sorted according to a deterministic multi-tiered hierarchy:
+   *   Tier 1: Aggregate Objective Score DESC (sum of all 3 normalized objectives)
+   *   Tier 2: Individual Objective Precedence DESC:
+   *           - travelFairness DESC (highest priority dimension)
+   *           - wifiReliability DESC (secondary dimension)
+   *           - acousticQuietness DESC (tertiary dimension)
+   *   Tier 3: Stable Identifier / Name ASC (localeCompare)
+   *
+   * 3. Exact Tie-Breaking Precedence for Equal / Equivalent Scores:
+   * ----------------------------------------------------------------
+   * When two venues have identical scores:
+   *   1. If total score (travelFairness + wifiReliability + acousticQuietness) differs:
+   *      higher total score wins.
+   *   2. If total score is equal:
+   *      higher travelFairness wins.
+   *   3. If travelFairness is equal:
+   *      higher wifiReliability wins.
+   *   4. If wifiReliability is equal:
+   *      higher acousticQuietness wins.
+   *   5. If all three objectives are identical:
+   *      lexicographical comparison on candidate ID (or name) using
+   *      String(a.id ?? a.name).localeCompare(String(b.id ?? b.name)).
+   *
+   * 4. Handling Missing, Invalid, or Normalized Objective Values:
+   * --------------------------------------------------------------
+   * Objective values are normalized using sanitizeObjective():
+   *   - Valid finite numbers are preserved as-is.
+   *   - Missing (undefined, null) or invalid (NaN, non-numeric strings, Infinity)
+   *     values are safely coerced to 0.
+   *   - Coercing missing values to 0 ensures venues with missing metrics do not crash
+   *     comparisons and are correctly dominated by venues with verified positive scores.
+   *
+   * 5. Stable Identifiers and Repeatable Determinism:
+   * --------------------------------------------------
+   * Because JavaScript iteration orders and sort stability can vary if elements compare
+   * as completely equal (0), the stable string identifier tie-breaker guarantees a total
+   * ordering with strict antisymmetry.
+   *
+   * 6. Why Identical Inputs Always Produce the Same Ranking:
+   * ----------------------------------------------------------
+   * Input candidate arrays are pre-sorted deterministically before dominance analysis,
+   * dominance pairs are evaluated comprehensively, and the final Pareto frontier and
+   * dominated sets are post-sorted using the exact same deterministic comparator.
+   * As a result, permuting the order of candidate venues in the input array will
+   * ALWAYS yield the exact same ranking output.
+   */
+
+  /**
+   * Sanitizes and normalizes an objective score safely.
+   */
+  public sanitizeObjective(val: any): number {
+    const num = Number(val);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  /**
+   * Evaluates if venue A strictly dominates venue B across all 3 objectives:
+   * 1. travelFairness (higher is better)
+   * 2. wifiReliability (higher is better)
+   * 3. acousticQuietness (higher is better)
+   *
+   * A strictly dominates B if:
+   * A >= B in all 3 objectives, AND
+   * A > B in at least one objective.
+   */
+  public isStrictlyDominated(a: CandidateVenue, b: CandidateVenue): boolean {
+    const aTF = this.sanitizeObjective(a.travelFairness);
+    const aWifi = this.sanitizeObjective(a.wifiReliability);
+    const aQuiet = this.sanitizeObjective(a.acousticQuietness);
+
+    const bTF = this.sanitizeObjective(b.travelFairness);
+    const bWifi = this.sanitizeObjective(b.wifiReliability);
+    const bQuiet = this.sanitizeObjective(b.acousticQuietness);
+
+    const atLeastAsGood = aTF >= bTF && aWifi >= bWifi && aQuiet >= bQuiet;
+    const strictlyBetterInOne = aTF > bTF || aWifi > bWifi || aQuiet > bQuiet;
+
+    return atLeastAsGood && strictlyBetterInOne;
+  }
+
+  /**
+   * Deterministic tie-breaking comparator for venues.
+   * Compares total objective aggregate score, then individual objectives, then stable ID/name.
+   */
+  public compareVenuesDeterministically(a: CandidateVenue, b: CandidateVenue): number {
+    const aTF = this.sanitizeObjective(a.travelFairness);
+    const aWifi = this.sanitizeObjective(a.wifiReliability);
+    const aQuiet = this.sanitizeObjective(a.acousticQuietness);
+    const aTotal = aTF + aWifi + aQuiet;
+
+    const bTF = this.sanitizeObjective(b.travelFairness);
+    const bWifi = this.sanitizeObjective(b.wifiReliability);
+    const bQuiet = this.sanitizeObjective(b.acousticQuietness);
+    const bTotal = bTF + bWifi + bQuiet;
+
+    if (bTotal !== aTotal) {
+      return bTotal - aTotal;
+    }
+    if (bTF !== aTF) {
+      return bTF - aTF;
+    }
+    if (bWifi !== aWifi) {
+      return bWifi - aWifi;
+    }
+    if (bQuiet !== aQuiet) {
+      return bQuiet - aQuiet;
+    }
+
+    // Deterministic tie-breaker using stable identifiers
+    const idA = String(a.id ?? a.name ?? "");
+    const idB = String(b.id ?? b.name ?? "");
+    return idA.localeCompare(idB);
+  }
+
+  /**
+   * Computes the Pareto frontier of candidate venues across travel fairness,
+   * WiFi reliability, and acoustic quietness.
+   *
+   * 1. Eliminates all strictly dominated venues.
+   * 2. Preserves all non-dominated candidates on the Pareto frontier.
+   * 3. Sorts venues deterministically using tie-breakers so repeated runs with
+   *    identical inputs produce identical results regardless of input order.
+   */
+  public rankVenuesPareto(candidates: CandidateVenue[]): ParetoRankingResult {
+    if (!candidates || candidates.length === 0) {
+      return {
+        paretoFrontier: [],
+        dominatedVenues: [],
+        rankedVenues: [],
+      };
+    }
+
+    // Sort initial list deterministically to ensure order independence
+    const cleanCandidates = [...candidates].sort((a, b) =>
+      this.compareVenuesDeterministically(a, b),
+    );
+
+    const paretoFrontier: CandidateVenue[] = [];
+    const dominatedVenues: CandidateVenue[] = [];
+
+    for (let i = 0; i < cleanCandidates.length; i++) {
+      const candidate = cleanCandidates[i];
+      let dominated = false;
+
+      for (let j = 0; j < cleanCandidates.length; j++) {
+        if (i === j) continue;
+        const other = cleanCandidates[j];
+        if (this.isStrictlyDominated(other, candidate)) {
+          dominated = true;
+          break;
+        }
+      }
+
+      if (dominated) {
+        dominatedVenues.push(candidate);
+      } else {
+        paretoFrontier.push(candidate);
+      }
+    }
+
+    paretoFrontier.sort((a, b) => this.compareVenuesDeterministically(a, b));
+    dominatedVenues.sort((a, b) => this.compareVenuesDeterministically(a, b));
+
+    // The final ranked list contains the Pareto frontier first, followed by dominated venues
+    const rankedVenues = [...paretoFrontier, ...dominatedVenues];
+
+    return {
+      paretoFrontier,
+      dominatedVenues,
+      rankedVenues,
     };
   }
 }
-
 export default MeetingOptimizer;

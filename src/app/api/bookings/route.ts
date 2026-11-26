@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { ensureUserExists } from "@/lib/auth";
-import { isValidBookingDate } from "@/lib/bookingTime";
+import {
+  isValidBookingDate,
+  isValidTimeZone,
+  parseBookingDateTime,
+} from "@/lib/bookingTime";
 import { apiError } from "@/lib/apiResponse";
 import { apiHandler } from "@/lib/apiHandler";
 
@@ -35,6 +39,7 @@ const createBookingSchema = z
       .union([isoDateString, z.array(isoDateString).min(1)])
       .optional(),
     time: bookingTimeString,
+    timeZone: z.string().optional(),
     guestCount: z.number().int().min(1).optional().nullable(),
   })
   .transform((data) => ({
@@ -47,6 +52,7 @@ const createBookingSchema = z
         ? [data.date]
         : [],
     time: data.time,
+    timeZone: data.timeZone,
     guestCount: data.guestCount,
   }))
   .refine((data) => data.dates.length > 0, {
@@ -73,14 +79,33 @@ export const POST = apiHandler<CreateBookingInput>({
   authRequired: true,
   schema: createBookingSchema as any,
   handler: async ({ body }) => {
+    const { venueId, dates, time, timeZone, guestCount: requestedCount } = body;
+    const bookingTimeZone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+
+    for (const date of dates) {
+      const startsAt = parseBookingDateTime(date, time, bookingTimeZone);
+      if (!startsAt) {
+        return apiError(
+          "Booking time does not exist on this date in the selected time zone",
+          400,
+          "VALIDATION_FAILED",
+        );
+      }
+      if (startsAt.getTime() < Date.now()) {
+        return apiError(
+          "You can't book a time in the past.",
+          400,
+          "VALIDATION_FAILED",
+        );
+      }
+    }
+
     const user = await currentUser();
     if (!user || !user.primaryEmailAddress) {
       return apiError("Unauthorized or missing email", 401, "UNAUTHORIZED");
     }
 
     await ensureUserExists(user.id);
-
-    const { venueId, dates, time, guestCount: requestedCount } = body;
 
     const existingVenue = await prisma.venue.findUnique({
       where: { id: venueId },
@@ -115,6 +140,7 @@ export const POST = apiHandler<CreateBookingInput>({
             venueId,
             date,
             time,
+            timeZone: bookingTimeZone,
             customerEmail: user.primaryEmailAddress!.emailAddress,
             status: "CONFIRMED",
             confirmationId: generateConfirmationId(),

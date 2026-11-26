@@ -25,10 +25,7 @@ export {
 } from "./NomadPassportCoin";
 export type { NomadPassportCoinProps } from "./NomadPassportCoin";
 export {
-  NomadCertificateModal,
-  isEligibleForAttendanceCertificate,
-} from "./NomadCertificateModal";
-export type {
-  NomadCertificateModalProps,
-  AttendanceBookingData,
-} from "./NomadCertificateModal";
+  PassportAttestationBadge,
+  type PassportAttestationBadgeProps,
+  type AttestationStatus,
+} from "./PassportAttestationBadge";

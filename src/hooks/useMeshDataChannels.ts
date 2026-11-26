@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
@@ -15,25 +15,162 @@ import { DataChannelChunker } from "@/core/p2p/DataChannelChunker";
 import {
   registerDataChannelListener,
   cleanupDataChannelListeners,
-  AdaptiveAudioBitrateController,
-  MAX_AUDIO_BITRATE_BPS,
-  type AdaptiveAudioTelemetryEvent,
   detectCandidatePairRelay,
   DataChannelRateLimiter,
   type TurnRelayStatus,
   type MessagePriority,
   RELAY_OPTIMIZED_AUDIO_BITRATE_BPS,
   DIRECT_RESTORED_AUDIO_BITRATE_BPS,
-  applyAudioMaxBitrate,
 } from "@/lib/realtime/webrtc/meshConnection";
-import {
-  getPowerOptimizationProfile,
-  useBatteryOptimization,
-  type BatteryState,
-  type PowerOptimizationProfile,
-} from "@/hooks/useBatteryOptimization";
+
+async function applyAudioMaxBitrate(
+  sender: RTCRtpSender,
+  maxBitrateBps: number,
+): Promise<void> {
+  if (
+    typeof sender.getParameters !== "function" ||
+    typeof sender.setParameters !== "function"
+  ) {
+    return;
+  }
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}];
+    }
+    params.encodings = params.encodings.map((enc) => ({
+      ...enc,
+      maxBitrate: maxBitrateBps,
+    }));
+    await sender.setParameters(params);
+  } catch {
+    // Ignore sender parameter errors on transient/closed tracks
+  }
+}
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
+/** Binary magic header ('PI') for WebRTC DataChannel ping/pong heartbeats. */
+export const MESH_HEARTBEAT_MAGIC = 0x5049;
+export const MESH_HEARTBEAT_FRAME_SIZE = 12;
+export const MESH_HEARTBEAT_INTERVAL_MS = 10_000;
+
+export const enum MeshHeartbeatType {
+  PING = 0x01,
+  PONG = 0x02,
+}
+
+export interface DecodedHeartbeatFrame {
+  type: MeshHeartbeatType;
+  sentAt: number;
+}
+
+/**
+ * Encodes a 12-byte binary ping/pong heartbeat frame (`0x5049` magic + type + float64 timestamp).
+ */
+export function encodeHeartbeatFrame(
+  type: MeshHeartbeatType,
+  sentAt: number = Date.now(),
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(MESH_HEARTBEAT_FRAME_SIZE);
+  const view = new DataView(buffer);
+  view.setUint16(0, MESH_HEARTBEAT_MAGIC, false);
+  view.setUint8(2, type);
+  view.setUint8(3, 0);
+  view.setFloat64(4, sentAt, false);
+  return buffer;
+}
+
+/**
+ * Decodes a binary heartbeat frame (`0x5049` magic). Returns `null` for non-heartbeat payloads.
+ */
+export function decodeHeartbeatFrame(
+  data: ArrayBuffer,
+): DecodedHeartbeatFrame | null {
+  if (!(data instanceof ArrayBuffer) || data.byteLength !== MESH_HEARTBEAT_FRAME_SIZE) {
+    return null;
+  }
+  const view = new DataView(data);
+  if (view.getUint16(0, false) !== MESH_HEARTBEAT_MAGIC) {
+    return null;
+  }
+  const type = view.getUint8(2);
+  if (type !== MeshHeartbeatType.PING && type !== MeshHeartbeatType.PONG) {
+    return null;
+  }
+  const sentAt = view.getFloat64(4, false);
+  if (!Number.isFinite(sentAt)) {
+    return null;
+  }
+  return { type, sentAt };
+}
+
+export interface CursorPosition {
+  x: number;
+  y: number;
+  peerId?: string;
+}
+
+export interface DataChannelLike {
+  readyState: RTCDataChannelState | "open" | "connecting" | "closing" | "closed";
+  send: (data: string) => void;
+}
+
+export function createCursorThrottleController(options: {
+  throttleMs?: number;
+  nowFn?: () => number;
+}) {
+  const throttleMs =
+    typeof options.throttleMs === "number" &&
+    Number.isFinite(options.throttleMs) &&
+    options.throttleMs >= 0
+      ? options.throttleMs
+      : 50;
+  const nowFn = options.nowFn ?? Date.now;
+  const state = {
+    lastUpdateTime: 0,
+    lastSentPosition: null as CursorPosition | null,
+    forceNextSend: true,
+  };
+
+  function resetOnPeerConnect(): void {
+    state.lastUpdateTime = 0;
+    state.forceNextSend = true;
+  }
+
+  function shouldSendCursor(timestampMs = nowFn()): boolean {
+    return (
+      state.forceNextSend ||
+      timestampMs < state.lastUpdateTime ||
+      timestampMs - state.lastUpdateTime >= throttleMs
+    );
+  }
+
+  function trySendCursor(
+    channel: DataChannelLike | null | undefined,
+    position: CursorPosition,
+    timestampMs = nowFn(),
+  ): boolean {
+    if (!channel || channel.readyState !== "open" || !shouldSendCursor(timestampMs)) {
+      return false;
+    }
+    channel.send(
+      JSON.stringify({
+        type: "cursor",
+        peerId: position.peerId ?? "local",
+        x: position.x,
+        y: position.y,
+        ts: timestampMs,
+      }),
+    );
+    state.lastUpdateTime = timestampMs;
+    state.lastSentPosition = { ...position };
+    state.forceNextSend = false;
+    return true;
+  }
+
+  return { state, resetOnPeerConnect, shouldSendCursor, trySendCursor };
+}
 
 type SignalKind = "peer-join" | "offer" | "answer" | "ice" | "peer-leave";
 
@@ -53,16 +190,9 @@ export interface MeshDataChannelOptions {
   userId: string | null | undefined;
   onData?: DataHandler;
   sampleIntervalMs?: number;
+  pingIntervalMs?: number;
+  nowFn?: () => number;
   onRelayStatusChange?: (isRelayed: boolean, relayStatus: TurnRelayStatus) => void;
-}
-
-export interface AdaptiveAudioBitrateOptions {
-  peerId: string;
-  peerConnection: (Pick<RTCPeerConnection, 'getStats' | 'getSenders'> & {
-    addEventListener?: RTCPeerConnection['addEventListener'];
-  }) | null;
-  sampleIntervalMs?: number;
-  onTelemetry?: (event: AdaptiveAudioTelemetryEvent) => void;
 }
 
 export interface MeshDataChannelLike {
@@ -70,19 +200,7 @@ export interface MeshDataChannelLike {
   send(data: string | ArrayBuffer | ArrayBufferView): void;
 }
 
-export interface BatteryOptimizationDataChannelOptions {
-  channels?: Record<string, MeshDataChannelLike | null | undefined>;
-  onFlushBatch?: (
-    messages: unknown[],
-    profile: PowerOptimizationProfile
-  ) => void;
-  batteryOverride?: BatteryState;
-}
-
-export type UseMeshDataChannelsOptions =
-  | MeshDataChannelOptions
-  | AdaptiveAudioBitrateOptions
-  | BatteryOptimizationDataChannelOptions;
+export type UseMeshDataChannelsOptions = MeshDataChannelOptions;
 
 type Options = MeshDataChannelOptions;
 
@@ -173,6 +291,8 @@ export function useMeshDataChannels({
   userId,
   onData,
   sampleIntervalMs = 3000,
+  pingIntervalMs = MESH_HEARTBEAT_INTERVAL_MS,
+  nowFn = Date.now,
   onRelayStatusChange,
 }: Options) {
   const { getToken } = useAuth();
@@ -182,6 +302,9 @@ export function useMeshDataChannels({
   const [peerTelemetry, setPeerTelemetry] = useState<
     Record<string, PeerTelemetry>
   >({});
+  const [peerLatencies, setPeerLatencies] = useState<Record<string, number>>(
+    {},
+  );
   const [isRelayed, setIsRelayed] = useState(false);
   const [relayStatus, setRelayStatus] = useState<TurnRelayStatus>("unknown");
 
@@ -194,6 +317,7 @@ export function useMeshDataChannels({
   const socketRef = useRef<{ send: (data: string) => void } | null>(null);
   const onDataRef = useRef<DataHandler | undefined>(onData);
   const onRelayStatusChangeRef = useRef(onRelayStatusChange);
+  const nowFnRef = useRef(nowFn);
 
   const prevBitrateBaselineRef = useRef<Map<string, PeerBitrateBaseline>>(
     new Map(),
@@ -207,6 +331,10 @@ export function useMeshDataChannels({
   useEffect(() => {
     onRelayStatusChangeRef.current = onRelayStatusChange;
   }, [onRelayStatusChange]);
+
+  useEffect(() => {
+    nowFnRef.current = nowFn;
+  }, [nowFn]);
 
   useEffect(() => {
     if (typeof getToken === "function") {
@@ -231,6 +359,21 @@ export function useMeshDataChannels({
 
   const updatePeerCount = useCallback(() => {
     setPeerCount(dataChannelsRef.current.size);
+  }, []);
+
+  const clearPeerTelemetryState = useCallback((peerId: string) => {
+    setPeerTelemetry((prev) => {
+      if (!(peerId in prev)) return prev;
+      const next = { ...prev };
+      delete next[peerId];
+      return next;
+    });
+    setPeerLatencies((prev) => {
+      if (!(peerId in prev)) return prev;
+      const next = { ...prev };
+      delete next[peerId];
+      return next;
+    });
   }, []);
 
   const cleanupPeer = useCallback(
@@ -261,12 +404,7 @@ export function useMeshDataChannels({
       dataChannelsRef.current.delete(peerId);
       prevBitrateBaselineRef.current.delete(peerId);
       prevRtpBaselineRef.current.delete(peerId);
-      setPeerTelemetry((prev) => {
-        if (!(peerId in prev)) return prev;
-        const next = { ...prev };
-        delete next[peerId];
-        return next;
-      });
+      clearPeerTelemetryState(peerId);
 
       // Recalculate room-level relay state
       const remainingRelays = Array.from(peerRelayStatusRef.current.values());
@@ -293,11 +431,50 @@ export function useMeshDataChannels({
       dataChannelsRef.current.delete(peerId);
       updatePeerCount();
     },
-    [updatePeerCount],
+    [clearPeerTelemetryState, updatePeerCount],
   );
 
   const handleIncomingData = useCallback(
     (peerId: string, data: ArrayBuffer) => {
+      // Handle binary 0x5049 ('PI') heartbeat ping/pong without touching CRDT payload stream
+      const heartbeat = decodeHeartbeatFrame(data);
+      if (heartbeat) {
+        if (heartbeat.type === MeshHeartbeatType.PING) {
+          const dc = dataChannelsRef.current.get(peerId);
+          if (dc && dc.readyState === "open") {
+            try {
+              dc.send(encodeHeartbeatFrame(MeshHeartbeatType.PONG, heartbeat.sentAt));
+            } catch {
+              // Ignore transient channel write errors
+            }
+          }
+          return;
+        }
+
+        const now = nowFnRef.current();
+        const rttMs = Math.max(0, Math.round(now - heartbeat.sentAt));
+        setPeerLatencies((prev) => ({ ...prev, [peerId]: rttMs }));
+        setPeerTelemetry((prev) => {
+          const existing = prev[peerId];
+          const packetLoss = existing?.packetLossPercent ?? null;
+          return {
+            ...prev,
+            [peerId]: {
+              peerId,
+              rttMs,
+              packetLossPercent: packetLoss,
+              packetLossSource: existing?.packetLossSource ?? "unavailable",
+              bitrateBps: existing?.bitrateBps ?? null,
+              quality: classifyPeerQuality(rttMs, packetLoss),
+              lastUpdated: now,
+              relayStatus: existing?.relayStatus,
+              isRelayed: existing?.isRelayed,
+            },
+          };
+        });
+        return;
+      }
+
       if (data.byteLength >= CRDT_FRAME_HEADER_SIZE) {
         const view = new DataView(data);
         const magic = view.getUint16(0, false);
@@ -343,8 +520,6 @@ export function useMeshDataChannels({
 
   const setupDataChannel = useCallback(
     (dc: RTCDataChannel, peerId: string) => {
-      // 1. If there's an existing channel for this peer (channel replacement / renegotiation),
-      // cleanly remove all its listeners and dispose it first.
       const previousDc = dataChannelsRef.current.get(peerId);
       if (previousDc && previousDc !== dc) {
         cleanupDataChannelListeners(previousDc);
@@ -366,7 +541,6 @@ export function useMeshDataChannels({
       const chunker = new DataChannelChunker(dc);
       chunkersRef.current.set(peerId, chunker);
 
-      // Initialize rate limiter for peer
       let limiter = rateLimitersRef.current.get(peerId);
       if (!limiter) {
         limiter = new DataChannelRateLimiter();
@@ -378,7 +552,6 @@ export function useMeshDataChannels({
       dataChannelsRef.current.set(peerId, dc);
 
       const onOpenHandler = () => {
-        // Guard against stale channel events
         if (dataChannelsRef.current.get(peerId) !== dc) return;
         updatePeerCount();
         setIsConnected(true);
@@ -386,7 +559,6 @@ export function useMeshDataChannels({
       };
 
       const onCloseHandler = () => {
-        // Guard against stale channel events
         if (dataChannelsRef.current.get(peerId) !== dc) {
           cleanupDataChannelListeners(dc);
           return;
@@ -409,12 +581,7 @@ export function useMeshDataChannels({
         dataChannelsRef.current.delete(peerId);
         prevBitrateBaselineRef.current.delete(peerId);
         prevRtpBaselineRef.current.delete(peerId);
-        setPeerTelemetry((prev) => {
-          if (!(peerId in prev)) return prev;
-          const next = { ...prev };
-          delete next[peerId];
-          return next;
-        });
+        clearPeerTelemetryState(peerId);
         updatePeerCount();
         if (dataChannelsRef.current.size === 0) {
           setIsConnected(false);
@@ -422,7 +589,6 @@ export function useMeshDataChannels({
       };
 
       const onMessageHandler = (event: Event) => {
-        // Guard against stale / obsolete channel message events
         if (dataChannelsRef.current.get(peerId) !== dc) return;
         const msgEvent = event as MessageEvent;
         if (msgEvent.data instanceof ArrayBuffer) {
@@ -435,13 +601,11 @@ export function useMeshDataChannels({
         console.warn(`RTCDataChannel error with peer ${peerId}:`, error);
       };
 
-      // Register listeners using the centralized listener registry
       registerDataChannelListener(dc, "open", onOpenHandler);
       registerDataChannelListener(dc, "close", onCloseHandler);
       registerDataChannelListener(dc, "message", onMessageHandler);
       registerDataChannelListener(dc, "error", onErrorHandler);
 
-      // Property mirror handlers (for callers checking .onmessage or environments dispatching property callbacks)
       dc.onopen = onOpenHandler;
       dc.onclose = onCloseHandler;
       dc.onmessage = (event: MessageEvent) => {
@@ -449,7 +613,7 @@ export function useMeshDataChannels({
       };
       dc.onerror = onErrorHandler;
     },
-    [updatePeerCount, handleIncomingData],
+    [clearPeerTelemetryState, updatePeerCount, handleIncomingData],
   );
 
   const ensurePeer = useCallback(
@@ -595,15 +759,17 @@ export function useMeshDataChannels({
   }, [socket]);
 
   useEffect(() => {
-    const peerIds = [...peersRef.current.keys()];
+    const peers = peersRef.current;
     const chunkers = chunkersRef.current;
     const reassemblers = reassemblersRef.current;
     const rateLimiters = rateLimitersRef.current;
+    const dataChannels = dataChannelsRef.current;
+    const peerRelayStatus = peerRelayStatusRef.current;
     return () => {
-      for (const id of peerIds) {
+      for (const id of [...peers.keys()]) {
         cleanupPeer(id);
       }
-      for (const dc of dataChannelsRef.current.values()) {
+      for (const dc of dataChannels.values()) {
         cleanupDataChannelListeners(dc);
       }
       for (const chunker of chunkers.values()) {
@@ -615,10 +781,36 @@ export function useMeshDataChannels({
       chunkers.clear();
       reassemblers.clear();
       rateLimiters.clear();
-      peerRelayStatusRef.current.clear();
-      dataChannelsRef.current.clear();
+      peerRelayStatus.clear();
+      dataChannels.clear();
     };
   }, [cleanupPeer]);
+
+  // Periodic WebRTC DataChannel Ping/Pong Heartbeat (0x5049 - 'PI') every 10 seconds
+  useEffect(() => {
+    if (!Number.isFinite(pingIntervalMs) || pingIntervalMs <= 0) {
+      return;
+    }
+
+    const sendHeartbeats = () => {
+      const sentAt = nowFnRef.current();
+      const pingFrame = encodeHeartbeatFrame(MeshHeartbeatType.PING, sentAt);
+      for (const dc of dataChannelsRef.current.values()) {
+        if (dc.readyState === "open") {
+          try {
+            dc.send(pingFrame);
+          } catch {
+            // Ignore transient DataChannel send errors
+          }
+        }
+      }
+    };
+
+    const timerId = setInterval(sendHeartbeats, pingIntervalMs);
+    return () => {
+      clearInterval(timerId);
+    };
+  }, [pingIntervalMs]);
 
   // Telemetry & TURN Relay Detection Polling Loop (~3000ms by default)
   useEffect(() => {
@@ -669,7 +861,6 @@ export function useMeshDataChannels({
             hasDeterminedStatus = true;
           }
 
-          // Adapt rate limiter for DataChannels
           let limiter = rateLimitersRef.current.get(peerId);
           if (!limiter) {
             limiter = new DataChannelRateLimiter();
@@ -679,7 +870,6 @@ export function useMeshDataChannels({
           }
           limiter.setEnabled(isPeerRelayed);
 
-          // Adapt audio sender bitrates if transitioning
           if (previousRelayStatus !== peerRelayStatus && typeof pc.getSenders === "function") {
             const audioSender = pc.getSenders().find((s) => s.track?.kind === "audio");
             if (audioSender) {
@@ -693,7 +883,6 @@ export function useMeshDataChannels({
           stats.forEach((stat: any) => {
             if (!stat || typeof stat !== "object" || !("type" in stat)) return;
 
-            // Candidate pair RTT
             if (
               stat.type === "candidate-pair" &&
               (("state" in stat && stat.state === "succeeded") ||
@@ -726,7 +915,6 @@ export function useMeshDataChannels({
               }
             }
 
-            // DataChannel bytes
             if (stat.type === "data-channel") {
               hasDataChannelStats = true;
               if (
@@ -745,7 +933,6 @@ export function useMeshDataChannels({
               }
             }
 
-            // Inbound RTP packet loss (audio/video if present)
             if (stat.type === "inbound-rtp") {
               if (
                 typeof stat.packetsLost === "number" &&
@@ -765,7 +952,6 @@ export function useMeshDataChannels({
             }
           });
 
-          // Fallback to candidate pair bytes if data-channel stats are not populated
           const currentBytesSent = hasDataChannelStats
             ? totalBytesSent
             : hasCandidatePairBytes
@@ -777,7 +963,6 @@ export function useMeshDataChannels({
               ? candidatePairBytesReceived
               : 0;
 
-          // Bitrate calculation
           let bitrateBps: { sent: number; received: number } | null = null;
           const prevBitrate = prevBitrateBaselineRef.current.get(peerId);
 
@@ -787,11 +972,11 @@ export function useMeshDataChannels({
               const bytesSentDelta =
                 currentBytesSent >= prevBitrate.bytesSent
                   ? currentBytesSent - prevBitrate.bytesSent
-                  : currentBytesSent; // counter reset
+                  : currentBytesSent;
               const bytesRecvDelta =
                 currentBytesReceived >= prevBitrate.bytesReceived
                   ? currentBytesReceived - prevBitrate.bytesReceived
-                  : currentBytesReceived; // counter reset
+                  : currentBytesReceived;
 
               bitrateBps = {
                 sent: Math.round((bytesSentDelta * 8) / elapsedSec),
@@ -806,7 +991,6 @@ export function useMeshDataChannels({
             timestamp: now,
           });
 
-          // Packet loss calculation
           let packetLossPercent: number | null = null;
           let packetLossSource: "inbound-rtp" | "unavailable" = "unavailable";
 
@@ -883,7 +1067,6 @@ export function useMeshDataChannels({
       void pollStats();
     }, sampleIntervalMs);
 
-    // Initial immediate poll
     void pollStats();
 
     return () => {
@@ -892,71 +1075,63 @@ export function useMeshDataChannels({
     };
   }, [sampleIntervalMs]);
 
-  const sendToAll = useCallback(
+  const enqueuePayloadForPeer = useCallback(
     (
+      peerId: string,
+      dc: RTCDataChannel,
       data: ArrayBuffer,
-      options: { priority?: MessagePriority; coalesceKey?: string } = {}
+      options: { priority?: MessagePriority; coalesceKey?: string } = {},
     ) => {
-      for (const [peerId, dc] of dataChannelsRef.current.entries()) {
-        if (dc.readyState === "open" || dc.readyState === "connecting") {
-          const limiter = rateLimitersRef.current.get(peerId);
-          if (limiter && limiter.getIsEnabled()) {
-            limiter.enqueue(dc, data, options);
-          } else {
-            let chunker = chunkersRef.current.get(peerId);
-            if (!chunker) {
-              chunker = new DataChannelChunker(dc);
-              chunkersRef.current.set(peerId, chunker);
-            }
-            try {
-              chunker.enqueue(data, {
-                messageType: CrdtFrameMessageType.DELTA_UPDATE,
-                compressed: true,
-              });
-            } catch (err) {
-              console.warn(
-                `Failed to enqueue CRDT update for peer ${peerId}:`,
-                err,
-              );
-            }
-          }
-        }
+      const limiter = rateLimitersRef.current.get(peerId);
+      if (limiter && limiter.getIsEnabled()) {
+        limiter.enqueue(dc, data, options);
+        return;
+      }
+
+      let chunker = chunkersRef.current.get(peerId);
+      if (!chunker) {
+        chunker = new DataChannelChunker(dc);
+        chunkersRef.current.set(peerId, chunker);
+      }
+      try {
+        chunker.enqueue(data, {
+          messageType: CrdtFrameMessageType.DELTA_UPDATE,
+          compressed: true,
+        });
+      } catch (err) {
+        console.warn(`Failed to enqueue CRDT update for peer ${peerId}:`, err);
       }
     },
     [],
+  );
+
+  const sendToAll = useCallback(
+    (
+      data: ArrayBuffer,
+      options: { priority?: MessagePriority; coalesceKey?: string } = {},
+    ) => {
+      for (const [peerId, dc] of dataChannelsRef.current.entries()) {
+        if (dc.readyState === "open" || dc.readyState === "connecting") {
+          enqueuePayloadForPeer(peerId, dc, data, options);
+        }
+      }
+    },
+    [enqueuePayloadForPeer],
   );
 
   const sendToPeer = useCallback(
     (
       peerId: string,
       data: ArrayBuffer,
-      options: { priority?: MessagePriority; coalesceKey?: string } = {}
+      options: { priority?: MessagePriority; coalesceKey?: string } = {},
     ) => {
       const dc = dataChannelsRef.current.get(peerId);
       if (!dc || (dc.readyState !== "open" && dc.readyState !== "connecting")) {
         return;
       }
-
-      const limiter = rateLimitersRef.current.get(peerId);
-      if (limiter && limiter.getIsEnabled()) {
-        limiter.enqueue(dc, data, options);
-      } else {
-        let chunker = chunkersRef.current.get(peerId);
-        if (!chunker) {
-          chunker = new DataChannelChunker(dc);
-          chunkersRef.current.set(peerId, chunker);
-        }
-        try {
-          chunker.enqueue(data, {
-            messageType: CrdtFrameMessageType.DELTA_UPDATE,
-            compressed: true,
-          });
-        } catch (err) {
-          console.warn(`Failed to enqueue CRDT update for peer ${peerId}:`, err);
-        }
-      }
+      enqueuePayloadForPeer(peerId, dc, data, options);
     },
-    [],
+    [enqueuePayloadForPeer],
   );
 
   return {
@@ -965,8 +1140,11 @@ export function useMeshDataChannels({
     peerCount,
     isConnected,
     peerTelemetry,
+    peerLatencies,
     isRelayed,
     relayStatus,
     rateLimiters: rateLimitersRef.current,
   };
 }
+
+export default useMeshDataChannels;

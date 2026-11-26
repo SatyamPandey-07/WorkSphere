@@ -43,4 +43,15 @@ describe('SearchBar keyboard shortcut badge & focus', () => {
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(input);
   });
+
+  it('forwards enableShortcut=false and hides the shortcut badge', () => {
+    setPlatform('Win32');
+    render(<SearchBar enableShortcut={false} />);
+
+    expect(screen.queryByTestId('search-shortcut-badge')).not.toBeInTheDocument();
+
+    const input = screen.getByLabelText('Search venues') as HTMLInputElement;
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    expect(document.activeElement).not.toBe(input);
+  });
 });

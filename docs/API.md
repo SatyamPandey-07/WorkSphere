@@ -96,6 +96,8 @@ The `/api/venues` endpoint supports geographic bounding-box searches, pagination
 | `hasNoMusic`          | Boolean | No       | `false` | `true`, `false`                                                | Filter venues that do not play background music         |
 | `musicStyle`          | String  | No       | `all`   | `lofi`, `classical_jazz`, `no_music`, `all`                   | Filter venues by style of background music played       |
 | `ergonomic`           | Boolean | No       | `false` | `true`, `false`                                                | Filter venues offering ergonomic seating / chairs       |
+| `standingDesk`        | Boolean | No       | `false` | `true`, `false`                                                | Filter venues with a standing desk                      |
+| `externalMonitor`     | Boolean | No       | `false` | `true`, `false`                                                | Filter venues with an external monitor                  |
 | `hasPhoneBooths`      | Boolean | No       | `false` | `true`, `false`                                                | Filter venues equipped with sound-isolated phone booths |
 | `hasAncHeadsetRental` | Boolean | No       | `false` | `true`, `false`                                                | Filter venues offering active noise-cancelling rentals  |
 | `lighting`            | String  | No       | —       | `natural_daylight`, `warm_ambient`, `fluorescent`, `bright_white` | Filter by ambient lighting conditions                   |
@@ -135,7 +137,7 @@ Every response includes standard rate-limiting headers:
 ### Example Request
 
 ```http
-GET /api/venues?lat=40.7128&lng=-74.0060&radius=3000&category=cafe&wifi=true&outlets=true&outletDensity=every_table&wifiSpeedBand=fast&quiet=true&hasQuietZone=true&page=1&limit=10 HTTP/1.1
+GET /api/venues?lat=40.7128&lng=-74.0060&radius=3000&category=cafe&wifi=true&outlets=true&outletDensity=every_table&wifiSpeedBand=fast&quiet=true&hasQuietZone=true&standingDesk=true&externalMonitor=true&ergonomic=true&page=1&limit=10 HTTP/1.1
 Host: worksphere.app
 Accept: application/json
 ```
@@ -238,6 +240,9 @@ Required
 | `wifiQuality` | Integer | No       | `1–5`                          | Wi-Fi quality rating |
 | `hasOutlets`  | Boolean | No       | —                              | Outlet availability  |
 | `noiseLevel`  | String  | No       | `quiet`, `moderate`, `loud`    | Ambient noise level  |
+| `hasErgonomic` | Boolean | No      | —                              | Ergonomic chair availability |
+| `hasStandingDesk` | Boolean | No   | —                              | Standing desk availability |
+| `hasExternalMonitor` | Boolean | No | —                              | External monitor availability |
 | `rating`      | Float   | No       | —                              | Community rating     |
 
 ### Success Response (201 Created)
@@ -255,6 +260,9 @@ Required
     "rating": 4.2,
     "wifiQuality": 5,
     "hasOutlets": true,
+    "hasErgonomic": true,
+    "hasStandingDesk": true,
+    "hasExternalMonitor": true,
     "noiseLevel": "moderate",
     "crowdsourced": true,
     "createdAt": "2026-07-10T10:15:00.000Z",

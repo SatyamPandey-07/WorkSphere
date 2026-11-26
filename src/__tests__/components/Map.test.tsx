@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 // Mock Clerk
@@ -50,10 +50,27 @@ jest.mock("@/hooks/useSeatAvailability", () => ({
 const mockSetView = jest.fn();
 const mockFlyTo = jest.fn();
 const mockFlyToBounds = jest.fn();
+const mockInvalidateSize = jest.fn();
+const mockGetContainer = jest.fn();
+const mockMap = {
+  setView: mockSetView,
+  flyTo: mockFlyTo,
+  flyToBounds: mockFlyToBounds,
+  getZoom: jest.fn(() => 13),
+  getContainer: mockGetContainer,
+  invalidateSize: mockInvalidateSize,
+  on: jest.fn(),
+  off: jest.fn(),
+};
 
 jest.mock("react-leaflet", () => ({
   MapContainer: ({ children, center, zoom, style }: any) => (
     <div
+      ref={(element) => {
+        if (element) {
+          mockGetContainer.mockReturnValue(element);
+        }
+      }}
       data-testid="map-container"
       data-center={JSON.stringify(center)}
       data-zoom={zoom}
@@ -137,14 +154,7 @@ jest.mock("react-leaflet", () => ({
       {children}
     </div>
   ),
-  useMap: () => ({
-    setView: mockSetView,
-    flyTo: mockFlyTo,
-    flyToBounds: mockFlyToBounds,
-    getZoom: jest.fn(() => 13),
-    on: jest.fn(),
-    off: jest.fn(),
-  }),
+  useMap: () => mockMap,
   LayersControl: Object.assign(
     ({ children }: any) => <div data-testid="layers-control">{children}</div>,
     {
@@ -196,6 +206,24 @@ jest.mock("leaflet", () => ({
 import Map from "../../components/Map";
 import { MapMarker, MapRoute, MapView } from "../../types/map";
 
+class MockResizeObserver {
+  static instances: MockResizeObserver[] = [];
+
+  readonly observe = jest.fn();
+  readonly disconnect = jest.fn();
+  readonly unobserve = jest.fn();
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    MockResizeObserver.instances.push(this);
+  }
+
+  trigger() {
+    this.callback([], this as unknown as ResizeObserver);
+  }
+}
+
+const originalResizeObserver = globalThis.ResizeObserver;
+
 describe("Map Component", () => {
   const defaultLocation = { latitude: 37.7749, longitude: -122.4194 };
   const defaultProps = {
@@ -207,6 +235,86 @@ describe("Map Component", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    MockResizeObserver.instances = [];
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: MockResizeObserver,
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    if (originalResizeObserver) {
+      Object.defineProperty(globalThis, "ResizeObserver", {
+        configurable: true,
+        value: originalResizeObserver,
+      });
+    } else {
+      Reflect.deleteProperty(globalThis, "ResizeObserver");
+    }
+  });
+
+  describe("Map resizing", () => {
+    it("observes the map container and invalidates its size after 100ms", () => {
+      jest.useFakeTimers();
+      render(<Map {...defaultProps} />);
+
+      expect(MockResizeObserver.instances).toHaveLength(1);
+      const observer = MockResizeObserver.instances[0];
+      expect(observer.observe).toHaveBeenCalledWith(
+        screen.getByTestId("map-container"),
+      );
+
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(99));
+      expect(mockInvalidateSize).not.toHaveBeenCalled();
+
+      act(() => jest.advanceTimersByTime(1));
+      expect(mockInvalidateSize).toHaveBeenCalledTimes(1);
+      expect(mockInvalidateSize).toHaveBeenCalledWith({ pan: false });
+      expect(screen.getAllByTestId("map-container")).toHaveLength(1);
+    });
+
+    it("debounces multiple container resize notifications from the latest event", () => {
+      jest.useFakeTimers();
+      render(<Map {...defaultProps} />);
+      const observer = MockResizeObserver.instances[0];
+
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(60));
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(99));
+      expect(mockInvalidateSize).not.toHaveBeenCalled();
+
+      act(() => jest.advanceTimersByTime(1));
+      expect(mockInvalidateSize).toHaveBeenCalledTimes(1);
+      expect(mockInvalidateSize).toHaveBeenCalledWith({ pan: false });
+    });
+
+    it("retains debounced window resize handling", () => {
+      jest.useFakeTimers();
+      render(<Map {...defaultProps} />);
+
+      act(() => window.dispatchEvent(new Event("resize")));
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(mockInvalidateSize).toHaveBeenCalledTimes(1);
+      expect(mockInvalidateSize).toHaveBeenCalledWith({ pan: false });
+    });
+
+    it("disconnects the observer and clears a pending resize on unmount", () => {
+      jest.useFakeTimers();
+      const { unmount } = render(<Map {...defaultProps} />);
+      const observer = MockResizeObserver.instances[0];
+
+      act(() => observer.trigger());
+      unmount();
+
+      expect(observer.disconnect).toHaveBeenCalledTimes(1);
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(100));
+      expect(mockInvalidateSize).not.toHaveBeenCalled();
+    });
   });
 
   describe("Rendering", () => {

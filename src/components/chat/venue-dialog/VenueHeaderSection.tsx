@@ -23,8 +23,16 @@ import { useTranslation } from "react-i18next";
 import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 import { ReviewSentimentBadge } from "@/components/venue/ReviewSentimentBadge";
+import { sanitizeExternalHttpUrl } from "@/lib/utils";
 import type { Venue } from "../ChatMessages";
 import type { VoteMetricState } from "./useVenueAmenityVotes";
+
+export interface VenuePhotoAttribution {
+  photographer?: string;
+  photographerUrl?: string;
+  photoUrl?: string;
+  source?: string;
+}
 
 export interface VenueHeaderSectionProps {
   venue: Venue;
@@ -32,6 +40,7 @@ export interface VenueHeaderSectionProps {
   airQuality?: AirQualityReading | null;
   displayPhoto?: string;
   photoLoading?: boolean;
+  photoAttribution?: VenuePhotoAttribution | null;
   setImageError?: (error: boolean) => void;
   sentiment?: any;
   activeTab: "overview" | "reviews" | "menu" | "developer";
@@ -200,6 +209,7 @@ export function VenueHeaderSection({
   airQuality = null,
   displayPhoto,
   photoLoading = false,
+  photoAttribution = null,
   setImageError,
   sentiment,
   activeTab,
@@ -337,6 +347,49 @@ export function VenueHeaderSection({
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none" />
+
+        {photoAttribution && !photoLoading && (() => {
+          const safePhotographerUrl = sanitizeExternalHttpUrl(
+            photoAttribution.photographerUrl,
+          );
+          const safePhotoUrl = sanitizeExternalHttpUrl(
+            photoAttribution.photoUrl,
+          );
+          return (
+            <div
+              data-testid="venue-photo-attribution"
+              className="absolute bottom-3 left-4 z-10 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1 text-xs text-white/90 backdrop-blur-md border border-white/10 shadow-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span>Photo by</span>
+              {safePhotographerUrl ? (
+                <a
+                  href={safePhotographerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium underline hover:text-white transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {photoAttribution.photographer || "Photographer"}
+                </a>
+              ) : (
+                <span className="font-medium">
+                  {photoAttribution.photographer || "Photographer"}
+                </span>
+              )}
+              <span>on</span>
+              <a
+                href={safePhotoUrl ?? "https://www.pexels.com"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium underline hover:text-white transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Pexels
+              </a>
+            </div>
+          );
+        })()}
 
         <div className="absolute top-4 right-4 flex gap-2">
           <button

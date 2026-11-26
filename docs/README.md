@@ -22,6 +22,8 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [API Reference](./API_REFERENCE.md) — high-level endpoint reference organized by feature.
 - [Smart Desk Sensor Telemetry Payload Specification & Protobuf Definitions](./iot/TELEMETRY_PAYLOAD_SPEC.md) — JSON telemetry payload schemas, Protocol Buffers definitions, HMAC-SHA256 webhook authentication, timestamp replay protection, and electrical power anomaly thresholds.
 - [Seat Hold Lease Extension API](./api/SEAT_HOLD_LEASE_EXTENSION.md) — seat-lock lease extension, fencing-token validation, and API response behavior.
+- [Venue Reviews Redaction and Privacy Guarantees](./api/VENUE_REVIEWS_PRIVACY.md) — anonymous vs authenticated review responses, recursive `userId` redaction, and privacy checklist.
+- [Telemetry Gateway Fail-Closed Authentication](./api/TELEMETRY_GATEWAY_AUTH.md) — token sources, accepted headers, 503 vs 401 decision table, and request ordering for `POST /api/telemetry/batch`.
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.
 - [Prisma Database Aggregate Query Patterns](./api/PRISMA_AGGREGATION_GUIDE.md) — native database aggregates (`count`, `groupBy`), parallel execution with `Promise.all`, and index coverage for analytics endpoints.
@@ -36,8 +38,10 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Semantic Matching Engine & Vector Indexing](./ai/SEMANTIC_MATCHING_ENGINE.md) — resume tokenization, dense vector embeddings, pgvector HNSW tuning, and cosine distance query benchmarks.
 
 - [Causal Ordering & Deterministic Tie-Breaking](./architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md) — Vector Clock partial order mathematics, Hybrid Logical Clock tie-breaking heuristics, and distributed partition reconciliation.
+- [Logoot vs. LATA Sequence CRDT Comparison](./crdt/LOGOOOT_VS_LATA_COMPARISON.md) — comparative analysis of fractional positioning (Logoot) versus relative dependency trees (LATA), boundary growth, tombstone garbage collection, and memory overhead.
 
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
+- [WebRTC TURN Relay Bandwidth Throttle & Backpressure Specification](./architecture/WEBRTC_TURN_RELAY_THROTTLE.md) — candidate-pair relay detection, 48 kbps token-bucket rate limiting, priority queuing, and backpressure state transitions.
 - [WebRTC Peer Connection Lifecycle & ICE Candidate Negotiation](./p2p/mesh-lifecycle.md) — complete peer connection lifecycles, 4-state browser state machine, SDP offer/answer exchange, Trickle ICE, STUN/TURN fallback, DataChannel lifecycle, diagnostic runbook, and multi-device development.
 - [GossipSub IP Colocation & Sybil Defense](./architecture/GOSSIPSUB_IP_COLOCATION.md) — subnet colocation scoring (/24 IPv4 and /48 IPv6), Sybil mitigation, exponential decay, and mesh pruning.
 - [WebRTC Signaling Handshake Runbook](./p2p/WEBRTC_SIGNALING_HANDSHAKE.md) — PartyKit signaling, offer/answer exchange, trickle ICE, STUN/TURN traversal, Perfect Negotiation, and troubleshooting.
@@ -55,6 +59,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Redis Keyspace](./database/REDIS_KEYSPACE.md) — Redis keyspace, TTL, and invalidation guidance.
 - [Prisma Troubleshooting](./troubleshooting/prisma.md) — common Prisma and database troubleshooting guidance.
 - [Spatial Geo-Query Guide](./search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate validation, bounding-box clamping, Haversine versus geodesic distance, PostGIS `ST_DWithin` radius queries, and GiST index behavior.
+- [PostGIS Spherical Bounding Box Index Tuning Guide](./geo/POSTGIS_INDEX_TUNING.md) — GiST indexing on geography(Point, 4326), ST_DWithin vs ST_DistanceSphere comparison, <-> KNN spatial search, and EXPLAIN ANALYZE tuning.
 
 ## Security & Cryptography
 
@@ -67,9 +72,13 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Double Ratchet Protocol](./security/DOUBLE_RATCHET_PROTOCOL.md) — encrypted messaging key evolution and protocol design.
 - [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.
+- [Circom Witness Generation Worker Pool Architecture](./zkp/CIRCOM_WITNESS_WORKER_POOL.md) — Web Worker thread offloading, BN254 elliptic curve constraints, watchdog timeouts, and WASM memory lifecycle.
+- [RLN Epoch Key Rotation Window & Double-Spend Slashing Invariants](./zkp/RLN_EPOCH_ROTATION_AND_SLASHING.md) — zero-downtime UTC midnight rollover overlap window, linear share secret recovery math, and double-spend slashing invariants.
 - [Merchant Solana Escrow Settlement & Automated Refund Dispute Guide](./payments/solana-escrow.md) — non-custodial Solana escrow state machine, PDA derivation, deposit and settlement transactions, 2-of-3 multi-sig disputes, automated expiry refunds, and Devnet testing.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
 - [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.
+- [Solana Durable Nonce Offline Signing Runbook](./solana/DURABLE_NONCE_OFFLINE_SIGNING.md) — persistent nonce account initialization, instruction ordering, offline transaction serialization, air-gapped signing workflows, and RPC recovery.
+- [Solana Cluster RPC Pool Failover, Health Scoring & Cooldown Windows](./architecture/SOLANA_CLUSTER_RPC_POOL.md) — endpoint health snapshots, consecutive failure thresholds, circuit-breaker cooldown recovery windows, and `Promise.allSettled` failover routing.
 
 ## Features & Product Documentation
 
@@ -86,6 +95,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Audio & Acoustics
 
+- [WebAssembly SIMD vs Web Audio AnalyserNode Fallback Benchmark Guide](./audio/WASM_SIMD_AUDIO_BENCHMARK.md) — SIMD vectorization, WebAssembly feature detection, AnalyserNode fallback, FFT frequency precision, and benchmark methodology.
 - [Opus Audio Tuning & Adaptive Jitter Buffer Reference](./webrtc/OPUS_AUDIO_TUNING.md) — Opus packet-loss concealment (PLC), in-band forward error correction (FEC), WebRTC jitter-buffer telemetry, and WorkSphere's adaptive bitrate step ladder.
 - [Ambient Noise Spectrogram Architecture](./audio/NOISE_SPECTROGRAM_ARCHITECTURE.md) — microphone capture, FFT processing, spectrum rendering, waterfall visualization, and audio lifecycle troubleshooting.
 - [Acoustic Grading Specification](./audio/ACOUSTIC_GRADING_SPECIFICATION.md) — noise tier boundaries, dB, A-weighting and Leq calculations, Hann-windowed FFT sampling, RT60 reverberation, and crowd-sourced reading guidelines.
@@ -94,7 +104,9 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Design System Guide](./DESIGN_SYSTEM_GUIDE.md) — design tokens, themes, components, and frontend styling conventions.
 - [Theme Token Architecture](./ui/THEME_TOKEN_ARCHITECTURE.md) — complete CSS variable dictionary, dark mode, Cyberpunk Neon, high-contrast theming, and semantic token migration guide.
+- [Fluid Typography and Spacing Guide](./ui/FLUID_TYPOGRAPHY_AND_SPACING.md) — token hierarchy, 4px spacing grid, clamp-based fluid font sizes, WCAG 2.1 AA contrast ratios, and CSS variable reference tables.
 - [Accessibility Guide](./ACCESSIBILITY_GUIDE.md) — accessibility standards and implementation guidance.
+- [Venue Accessibility Audit Guidelines](./accessibility-audit.md) — step-free access, elevator and restroom audit rubric, how the code scores accessibility, and how to review accessibility reports.
 - [Venue Action Glassmorphic Pulse Guide](./ui/GLASSMORPHIC_PULSE_GUIDE.md) — theme-specific venue action button animations, rendering, accessibility, and contrast analysis.
 - [Breadcrumb Component](./components/Breadcrumb.md) — breadcrumb component behavior and usage.
 - [Floor Plan Viewer 3D](./components/FloorPlanViewer3D.md) — 3D floor-plan viewer documentation.
@@ -102,6 +114,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Offline Support & Realtime Systems
 
+- [Offline Booking Draft State Machine & Conflict Resolution Guide](./pwa/OFFLINE_BOOKING_DRAFTS.md) — IndexedDB draft persistence, vector clock causal sync, CRDT field resolution, and Service Worker background synchronization.
 - [PWA Service Worker Caching Strategy & Invalidation Runbook](./pwa/SERVICE_WORKER_CACHING_STRATEGY.md) — Progressive Web App service worker caching tiers, Workbox strategies, deployment versioning, background sync queues, and storage quota management.
 - [IndexedDB Offline Sync Architecture](./offline/indexeddb-sync-architecture.md) — offline mutations, IndexedDB storage, and synchronization.
 - [Dead Letter Queue](./offline/dead-letter-queue.md) — handling and recovery of failed offline jobs.
@@ -117,6 +130,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Playwright Testing Guide](./testing/PLAYWRIGHT_GUIDE.md) — end-to-end testing for booking workflows.
 - [End-to-End Playwright Guide](./testing/e2e-playwright.md) — browser-based end-to-end testing documentation.
 - [Playwright PWA Offline Testing Runbook](./testing/PLAYWRIGHT_OFFLINE_TESTING.md) — network emulation (`context.setOffline`), IndexedDB draft inspection, and Service Worker cache verification.
+- [Core Web Vitals Token-Bucket Reporting Specification](./telemetry/CORE_WEB_VITALS_SPEC.md) — client-side metric collection, cookie consent requirements, deterministic session sampling, payload schema, and 120 req/min token-bucket rate limiting.
 - [Web Vitals Guide](./telemetry/web-vitals-guide.md) — Core Web Vitals thresholds and performance telemetry.
 - [Vitals Export Pipeline](./telemetry/vitals-export-pipeline.md) — telemetry export and operational pipeline.
 - [Route Latency Heatmap Architecture](./admin/ROUTE_LATENCY_HEATMAP.md) — route telemetry collection, bucket aggregation, percentiles, API contract, and canvas rendering limitations.
@@ -129,12 +143,14 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Commuter Carbon Savings Guide](./analytics/CARBON_SAVINGS_GUIDE.md) — emission factor baselines, avoided-emissions formulas, transit mode differentials, date range presets, and CSV and team badge SVG exports.
 - [Carbon Calculation Methodology](./analytics/CARBON_CALCULATION_METHODOLOGY.md) — mode calculator constants, formulas and properties, a step-by-step transit comparison, and how the factor tables differ.
+- [Venue Carbon Footprint Methodology](./analytics/carbon-methodology.md) — venue energy against baseline, kWh and emissions formulas with an 8-hour sample, grid factor guidance, eco badge rules, and how to add telemetry signals.
 - [GHG Scope 3 Methodology](./sustainability/ghg-scope-3-methodology.md) — GHG Protocol Scope 3 framing, carbon engine implementation, and ESG audit CSV contract.
 
 ## Export & Reporting
 
 - [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — Comprehensive developer reference for typed CSV and Excel XML export builders, RFC-4180 escaping, formula injection sanitization, and browser download handling.
 - [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — Specification and architecture for booking receipts, vector QR matrix generation, and cryptographic verification seals.
+- [Nomad Attendance Certificate Cryptographic Verification Flow](./certificates/NOMAD_CERTIFICATE_VERIFICATION.md) — End-to-end nomad stay certificate lifecycle, pdf-lib vector layout, HMAC-SHA256 tamper-evident payload, and public verification API.
 
 ## UI Components & Frontend
 

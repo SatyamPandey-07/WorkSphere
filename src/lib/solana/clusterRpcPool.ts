@@ -14,6 +14,12 @@ export interface ClusterRpcPoolConfig {
   failureThreshold?: number;
   /** Cooldown duration in milliseconds before probing an open endpoint (default: 15000). */
   cooldownMs?: number;
+  /** Maximum bounded jitter in milliseconds added to cooldownMs on circuit open (default: 0). */
+  cooldownJitterMs?: number;
+  /** Optional random sample source returning [0, 1) for jitter calculation. */
+  random?: () => number;
+  /** Optional deterministic PRNG seed used when `random` is not supplied. */
+  cooldownJitterSeed?: number;
   /** Optional clock for deterministic testing (default: () => Date.now()). */
   now?: () => number;
 }
@@ -60,6 +66,17 @@ interface EndpointState {
 const DEFAULT_TIMEOUT_MS = 4_000;
 const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_COOLDOWN_MS = 15_000;
+const DEFAULT_COOLDOWN_JITTER_MS = 0;
+
+function createSeededRandom(seed: number): () => number {
+  let state = (Math.floor(seed) >>> 0) || 1;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
 
 function isRetryableFailure(error: unknown): boolean {
   if (!error || typeof error !== "object") return true;
@@ -102,6 +119,8 @@ export class SolanaClusterPool {
   private readonly requestTimeoutMs: number;
   private readonly failureThreshold: number;
   private readonly cooldownMs: number;
+  private readonly cooldownJitterMs: number;
+  private readonly random: () => number;
   private readonly now: () => number;
   private cursor = 0;
 
@@ -120,6 +139,18 @@ export class SolanaClusterPool {
     this.failureThreshold =
       config.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD;
     this.cooldownMs = config.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+    this.cooldownJitterMs =
+      typeof config.cooldownJitterMs === "number" &&
+      Number.isFinite(config.cooldownJitterMs) &&
+      config.cooldownJitterMs > 0
+        ? Math.floor(config.cooldownJitterMs)
+        : DEFAULT_COOLDOWN_JITTER_MS;
+    this.random =
+      config.random ??
+      (typeof config.cooldownJitterSeed === "number" &&
+      Number.isFinite(config.cooldownJitterSeed)
+        ? createSeededRandom(config.cooldownJitterSeed)
+        : Math.random);
     this.now = config.now ?? (() => Date.now());
 
     this.states = uniqueEndpoints.map((endpoint) => ({
@@ -349,8 +380,21 @@ export class SolanaClusterPool {
 
     state.consecutiveFailures += 1;
     if (state.consecutiveFailures >= this.failureThreshold) {
-      state.circuitOpenUntil = currentTime + this.cooldownMs;
+      state.circuitOpenUntil = currentTime + this.computeCooldownDurationMs();
     }
+  }
+
+  private computeCooldownDurationMs(): number {
+    if (this.cooldownJitterMs <= 0) {
+      return this.cooldownMs;
+    }
+    const rawSample = this.random();
+    const clampedSample =
+      typeof rawSample === "number" && Number.isFinite(rawSample)
+        ? Math.max(0, Math.min(1, rawSample))
+        : 0;
+    const jitterMs = Math.round(clampedSample * this.cooldownJitterMs);
+    return this.cooldownMs + jitterMs;
   }
 
   private getOrderedEndpoints(currentTime: number): EndpointState[] {

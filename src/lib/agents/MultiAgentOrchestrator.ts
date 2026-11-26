@@ -49,6 +49,19 @@ export interface TokenGovernorConfig {
   reserveCompletionTokens?: number; // Default 512 tokens
   debug?: boolean;            // Default false
   model?: string;             // Default 'llama-3.3-70b-versatile'
+  maxToolRounds?: number;     // Default 5
+  maxToolCalls?: number;      // Default 20
+  toolTimeoutMs?: number;     // Default 10_000
+}
+
+export interface ToolExecutionStats {
+  requested: number;
+  validated: number;
+  invoked: number;
+  succeeded: number;
+  failed: number;
+  timedOut: number;
+  deduplicated: number;
 }
 
 export interface TokenTelemetryRecord {
@@ -114,9 +127,78 @@ export interface SubagentExecutionResult {
     totalTokens: number;
     tokensSaved: number;
   };
-  toolsUsed: string[];
+  /** Names of tools that were actually invoked and completed during this execution. */
+  toolsInvoked: string[];
+  /** Names of tools that were available but pruned from the context. */
   prunedTools: string[];
+  /**
+   * @deprecated Use `toolsInvoked`. Kept for backwards compatibility; reflects
+   * the same list as `toolsInvoked` after the tool-call loop has completed.
+   */
+  toolsUsed: string[];
+  toolExecutionStats?: ToolExecutionStats;
   telemetry: TokenTelemetryRecord;
+}
+
+function validateToolArguments(
+  args: unknown,
+  schema: Record<string, unknown>,
+): { valid: true; value: Record<string, unknown> } | { valid: false; error: string } {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+    return { valid: false, error: 'Tool arguments must be a JSON object' };
+  }
+
+  const record = args as Record<string, unknown>;
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  for (const field of required) {
+    if (typeof field === 'string' && !(field in record)) {
+      return { valid: false, error: `Missing required argument: ${field}` };
+    }
+  }
+
+  const properties =
+    schema.properties && typeof schema.properties === 'object'
+      ? (schema.properties as Record<string, Record<string, unknown>>)
+      : null;
+
+  if (schema.additionalProperties === false && properties) {
+    for (const key of Object.keys(record)) {
+      if (!(key in properties)) {
+        return { valid: false, error: `Unexpected argument: ${key}` };
+      }
+    }
+  }
+
+  if (properties) {
+    for (const [key, propSchema] of Object.entries(properties)) {
+      if (!(key in record) || record[key] === undefined) continue;
+      const expectedType = propSchema?.type;
+      const val = record[key];
+      if (expectedType === 'string' && typeof val !== 'string') {
+        return { valid: false, error: `Argument '${key}' must be a string` };
+      }
+      if (expectedType === 'number' && (typeof val !== 'number' || !Number.isFinite(val))) {
+        return { valid: false, error: `Argument '${key}' must be a finite number` };
+      }
+      if (expectedType === 'integer' && (typeof val !== 'number' || !Number.isInteger(val))) {
+        return { valid: false, error: `Argument '${key}' must be an integer` };
+      }
+      if (expectedType === 'boolean' && typeof val !== 'boolean') {
+        return { valid: false, error: `Argument '${key}' must be a boolean` };
+      }
+      if (expectedType === 'array' && !Array.isArray(val)) {
+        return { valid: false, error: `Argument '${key}' must be an array` };
+      }
+      if (
+        expectedType === 'object' &&
+        (val === null || typeof val !== 'object' || Array.isArray(val))
+      ) {
+        return { valid: false, error: `Argument '${key}' must be an object` };
+      }
+    }
+  }
+
+  return { valid: true, value: record };
 }
 
 export class MultiAgentOrchestrator {
@@ -132,6 +214,9 @@ export class MultiAgentOrchestrator {
       reserveCompletionTokens: config.reserveCompletionTokens ?? 512,
       debug: config.debug ?? false,
       model: config.model ?? 'llama-3.3-70b-versatile',
+      maxToolRounds: config.maxToolRounds ?? 5,
+      maxToolCalls: config.maxToolCalls ?? 20,
+      toolTimeoutMs: config.toolTimeoutMs ?? 10_000,
     };
 
     const apiKey = groqApiKey || process.env.GROQ_API_KEY;
@@ -320,18 +405,29 @@ export class MultiAgentOrchestrator {
 
   /**
    * Invokes a subagent with dynamic tool governance, telemetry tracking, and context safety.
+   *
+   * When the LLM returns `tool_calls`, each call is validated against the allowlisted
+   * registered handler, arguments are schema-checked, and the handler is invoked.
+   * Results are fed back to the model in a bounded loop (default: 5 rounds).
+   * Only handlers that actually completed execution are reported in `toolsInvoked`.
    */
   public async invokeSubagent(task: SubagentTask): Promise<SubagentExecutionResult> {
     const invocationId = `inv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const tools = task.tools ?? this.getAllTools();
 
     // Prepare messages
-    const messages: AgentMessage[] = [
+    const conversationMessages: Array<{
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string;
+      tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+      tool_call_id?: string;
+      name?: string;
+    }> = [
       {
         role: 'system',
         content: `You are the ${task.subagentName} subagent in WorkSphere. Execute the requested instruction precisely.`,
       },
-      ...(task.history ?? []),
+      ...(task.history ?? []).map((m) => ({ role: m.role, content: m.content, name: m.name })),
       {
         role: 'user',
         content: task.instruction,
@@ -340,10 +436,33 @@ export class MultiAgentOrchestrator {
 
     // Govern tools
     const maxAllowance = task.tokenAllowance ?? this.config.maxTokenAllowance;
-    const governance = this.governToolSelection(messages, tools, maxAllowance);
+    const governance = this.governToolSelection(
+      conversationMessages.map((m) => ({ role: m.role as AgentMessage['role'], content: m.content })),
+      tools,
+      maxAllowance
+    );
 
     let outputContent = '';
     let completionTokens = 0;
+    /** Tool names that were actually invoked and completed. */
+    const toolsInvoked: string[] = [];
+    const toolStats: ToolExecutionStats = {
+      requested: 0,
+      validated: 0,
+      invoked: 0,
+      succeeded: 0,
+      failed: 0,
+      timedOut: 0,
+      deduplicated: 0,
+    };
+
+    const maxToolRounds = this.config.maxToolRounds ?? 5;
+    const maxToolCalls = this.config.maxToolCalls ?? 20;
+    const toolTimeoutMs = this.config.toolTimeoutMs ?? 10_000;
+    const activeToolMap = new Map<string, AgentToolDeclaration>(
+      governance.activeTools.map((t) => [t.name, t]),
+    );
+    const dedupeCache = new Map<string, unknown>();
 
     // LLM execution via Groq if configured, otherwise high-performance fallback
     if (this.groqClient) {
@@ -357,19 +476,157 @@ export class MultiAgentOrchestrator {
           },
         }));
 
-        const completion = await this.groqClient.chat.completions.create({
-          model: this.config.model,
-          messages: messages.map((m) => ({
-            role: m.role as 'system' | 'user' | 'assistant',
-            content: m.content,
-          })),
-          tools: groqTools.length > 0 ? groqTools : undefined,
-          max_tokens: this.config.reserveCompletionTokens,
-          temperature: 0.2,
-        });
+        // Bounded tool-call loop
+        let round = 0;
+        let totalCallsProcessed = 0;
+        while (round < maxToolRounds && totalCallsProcessed < maxToolCalls) {
+          round++;
+          const completion = await this.groqClient.chat.completions.create({
+            model: this.config.model,
+            messages: conversationMessages as Parameters<typeof this.groqClient.chat.completions.create>[0]['messages'],
+            tools: groqTools.length > 0 ? groqTools : undefined,
+            max_tokens: this.config.reserveCompletionTokens,
+            temperature: 0.2,
+          });
 
-        outputContent = completion.choices[0]?.message?.content || 'Task completed successfully.';
-        completionTokens = completion.usage?.completion_tokens ?? estimateTokens(outputContent);
+          const choice = completion.choices[0];
+          completionTokens += completion.usage?.completion_tokens ?? 0;
+
+          const toolCalls = choice?.message?.tool_calls;
+          if (!toolCalls || toolCalls.length === 0) {
+            // No tool calls — model produced a final assistant response.
+            outputContent = choice?.message?.content || 'Task completed successfully.';
+            if (!completionTokens) {
+              completionTokens = estimateTokens(outputContent);
+            }
+            break;
+          }
+
+          // Push the assistant turn (with tool_calls) into the conversation.
+          conversationMessages.push({
+            role: 'assistant',
+            content: choice.message.content ?? '',
+            tool_calls: toolCalls,
+          });
+
+          // Execute each tool call, validate against schema & allowlist, and collect results.
+          for (const call of toolCalls) {
+            if (totalCallsProcessed >= maxToolCalls) {
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify({ error: 'Tool call budget exhausted' }),
+              });
+              continue;
+            }
+            totalCallsProcessed++;
+            toolStats.requested++;
+
+            const toolName = call?.function?.name;
+            const callId = call?.id;
+            if (!toolName || !callId) {
+              toolStats.failed++;
+              continue;
+            }
+
+            // Allowlist check: only invoke active registered tools.
+            const registeredTool = activeToolMap.get(toolName);
+            if (!registeredTool || typeof registeredTool.execute !== 'function') {
+              toolStats.failed++;
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: callId,
+                content: JSON.stringify({
+                  error: !registeredTool
+                    ? `Unknown or unapproved tool: ${toolName}`
+                    : `Tool '${toolName}' has no executable handler`,
+                }),
+              });
+              continue;
+            }
+
+            // Parse and schema-validate arguments.
+            let rawArgs: unknown;
+            try {
+              rawArgs = JSON.parse(call.function.arguments || '{}');
+            } catch {
+              toolStats.failed++;
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: callId,
+                content: JSON.stringify({ error: 'Invalid JSON arguments' }),
+              });
+              continue;
+            }
+
+            const validation = validateToolArguments(rawArgs, registeredTool.parameters);
+            if (!validation.valid) {
+              toolStats.failed++;
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: callId,
+                content: JSON.stringify({ error: validation.error }),
+              });
+              continue;
+            }
+
+            toolStats.validated++;
+            const canonicalKey = `${toolName}:${JSON.stringify(validation.value)}`;
+            if (dedupeCache.has(canonicalKey)) {
+              toolStats.deduplicated++;
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: callId,
+                content: JSON.stringify(dedupeCache.get(canonicalKey)),
+              });
+              continue;
+            }
+
+            // Invoke the registered handler with timeout guard.
+            let toolResult: unknown;
+            toolStats.invoked++;
+            let timerId: ReturnType<typeof setTimeout> | undefined;
+            try {
+              toolResult = await Promise.race([
+                Promise.resolve(registeredTool.execute(validation.value)),
+                new Promise<never>((_, reject) => {
+                  timerId = setTimeout(
+                    () => reject(new Error(`Tool '${toolName}' timed out after ${toolTimeoutMs}ms`)),
+                    toolTimeoutMs,
+                  );
+                }),
+              ]);
+              toolStats.succeeded++;
+              toolsInvoked.push(toolName);
+              dedupeCache.set(canonicalKey, toolResult);
+            } catch (handlerErr: unknown) {
+              const msg =
+                handlerErr instanceof Error ? handlerErr.message : 'Tool execution failed';
+              if (msg.includes('timed out')) {
+                toolStats.timedOut++;
+              } else {
+                toolStats.failed++;
+              }
+              toolResult = { error: msg };
+            } finally {
+              if (timerId !== undefined) clearTimeout(timerId);
+            }
+
+            conversationMessages.push({
+              role: 'tool',
+              tool_call_id: callId,
+              content: JSON.stringify(toolResult),
+            });
+          }
+        }
+
+        // If we exhausted the round limit without a final text response, synthesize one.
+        if (!outputContent) {
+          outputContent = `Completed execution for ${task.subagentName}: ${task.instruction.slice(0, 100)}`;
+          if (!completionTokens) {
+            completionTokens = estimateTokens(outputContent);
+          }
+        }
       } catch (err: unknown) {
         if (task.rethrowRetryableErrors && isRetryableLlmError(err)) {
           throw err;
@@ -414,7 +671,9 @@ export class MultiAgentOrchestrator {
         totalTokens,
         tokensSaved: governance.tokensSaved,
       },
-      toolsUsed: governance.activeTools.map((t) => t.name),
+      toolsInvoked,
+      toolsUsed: toolsInvoked, // backwards-compat alias
+      toolExecutionStats: toolStats,
       prunedTools: governance.prunedTools.map((t) => t.name),
       telemetry,
     };

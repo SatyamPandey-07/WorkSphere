@@ -80,7 +80,7 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
       } catch (err: unknown) {
         if (isRecoverableRedisError(err)) {
           // Activate in-memory token bucket fallback limiter to prevent unbounded traffic during outages
-          const tierKey = `sensitive:${sensitiveRule.name}`;
+          const tierKey = `sensitive:${sensitiveRule.namespace}`;
           const reason = err instanceof Error ? err.message : String(err);
           recordFallbackActivation(reason, tierKey);
           const refillRate =

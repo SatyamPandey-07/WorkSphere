@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { cn, sanitizeExternalHttpUrl } from "@/lib/utils";
 import type { PeerTelemetry } from "@/hooks/useMeshDataChannels";
 
@@ -80,6 +80,16 @@ function getInitials(label: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
+export interface PeerDiagnosticsSummary {
+  localPeerId: string;
+  timestamp: string;
+  peers: Array<{
+    peerId: string;
+    displayName?: string;
+    rttMs: number | null;
+  }>;
+}
+
 export interface PeerTopologyVisualizerProps {
   localPeerId: string;
   localDisplayName?: string;
@@ -100,6 +110,71 @@ export function PeerTopologyVisualizer({
   peerTelemetry,
   className,
 }: PeerTopologyVisualizerProps) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">(
+    "idle",
+  );
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyDiagnostics = useCallback(async () => {
+    try {
+      const diagnosticsData: PeerDiagnosticsSummary = {
+        localPeerId,
+        timestamp: new Date().toISOString(),
+        peers: peers.map((peer) => {
+          const resolvedRtt =
+            peerLatencies?.[peer.peerId] ??
+            peerTelemetry?.[peer.peerId]?.rttMs ??
+            peer.rttMs ??
+            null;
+
+          return {
+            peerId: peer.peerId,
+            displayName: peer.displayName?.trim() || peer.peerId,
+            rttMs:
+              typeof resolvedRtt === "number" &&
+              Number.isFinite(resolvedRtt) &&
+              resolvedRtt >= 0
+                ? resolvedRtt
+                : null,
+          };
+        }),
+      };
+
+      const serialized = JSON.stringify(diagnosticsData, null, 2);
+
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error("Clipboard API not available");
+      }
+
+      await navigator.clipboard.writeText(serialized);
+
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+
+      setCopyStatus("success");
+      resetTimerRef.current = setTimeout(() => {
+        setCopyStatus("idle");
+      }, 2000);
+    } catch {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+      setCopyStatus("error");
+      resetTimerRef.current = setTimeout(() => {
+        setCopyStatus("idle");
+      }, 3000);
+    }
+  }, [localPeerId, peers, peerLatencies, peerTelemetry]);
+
   return (
     <section
       aria-label="Collaborative workspace peer topology"
@@ -126,6 +201,42 @@ export function PeerTopologyVisualizer({
               {peers.length === 1 ? "collaborator" : "collaborators"}
             </p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="copy-diagnostics-btn"
+            onClick={handleCopyDiagnostics}
+            aria-label="Copy Diagnostics"
+            className={cn(
+              "inline-flex items-center justify-center rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
+              copyStatus === "success" &&
+                "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
+              copyStatus === "error" &&
+                "border-rose-500/40 bg-rose-500/15 text-rose-300",
+              copyStatus === "idle" &&
+                "border-zinc-700 bg-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100",
+            )}
+          >
+            {copyStatus === "success"
+              ? "Diagnostics copied"
+              : copyStatus === "error"
+                ? "Failed to copy"
+                : "Copy Diagnostics"}
+          </button>
+          <span
+            role="status"
+            aria-live="polite"
+            className="sr-only"
+            data-testid="copy-diagnostics-status"
+          >
+            {copyStatus === "success"
+              ? "Diagnostics copied to clipboard"
+              : copyStatus === "error"
+                ? "Failed to copy diagnostics to clipboard"
+                : ""}
+          </span>
         </div>
       </div>
 

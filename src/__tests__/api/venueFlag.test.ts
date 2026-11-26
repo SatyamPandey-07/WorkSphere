@@ -39,12 +39,67 @@ function makeRequest(
 }
 
 describe("POST /api/venues/[venueId]/flag", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("returns 200 when a valid flag is submitted", async () => {
     const response = await POST(
       makeRequest("venue-123", { reason: "permanently_closed" }),
       { params: Promise.resolve({ venueId: "venue-123" }) },
     );
     expect(response.status).toBe(200);
+  });
+
+  it("returns 400 when reason is whitespace-only or fewer than 5 non-whitespace characters", async () => {
+    for (const badReason of ["", "     ", "\t\n  ", "  a b  "]) {
+      const response = await POST(
+        makeRequest("venue-123", { reason: badReason, details: "   " }),
+        { params: Promise.resolve({ venueId: "venue-123" }) },
+      );
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.error).toBe(
+        "Reason must contain at least 5 non-whitespace characters",
+      );
+    }
+    expect(prisma.flaggedItem.create).not.toHaveBeenCalled();
+  });
+
+  it("trims leading and trailing whitespace from reason and details before database insertion", async () => {
+    const response = await POST(
+      makeRequest("venue-123", {
+        reason: "  permanently_closed  ",
+        details: "   Doors locked with notice on window   ",
+      }),
+      { params: Promise.resolve({ venueId: "venue-123" }) },
+    );
+    expect(response.status).toBe(200);
+    expect(prisma.flaggedItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "VENUE",
+        itemId: "venue-123",
+        reason: "permanently_closed",
+        details: "Doors locked with notice on window",
+        reportedById: "user-123",
+      }),
+    });
+  });
+
+  it("returns a structured 400 error when reason exceeds 100 characters", async () => {
+    const response = await POST(
+      makeRequest("venue-123", { reason: "x".repeat(101) }),
+      { params: Promise.resolve({ venueId: "venue-123" }) },
+    );
+
+    expect(response.status).toBe(400);
+
+    const data = await response.json();
+    expect(data.code).toBe("VALIDATION_FAILED");
+    expect(data.details.reason).toContain(
+      "Reason must be at most 100 characters",
+    );
+    expect(prisma.flaggedItem.create).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid reason", async () => {

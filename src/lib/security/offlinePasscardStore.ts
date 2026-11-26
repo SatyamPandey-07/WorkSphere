@@ -9,7 +9,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import {
   decodeOfflinePasscardPayload,
-  verifyOfflinePasscard,
+  verifyOfflinePasscardWithKeys,
 } from "@/lib/security/offlineQrSigner";
 
 export interface StoredOfflinePasscard {
@@ -50,6 +50,12 @@ async function open(): Promise<IDBPDatabase<PasscardDB>> {
 export interface SaveOfflinePasscardOptions {
   /** When given, the token's signature is checked first and a forged token is refused. */
   verificationKey?: CryptoKey;
+  /**
+   * Several keys to check the signature against, for example the published key set after a key
+   * rotation. The token is accepted when any of them (or `verificationKey`) matches. An empty list
+   * refuses every token; leave the option out to skip the check.
+   */
+  verificationKeys?: readonly CryptoKey[];
 }
 
 /** Stores a token for its booking, replacing any earlier one. Throws if the token is malformed or forged. */
@@ -59,10 +65,17 @@ export async function saveOfflinePasscard(
 ): Promise<StoredOfflinePasscard> {
   const payload = decodeOfflinePasscardPayload(token);
   if (!payload) throw new Error("Not a valid offline passcard token");
-  if (options.verificationKey) {
-    const result = await verifyOfflinePasscard(token, options.verificationKey, {
-      enforceWindow: false,
-    });
+  const verificationKeys = [
+    ...(options.verificationKey ? [options.verificationKey] : []),
+    ...(options.verificationKeys ?? []),
+  ];
+  // An empty key list still means "verify": with nothing to match, the token is refused.
+  if (options.verificationKey || options.verificationKeys) {
+    const result = await verifyOfflinePasscardWithKeys(
+      token,
+      verificationKeys,
+      { enforceWindow: false },
+    );
     if (!result.valid)
       throw new Error(
         `Offline passcard signature check failed: ${result.reason}`,
@@ -85,6 +98,24 @@ export async function saveOfflinePasscard(
     db.close();
   }
   return record;
+}
+
+/**
+ * Reads the saved passcard record without pruning it. This is intended for
+ * UI display only (for example, showing an expired countdown state). It must
+ * never be used as proof of validity; verifiers must validate the signature
+ * and validity window independently.
+ */
+export async function getOfflinePasscardRecord(
+  bookingId: string,
+): Promise<StoredOfflinePasscard | null> {
+  if (!available() || !bookingId) return null;
+  const db = await open();
+  try {
+    return (await db.get(STORE, bookingId)) ?? null;
+  } finally {
+    db.close();
+  }
 }
 
 /** The stored token for a booking, or null when there is none or it has expired (an expired one is deleted). */

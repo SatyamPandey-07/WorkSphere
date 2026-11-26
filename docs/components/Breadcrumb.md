@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `Breadcrumb` component ([`src/components/ui/Breadcrumb.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/Breadcrumb.tsx)) provides an accessible navigation hierarchy trail across nested venue details, user collections, booking confirmation workflows, and category pages. It conforms to W3C WAI-ARIA breadcrumb standards and Next.js App Router conventions with responsive text truncation and schema.org structured data compatibility.
+The `Breadcrumb` component ([`src/components/ui/Breadcrumb.tsx`](../../src/components/ui/Breadcrumb.tsx)) provides an accessible navigation hierarchy trail across nested venue details, user collections, booking confirmation workflows, and category pages. It conforms to W3C WAI-ARIA breadcrumb standards and Next.js App Router conventions with responsive text truncation and schema.org structured data compatibility.
 
 ```mermaid
 flowchart LR
@@ -106,7 +106,7 @@ export function SlashBreadcrumb({ items, separator = <Slash className="w-3 h-3 t
 
 ### 4.1 Nested Venue Detail Page (`/venues/[id]`)
 
-Located in [`src/app/venues/[id]/page.tsx`](file:///c:/Users/admin/Desktop/workfere/src/app/venues/%5Bid%5D/page.tsx):
+Located in [`src/app/venues/[id]/page.tsx`](../../src/app/venues/[id]/page.tsx):
 
 ```tsx
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
@@ -142,7 +142,7 @@ export default function VenueDetailPage({ venue }: VenuePageProps) {
 
 ### 4.2 Multi-Level Collection Folder Route (`/collections/[id]`)
 
-Located in [`src/app/collections/[id]/page.tsx`](file:///c:/Users/admin/Desktop/workfere/src/app/collections/%5Bid%5D/page.tsx):
+Located in [`src/app/collections/[id]/page.tsx`](../../src/app/collections/[id]/page.tsx):
 
 ```tsx
 import { Breadcrumb } from "@/components/ui/Breadcrumb";

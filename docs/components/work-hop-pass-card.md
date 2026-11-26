@@ -1,6 +1,6 @@
 # WorkHopPassCard: Props, Badge Themes, and Pass Redemption Callbacks
 
-This developer guide documents WorkSphere's **WorkHopPassCard** component ([`src/components/bookings/WorkHopPassCard.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/bookings/WorkHopPassCard.tsx)), including its props interface, pass status variants (`ACTIVE`, `EXPIRED`, `EXHAUSTED`), badge styling themes, QR token cryptography, and redemption handler callbacks.
+This developer guide documents WorkSphere's **WorkHopPassCard** component ([`src/components/bookings/WorkHopPassCard.tsx`](../../src/components/bookings/WorkHopPassCard.tsx)), including its props interface, pass status variants (`ACTIVE`, `EXPIRED`, `EXHAUSTED`), badge styling themes, QR token cryptography, and redemption handler callbacks.
 
 ---
 
@@ -36,7 +36,7 @@ flowchart TD
 
 ## 2. Component Props Interface & TypeScript Schemas
 
-Located in [`src/components/bookings/WorkHopPassCard.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/bookings/WorkHopPassCard.tsx) and backed by [`src/lib/bundles/workHopEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/bundles/workHopEngine.ts).
+Located in [`src/components/bookings/WorkHopPassCard.tsx`](../../src/components/bookings/WorkHopPassCard.tsx) and backed by [`src/lib/bundles/workHopEngine.ts`](../../src/lib/bundles/workHopEngine.ts).
 
 ### 2.1 `WorkHopPassCardProps`
 
@@ -188,7 +188,7 @@ sequenceDiagram
 
 ### 4.2 Cryptographic Pass Token Generation & Verification
 
-Pass tokens are signed using HMAC-SHA256 in [`src/lib/bundles/workHopEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/bundles/workHopEngine.ts#L76-L115):
+Pass tokens are signed using HMAC-SHA256 in [`src/lib/bundles/workHopEngine.ts`](../../src/lib/bundles/workHopEngine.ts#L76-L115):
 
 ```typescript
 // 1. Token Issuance

@@ -7,6 +7,7 @@ import {
   TransactionInstruction,
   VersionedTransaction,
   LAMPORTS_PER_SOL,
+  ComputeBudgetProgram,
 } from "@solana/web3.js";
 import type { Commitment, SignatureStatus } from "@solana/web3.js";
 import {
@@ -15,6 +16,41 @@ import {
   type ReserveSeatOptions,
   type SeatReservationState,
 } from "./solanaPayEscrow";
+
+export const MAX_RPC_CLOCK_SKEW_SECONDS = 300;
+export const DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT = 250_000;
+
+export async function fetchLatestBlockhashWithBackoff(
+  connection: Connection,
+  maxRetries = 3,
+  baseBackoffMs = 500,
+): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await connection.getLatestBlockhash("confirmed");
+    } catch (err) {
+      lastErr = err;
+      if (attempt + 1 < maxRetries) {
+        const delay = baseBackoffMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastErr;
+}
+import {
+  DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS,
+  getPriorityFeeEstimator,
+  type PriorityFeeEstimate,
+} from "./priorityFeeEstimator";
+import {
+  EscrowTransitionError,
+  isAutoRefundEligible,
+  transitionEscrowRecord,
+  type EscrowLifecycleState,
+  type EscrowRecord,
+} from "@/lib/solana/escrowStateMachine";
 
 export const TOKEN_PROGRAM_ID = new PublicKey(
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -37,6 +73,190 @@ export function getAssociatedTokenAddressSync(
   return address;
 }
 
+export const SOL_DECIMALS = 9;
+export const USDC_DECIMALS = 6;
+
+export type SupportedSettlementAsset = "SOL" | "USDC";
+
+export interface EscrowBookingQuoteInput {
+  /** Hourly rate as a decimal string (e.g., "0.14" SOL or "4.50" USDC) */
+  hourlyRate: string | number;
+  /** Booking duration in minutes (e.g., 90 for 1.5 hours) */
+  durationMinutes: number;
+  /** Settlement token ('SOL' = 9 decimals, 'USDC' = 6 decimals) */
+  asset?: SupportedSettlementAsset;
+  /** Optional explicit decimal precision override */
+  decimals?: number;
+}
+
+export interface EscrowBaseUnitQuote {
+  asset: SupportedSettlementAsset;
+  decimals: number;
+  baseUnits: bigint;
+  formattedDecimal: string;
+}
+
+/**
+ * Converts a decimal token amount into exact integer base units (`bigint`) using
+ * string splitting and right-padding—eliminating IEEE-754 floating-point drift
+ * (such as `0.14 * 1e9` or `1.005 * 1e6`).
+ */
+export function parseDecimalToBaseUnits(
+  amount: string | number,
+  decimals: number = SOL_DECIMALS,
+): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw new RangeError(`Invalid token decimal precision: ${decimals}`);
+  }
+
+  const raw =
+    typeof amount === "number"
+      ? Number.isFinite(amount)
+        ? amount.toString()
+        : ""
+      : typeof amount === "string"
+        ? amount.trim()
+        : "";
+
+  if (!raw) {
+    throw new Error("Token amount must be a non-empty finite decimal string");
+  }
+
+  // Handle scientific notation strings (e.g. "1e-7") safely into fixed decimal representation
+  const normalized = expandScientificNotation(raw);
+
+  if (normalized.startsWith("-")) {
+    throw new Error(`Token amount cannot be negative: "${raw}"`);
+  }
+
+  const unsigned = normalized.startsWith("+")
+    ? normalized.slice(1)
+    : normalized;
+  const parts = unsigned.split(".");
+
+  if (parts.length > 2) {
+    throw new Error(`Malformed decimal amount: "${raw}"`);
+  }
+
+  const wholePartRaw = parts[0] === "" ? "0" : parts[0];
+  const fractionPartRaw = parts[1] ?? "";
+
+  if (
+    !/^\d+$/.test(wholePartRaw) ||
+    (fractionPartRaw !== "" && !/^\d+$/.test(fractionPartRaw))
+  ) {
+    throw new Error(`Invalid numeric characters in decimal amount: "${raw}"`);
+  }
+
+  if (fractionPartRaw.length > decimals) {
+    const excessDigits = fractionPartRaw.slice(decimals);
+    if (!/^0+$/.test(excessDigits)) {
+      throw new Error(
+        `Amount "${raw}" exceeds maximum supported precision of ${decimals} decimal places`,
+      );
+    }
+  }
+
+  const paddedFraction =
+    decimals === 0
+      ? ""
+      : fractionPartRaw.slice(0, decimals).padEnd(decimals, "0");
+
+  return BigInt(`${wholePartRaw}${paddedFraction}`);
+}
+
+/**
+ * Formats integer base units (`bigint`) back into a canonical decimal string without float loss.
+ */
+export function formatBaseUnitsToDecimal(
+  baseUnits: bigint,
+  decimals: number = SOL_DECIMALS,
+): string {
+  if (baseUnits < 0n) {
+    throw new Error("Base units cannot be negative");
+  }
+
+  if (decimals === 0) {
+    return baseUnits.toString();
+  }
+
+  const digits = baseUnits.toString().padStart(decimals + 1, "0");
+  const whole = digits.slice(0, -decimals);
+  const fraction = digits.slice(-decimals).replace(/0+$/, "");
+
+  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
+}
+
+/**
+ * Expands valid scientific-notation numeric strings (e.g. "5e-8") into plain fixed-point strings.
+ */
+function expandScientificNotation(value: string): string {
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  const [, sign, intDigits, fracDigits = "", expStr] = match;
+  const exponent = parseInt(expStr, 10);
+  const combinedDigits = `${intDigits}${fracDigits}`;
+  const decimalPosition = intDigits.length + exponent;
+
+  if (decimalPosition <= 0) {
+    return `${sign}0.${"0".repeat(Math.abs(decimalPosition))}${combinedDigits}`;
+  }
+
+  if (decimalPosition >= combinedDigits.length) {
+    return `${sign}${combinedDigits}${"0".repeat(decimalPosition - combinedDigits.length)}`;
+  }
+
+  return `${sign}${combinedDigits.slice(0, decimalPosition)}.${combinedDigits.slice(decimalPosition)}`;
+}
+
+/**
+ * Computes exact escrow base units (`lamports` for SOL, micro-units for USDC) for a
+ * prorated multi-minute desk reservation using pure `BigInt` integer arithmetic.
+ */
+export function calculateEscrowBookingBaseUnits(
+  input: EscrowBookingQuoteInput,
+): EscrowBaseUnitQuote {
+  const asset: SupportedSettlementAsset = input.asset ?? "SOL";
+  const decimals =
+    input.decimals ?? (asset === "USDC" ? USDC_DECIMALS : SOL_DECIMALS);
+
+  if (!Number.isInteger(input.durationMinutes) || input.durationMinutes <= 0) {
+    throw new Error("Booking durationMinutes must be a positive integer");
+  }
+
+  const hourlyBaseUnits = parseDecimalToBaseUnits(input.hourlyRate, decimals);
+  const totalBaseUnits =
+    (hourlyBaseUnits * BigInt(input.durationMinutes)) / 60n;
+
+  return {
+    asset,
+    decimals,
+    baseUnits: totalBaseUnits,
+    formattedDecimal: formatBaseUnitsToDecimal(totalBaseUnits, decimals),
+  };
+}
+
+/**
+ * Validates that a connected wallet's pre-flight balance (plus Solana fee buffer)
+ * covers the exact `BigInt` escrow transfer amount before signing.
+ */
+export function assertSufficientEscrowBalance(params: {
+  walletBalanceBaseUnits: bigint;
+  requiredEscrowBaseUnits: bigint;
+  networkFeeReserveBaseUnits?: bigint;
+}): void {
+  const feeReserve = params.networkFeeReserveBaseUnits ?? 5_000n; // 5,000 lamports default signature fee
+  const totalRequired = params.requiredEscrowBaseUnits + feeReserve;
+
+  if (params.walletBalanceBaseUnits < totalRequired) {
+    throw new Error(
+      `InsufficientFunds: wallet balance ${params.walletBalanceBaseUnits.toString()} is less than required ${totalRequired.toString()} base units`,
+    );
+  }
+}
 export function createTransferInstruction(
   source: PublicKey,
   destination: PublicKey,
@@ -67,9 +287,121 @@ export const USDC_MINT = new PublicKey(
   process.env.NEXT_PUBLIC_USDC_MINT ??
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 );
-export const USDC_DECIMALS = 6;
 
 export type EscrowCurrency = "SOL" | "USDC";
+
+export interface PriorityFeeCapDiagnostics {
+  /** Raw computed or explicitly supplied fee before ceiling enforcement (null if none). */
+  estimatedMicroLamports: number | null;
+  /** Hard upper bound ceiling in micro-lamports. */
+  maxPriorityFeeMicroLamports: number;
+  /** Final priority fee applied to the transaction in micro-lamports. */
+  appliedMicroLamports: number;
+  /** True when the computed fee exceeded maxPriorityFeeMicroLamports and was clamped. */
+  wasCapped: boolean;
+}
+
+export function resolveCappedPriorityFee(options: {
+  explicitMicroLamports?: number | null;
+  estimatedMicroLamports?: number | null;
+  maxPriorityFeeMicroLamports?: number;
+}): PriorityFeeCapDiagnostics {
+  const ceiling =
+    typeof options.maxPriorityFeeMicroLamports === "number" &&
+    Number.isFinite(options.maxPriorityFeeMicroLamports) &&
+    options.maxPriorityFeeMicroLamports >= 0
+      ? Math.floor(options.maxPriorityFeeMicroLamports)
+      : DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS;
+
+  const rawFee =
+    typeof options.explicitMicroLamports === "number" &&
+    Number.isFinite(options.explicitMicroLamports) &&
+    options.explicitMicroLamports >= 0
+      ? Math.floor(options.explicitMicroLamports)
+      : typeof options.estimatedMicroLamports === "number" &&
+          Number.isFinite(options.estimatedMicroLamports) &&
+          options.estimatedMicroLamports >= 0
+        ? Math.floor(options.estimatedMicroLamports)
+        : null;
+
+  if (rawFee === null) {
+    return {
+      estimatedMicroLamports: null,
+      maxPriorityFeeMicroLamports: ceiling,
+      appliedMicroLamports: 0,
+      wasCapped: false,
+    };
+  }
+
+  const appliedMicroLamports = Math.min(rawFee, ceiling);
+  return {
+    estimatedMicroLamports: rawFee,
+    maxPriorityFeeMicroLamports: ceiling,
+    appliedMicroLamports,
+    wasCapped: rawFee > ceiling,
+  };
+}
+
+function upsertComputeUnitPriceInstruction(
+  transaction: Transaction,
+  microLamports: number,
+): void {
+  if (typeof microLamports !== "number" || microLamports <= 0) {
+    return;
+  }
+  const safeFee = Math.max(0, Math.floor(microLamports));
+  const existingIndex = transaction.instructions.findIndex(
+    (ix) =>
+      ix.programId.equals(ComputeBudgetProgram.programId) &&
+      ix.data.length > 0 &&
+      ix.data[0] === 3,
+  );
+  const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: safeFee,
+  });
+  if (existingIndex >= 0) {
+    transaction.instructions[existingIndex] = computeIx;
+  } else {
+    transaction.instructions.unshift(computeIx);
+  }
+}
+
+async function resolveAndApplyEscrowPriorityFee(options: {
+  transaction: Transaction;
+  estimateFee?: () => Promise<PriorityFeeEstimate>;
+  priorityFeeMicroLamports?: number | null;
+  maxPriorityFeeMicroLamports?: number;
+}): Promise<PriorityFeeCapDiagnostics> {
+  let estimatedMicroLamports: number | null = null;
+  if (
+    options.priorityFeeMicroLamports === undefined ||
+    options.priorityFeeMicroLamports === null
+  ) {
+    if (options.estimateFee) {
+      try {
+        const estimate = await options.estimateFee();
+        estimatedMicroLamports = estimate.microLamports;
+      } catch {
+        estimatedMicroLamports = null;
+      }
+    }
+  }
+
+  const diagnostics = resolveCappedPriorityFee({
+    explicitMicroLamports: options.priorityFeeMicroLamports,
+    estimatedMicroLamports,
+    maxPriorityFeeMicroLamports: options.maxPriorityFeeMicroLamports,
+  });
+
+  if (diagnostics.appliedMicroLamports > 0) {
+    upsertComputeUnitPriceInstruction(
+      options.transaction,
+      diagnostics.appliedMicroLamports,
+    );
+  }
+
+  return diagnostics;
+}
 
 export interface EscrowDepositParams {
   payerWallet: string;
@@ -77,6 +409,9 @@ export interface EscrowDepositParams {
   amount: number;
   currency: EscrowCurrency;
   rpcUrl: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
+  computeUnitLimit?: number;
 }
 
 export interface EscrowDepositResult {
@@ -85,6 +420,8 @@ export interface EscrowDepositResult {
   escrowBump: number;
   amountBaseUnits: bigint;
   recentBlockhash: string;
+  lastValidBlockHeight?: number;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 export interface EscrowValidationResult {
@@ -156,6 +493,210 @@ export function validateDepositParams(
   }
 }
 
+export const SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS = 5_000_000n;
+
+export type EscrowDepositPreflightErrorCode =
+  | "INSUFFICIENT_BALANCE"
+  | "BALANCE_CHECK_FAILED"
+  | "INVALID_TOKEN_ACCOUNT"
+  | "RPC_REQUEST_FAILED";
+
+export class EscrowDepositPreflightError extends Error {
+  public readonly rpcError?: unknown;
+
+  constructor(
+    message: string,
+    public readonly code: EscrowDepositPreflightErrorCode,
+    cause?: unknown,
+  ) {
+    super(message);
+    this.name = "EscrowDepositPreflightError";
+    this.rpcError = cause;
+  }
+}
+
+function formatBaseUnits(amount: bigint, decimals: number): string {
+  const scale = 10n ** BigInt(decimals);
+  const whole = amount / scale;
+  const fraction = (amount % scale)
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function getTokenAccountErrorReason(
+  error: unknown,
+): "missing" | "uninitialized" | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/could not find account|account not found/i.test(message)) {
+    return "missing";
+  }
+  if (/account not initialized/i.test(message)) return "uninitialized";
+  return null;
+}
+
+async function withEscrowRpcTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  operationDescription: string,
+  errorCode:
+    | "BALANCE_CHECK_FAILED"
+    | "RPC_REQUEST_FAILED" = "BALANCE_CHECK_FAILED",
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(`Solana RPC request timed out after ${timeoutMs}ms`),
+            ),
+          timeoutMs,
+        );
+        timer.unref?.();
+      }),
+    ]);
+  } catch (error: unknown) {
+    const timedOut =
+      error instanceof Error && error.message.includes("timed out");
+    throw new EscrowDepositPreflightError(
+      timedOut
+        ? `Could not ${operationDescription} because the Solana RPC request timed out. Please try again.`
+        : `Could not ${operationDescription} because the Solana RPC request failed. Please try again.`,
+      errorCode,
+      error,
+    );
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function getVerifiedLamportBalance(
+  connection: Connection,
+  payer: PublicKey,
+  timeoutMs: number,
+): Promise<bigint> {
+  const balance = await withEscrowRpcTimeout(
+    () => connection.getBalance(payer, "confirmed"),
+    timeoutMs,
+    "verify the wallet balance",
+  );
+
+  if (!Number.isSafeInteger(balance) || balance < 0) {
+    throw new EscrowDepositPreflightError(
+      "Could not verify wallet balance because Solana RPC returned invalid balance data. Please try again.",
+      "BALANCE_CHECK_FAILED",
+    );
+  }
+
+  return BigInt(balance);
+}
+
+export async function verifyEscrowDepositBalance(
+  connection: Connection,
+  params: Pick<EscrowDepositParams, "payerWallet" | "amount" | "currency">,
+  timeoutMs: number = ESCROW_RPC_REQUEST_TIMEOUT_MS,
+): Promise<void> {
+  const payer = new PublicKey(params.payerWallet);
+  const solBalance = await getVerifiedLamportBalance(
+    connection,
+    payer,
+    timeoutMs,
+  );
+
+  if (params.currency === "SOL") {
+    const requiredLamports =
+      toBaseUnits(params.amount, "SOL") + SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS;
+
+    if (solBalance < requiredLamports) {
+      throw new EscrowDepositPreflightError(
+        `Insufficient wallet balance (Required: ${formatBaseUnits(requiredLamports, 9)} SOL, Available: ${formatBaseUnits(solBalance, 9)} SOL)`,
+        "INSUFFICIENT_BALANCE",
+      );
+    }
+
+    return;
+  }
+
+  if (solBalance < SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient SOL balance for fees and rent (Required: 0.005 SOL, Available: ${formatBaseUnits(solBalance, 9)} SOL). The USDC deposit requires ${formatBaseUnits(toBaseUnits(params.amount, "USDC"), USDC_DECIMALS)} USDC.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+
+  const payerAta = getAssociatedTokenAddressSync(USDC_MINT, payer);
+  const requiredUsdcBaseUnits = toBaseUnits(params.amount, "USDC");
+  const tokenAccount = await withEscrowRpcTimeout(
+    () => connection.getAccountInfo(payerAta, "confirmed"),
+    timeoutMs,
+    "verify the USDC token account",
+  );
+
+  if (!tokenAccount) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: 0 USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+
+  if (!tokenAccount.owner.equals(TOKEN_PROGRAM_ID)) {
+    throw new EscrowDepositPreflightError(
+      "The USDC token account is invalid. Please verify the account and try again.",
+      "INVALID_TOKEN_ACCOUNT",
+    );
+  }
+
+  const tokenBalance = await withEscrowRpcTimeout(
+    () => connection.getTokenAccountBalance(payerAta, "confirmed"),
+    timeoutMs,
+    "verify the USDC token balance",
+  ).catch((error: unknown) => {
+    const tokenAccountError =
+      error instanceof EscrowDepositPreflightError
+        ? getTokenAccountErrorReason(error.rpcError)
+        : null;
+
+    if (tokenAccountError === "missing") {
+      throw new EscrowDepositPreflightError(
+        `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: 0 USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+        "INSUFFICIENT_BALANCE",
+        error,
+      );
+    }
+
+    if (tokenAccountError === "uninitialized") {
+      throw new EscrowDepositPreflightError(
+        "The USDC token account is not initialized. Initialize and fund it before retrying.",
+        "INVALID_TOKEN_ACCOUNT",
+        error,
+      );
+    }
+    throw error;
+  });
+
+  const { amount, decimals } = tokenBalance.value;
+  if (decimals !== USDC_DECIMALS || !/^\d+$/.test(amount)) {
+    throw new EscrowDepositPreflightError(
+      "Could not verify the USDC token balance because Solana RPC returned invalid token balance data. Please try again.",
+      "BALANCE_CHECK_FAILED",
+    );
+  }
+
+  const availableUsdcBaseUnits = BigInt(amount);
+  if (availableUsdcBaseUnits < requiredUsdcBaseUnits) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: ${formatBaseUnits(availableUsdcBaseUnits, USDC_DECIMALS)} USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+}
+
 export async function buildSolDepositTransaction(
   params: EscrowDepositParams,
 ): Promise<EscrowDepositResult> {
@@ -169,11 +710,40 @@ export async function buildSolDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "SOL");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  await verifyEscrowDepositBalance(connection, params);
+  const { blockhash, lastValidBlockHeight } = await withEscrowRpcTimeout(
+    () => connection.getLatestBlockhash("confirmed"),
+    ESCROW_RPC_REQUEST_TIMEOUT_MS,
+    "prepare the escrow transaction",
+    "RPC_REQUEST_FAILED",
+  );
 
   const transaction = new Transaction({
     recentBlockhash: blockhash,
     feePayer: payer,
+  });
+
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
+
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+  const priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+    transaction,
+    estimateFee: () =>
+      getPriorityFeeEstimator().estimatePriorityFee(connection, [
+        payer,
+        escrowVault,
+      ]),
+    priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+    maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
   });
 
   const memoData = Buffer.from(
@@ -203,6 +773,8 @@ export async function buildSolDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
+    priorityFeeDiagnostics,
   };
 }
 
@@ -219,7 +791,13 @@ export async function buildUsdcDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "USDC");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  await verifyEscrowDepositBalance(connection, params);
+  const { blockhash, lastValidBlockHeight } = await withEscrowRpcTimeout(
+    () => connection.getLatestBlockhash("confirmed"),
+    ESCROW_RPC_REQUEST_TIMEOUT_MS,
+    "prepare the escrow transaction",
+    "RPC_REQUEST_FAILED",
+  );
 
   const payerAta = getAssociatedTokenAddressSync(
     USDC_MINT,
@@ -239,6 +817,30 @@ export async function buildUsdcDepositTransaction(
   const transaction = new Transaction({
     recentBlockhash: blockhash,
     feePayer: payer,
+  });
+
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
+
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+  const priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+    transaction,
+    estimateFee: () =>
+      getPriorityFeeEstimator().estimatePriorityFee(connection, [
+        payer,
+        payerAta,
+        vaultAta,
+      ]),
+    priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+    maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
   });
 
   const memoData = Buffer.from(
@@ -274,6 +876,8 @@ export async function buildUsdcDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
+    priorityFeeDiagnostics,
   };
 }
 
@@ -338,9 +942,9 @@ export async function verifyDeposit(
   signature: string,
   expectedParams: {
     bookingId: string;
-    payerWallet: string;
-    amount: number;
-    currency: EscrowCurrency;
+    payerWallet?: string;
+    amount?: number;
+    currency?: EscrowCurrency;
   },
   rpcUrl: string,
 ): Promise<{
@@ -348,6 +952,7 @@ export async function verifyDeposit(
   error?: string;
   escrowVault?: string;
   amountBaseUnits?: bigint;
+  payerWallet?: string;
 }> {
   if (!signature) {
     return { verified: false, error: "Transaction signature is required" };
@@ -372,25 +977,33 @@ export async function verifyDeposit(
     }
 
     const { address: escrowVault } = deriveEscrowPDA(expectedParams.bookingId);
-    const expectedAmount = toBaseUnits(
-      expectedParams.amount,
-      expectedParams.currency,
-    );
-    const payer = new PublicKey(expectedParams.payerWallet);
+    const currency = expectedParams.currency ?? "SOL";
+    const expectedAmount =
+      expectedParams.amount !== undefined && expectedParams.amount > 0
+        ? toBaseUnits(expectedParams.amount, currency)
+        : undefined;
 
     const accountKeys = tx.transaction.message.accountKeys;
-    const payerKey = accountKeys.find(
-      (k) => k.pubkey.equals(payer) && k.signer,
-    );
-    if (!payerKey) {
-      return { verified: false, error: "Expected payer is not a signer" };
+    let payerKey: any;
+    if (expectedParams.payerWallet) {
+      const payer = new PublicKey(expectedParams.payerWallet);
+      payerKey = accountKeys.find((k) => k.pubkey.equals(payer) && k.signer);
+      if (!payerKey) {
+        return { verified: false, error: "Expected payer is not a signer" };
+      }
+    } else {
+      payerKey = accountKeys.find((k) => k.signer);
+      if (!payerKey) {
+        return { verified: false, error: "No signer found in transaction" };
+      }
     }
+    const detectedPayer = (payerKey.pubkey as PublicKey).toBase58();
 
     const vaultIndex = accountKeys.findIndex((k) =>
       k.pubkey.equals(escrowVault),
     );
 
-    if (expectedParams.currency === "SOL") {
+    if (currency === "SOL" && expectedAmount !== undefined) {
       if (vaultIndex === -1) {
         return {
           verified: false,
@@ -407,12 +1020,18 @@ export async function verifyDeposit(
           error: `Insufficient deposit: expected ${expectedAmount}, received ${received}`,
         };
       }
+    } else if (vaultIndex === -1) {
+      return {
+        verified: false,
+        error: "Escrow vault not found in transaction accounts",
+      };
     }
 
     return {
       verified: true,
       escrowVault: escrowVault.toBase58(),
       amountBaseUnits: expectedAmount,
+      payerWallet: detectedPayer,
     };
   } catch (e: unknown) {
     return {
@@ -776,6 +1395,73 @@ export async function simulateEscrowTransaction(
 }
 
 /**
+ * Simulates an escrow deposit transaction against the configured RPC pool with failover.
+ */
+export async function simulateEscrowDeposit(
+  params: EscrowDepositParams,
+  options: EscrowQuorumSimulationOptions = {},
+): Promise<EscrowQuorumSimulationResult> {
+  const deposit = await buildDepositTransaction(params);
+  const pool = options.endpoints
+    ? getEscrowRpcPool({ endpoints: options.endpoints })
+    : getEscrowRpcPool();
+  const connection = await pool.getActiveConnection();
+  const tx = Transaction.from(
+    Buffer.from(deposit.serializedTransaction, "base64"),
+  );
+  return simulateEscrowTransaction(connection, tx, options);
+}
+
+/** Hard ceiling for a single RPC status/balance poll request. */
+export const ESCROW_RPC_POLL_TIMEOUT_MS = 5_000;
+
+/**
+ * Runs one RPC poll request under an explicit abort deadline.
+ *
+ * `@solana/web3.js` does not abort in-flight requests on its own, so when a
+ * node blackholes packets (no TCP RST) the returned promise never settles and
+ * the caller's retry loop stalls forever. This helper hands the operation an
+ * `AbortSignal` and also races it against that signal, so the caller always
+ * gets a rejection (`EscrowRpcTimeoutError`) once `timeoutMs` elapses.
+ */
+export async function withRpcPollTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: { timeoutMs?: number; endpoint?: string } = {},
+): Promise<T> {
+  const timeoutMs =
+    typeof options.timeoutMs === "number" &&
+    Number.isFinite(options.timeoutMs) &&
+    options.timeoutMs > 0
+      ? options.timeoutMs
+      : ESCROW_RPC_POLL_TIMEOUT_MS;
+  const endpoint = options.endpoint ?? "rpc-poll";
+
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const timeoutError = new EscrowRpcTimeoutError(timeoutMs, endpoint);
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, timeoutMs);
+    (timer as { unref?: () => void }).unref?.();
+  });
+
+  const opPromise = operation(controller.signal);
+  // Ensure the abandoned operation has an explicit .catch() handler attached
+  // before Promise.race aggregation so late rejections do not go unhandled (#7633).
+  opPromise.catch(() => {});
+  deadline.catch(() => {});
+
+  try {
+    return await Promise.race([opPromise, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
  * Background worker verifying on-chain transaction finalization.
  */
 export async function reconcilePendingSignature({
@@ -787,9 +1473,14 @@ export async function reconcilePendingSignature({
   let attempts = 0;
   while (attempts < maxRetries) {
     try {
-      const status = await connection.getSignatureStatus(signature, {
-        searchTransactionHistory: true,
-      });
+      // A timeout rejects into the catch below, which counts it as a retry.
+      const status = await withRpcPollTimeout(
+        () =>
+          connection.getSignatureStatus(signature, {
+            searchTransactionHistory: true,
+          }),
+        { endpoint: "reconcilePendingSignature" },
+      );
 
       const confirmation = status.value;
       if (confirmation) {
@@ -977,10 +1668,13 @@ export async function buildReleaseTransaction(params: {
   authorityWallet: string;
   rpcUrl: string;
   programId?: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }): Promise<{
   transaction: Transaction;
   serializedTransaction: string;
   escrowVault: string;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }> {
   const recipient = new PublicKey(params.recipientWallet);
   const authority = new PublicKey(params.authorityWallet);
@@ -1007,6 +1701,24 @@ export async function buildReleaseTransaction(params: {
     }),
   );
 
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+  if (
+    params.priorityFeeMicroLamports !== undefined ||
+    params.maxPriorityFeeMicroLamports !== undefined
+  ) {
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction: tx,
+      estimateFee: () =>
+        getPriorityFeeEstimator().estimatePriorityFee(connection, [
+          escrowVault,
+          authority,
+          recipient,
+        ]),
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+  }
+
   const serializedTransaction = tx
     .serialize({ requireAllSignatures: false, verifySignatures: false })
     .toString("base64");
@@ -1015,6 +1727,7 @@ export async function buildReleaseTransaction(params: {
     transaction: tx,
     serializedTransaction,
     escrowVault: escrowVault.toBase58(),
+    ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
   };
 }
 
@@ -1029,10 +1742,13 @@ export async function buildRefundTransaction(params: {
   authorityWallet: string;
   rpcUrl: string;
   programId?: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }): Promise<{
   transaction: Transaction;
   serializedTransaction: string;
   escrowVault: string;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }> {
   const depositor = new PublicKey(params.depositorWallet);
   const authority = new PublicKey(params.authorityWallet);
@@ -1060,6 +1776,24 @@ export async function buildRefundTransaction(params: {
     }),
   );
 
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+  if (
+    params.priorityFeeMicroLamports !== undefined ||
+    params.maxPriorityFeeMicroLamports !== undefined
+  ) {
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction: tx,
+      estimateFee: () =>
+        getPriorityFeeEstimator().estimatePriorityFee(connection, [
+          escrowVault,
+          authority,
+          depositor,
+        ]),
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+  }
+
   const serializedTransaction = tx
     .serialize({ requireAllSignatures: false, verifySignatures: false })
     .toString("base64");
@@ -1068,6 +1802,7 @@ export async function buildRefundTransaction(params: {
     transaction: tx,
     serializedTransaction,
     escrowVault: escrowVault.toBase58(),
+    ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
   };
 }
 
@@ -1312,11 +2047,21 @@ export async function refundEscrow(
 export function isEscrowExpired(
   bookingDate: Date,
   gracePeriodHours: number = 24,
+  clusterBlockTimeSec?: number | null,
+  skewToleranceSeconds: number = MAX_RPC_CLOCK_SKEW_SECONDS,
 ): boolean {
-  const now = new Date().getTime();
-  const expiryTime =
+  const expiryTimeMs =
     new Date(bookingDate).getTime() + gracePeriodHours * 60 * 60 * 1000;
-  return now > expiryTime;
+
+  if (typeof clusterBlockTimeSec === "number" && Number.isFinite(clusterBlockTimeSec)) {
+    // Cluster block-time is in seconds; convert expiryTime to seconds
+    const expiryTimeSec = Math.floor(expiryTimeMs / 1000);
+    // Tolerate up to skewToleranceSeconds of RPC node clock skew
+    return clusterBlockTimeSec > expiryTimeSec + skewToleranceSeconds;
+  }
+
+  const now = new Date().getTime();
+  return now > expiryTimeMs;
 }
 
 export function deriveEscrowPda(
@@ -1522,6 +2267,8 @@ export interface SubmitEscrowRefundParams {
   onSigned?: (signature: string) => Promise<void> | void;
   confirmationTimeoutMs?: number;
   pollIntervalMs?: number;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -1529,6 +2276,7 @@ export interface EscrowRefundSubmissionResult {
   signature: string;
   escrowVault: string;
   slot?: number;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 /**
@@ -1601,6 +2349,7 @@ export async function submitEscrowRefundTransaction(
   let transaction: Transaction;
   let signature: string;
   let escrowVault: string;
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics;
   try {
     const { blockhash } = await pool.execute((connection) =>
       connection.getLatestBlockhash("confirmed"),
@@ -1621,6 +2370,22 @@ export async function submitEscrowRefundTransaction(
       recentBlockhash: blockhash,
       feePayer: authority.publicKey,
     });
+
+    // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction,
+      estimateFee: () =>
+        pool.execute((conn) =>
+          getPriorityFeeEstimator().estimatePriorityFee(conn, [
+            address,
+            authority.publicKey,
+            depositor,
+          ]),
+        ) as Promise<PriorityFeeEstimate>,
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+
     transaction.add(instruction);
     transaction.sign(authority);
 
@@ -1704,7 +2469,12 @@ export async function submitEscrowRefundTransaction(
           status.confirmationStatus === "finalized" ||
           status.confirmations === null
         ) {
-          return { signature, escrowVault, slot: status.slot };
+          return {
+            signature,
+            escrowVault,
+            slot: status.slot,
+            priorityFeeDiagnostics,
+          };
         }
       }
     } catch (error) {
@@ -2147,6 +2917,20 @@ export class EscrowRpcConnectionPool {
     return this.getConnection(endpoint);
   }
 
+  /**
+   * Connection for one specific endpoint of the pool, creating it on first use.
+   * Rejects for an endpoint that is not part of this pool.
+   */
+  public async getConnectionForEndpoint(endpoint: string): Promise<Connection> {
+    if (!this.endpoints.includes(endpoint)) {
+      throw new EscrowRpcFailoverError(
+        [],
+        `RPC endpoint ${endpoint} is not part of this pool`,
+      );
+    }
+    return this.getConnection(endpoint);
+  }
+
   /** Snapshot of per-endpoint health across the cluster. */
   public getHealthReport(): EscrowRpcEndpointHealth[] {
     return this.endpoints.map((endpoint) => {
@@ -2221,8 +3005,19 @@ export class EscrowRpcConnectionPool {
           }
 
           if (attempt >= this.maxRetriesPerEndpoint || !retryable) {
+            const nextCandidateIndex =
+              candidates[candidates.indexOf(index) + 1];
+            if (nextCandidateIndex !== undefined) {
+              console.warn(
+                `[EscrowRpcPool] Endpoint ${endpoint} failed (${toEscrowErrorMessage(error)}), failing over to ${this.endpoints[nextCandidateIndex]}`,
+              );
+            }
             break;
           }
+
+          console.warn(
+            `[EscrowRpcPool] Attempt ${attempt + 1} on ${endpoint} failed (${toEscrowErrorMessage(error)}), retrying with backoff...`,
+          );
 
           await this.sleep(
             computeEscrowRpcBackoffDelay(
@@ -2321,21 +3116,21 @@ export class EscrowRpcConnectionPool {
   private withTimeout<T>(promise: Promise<T>, endpoint: string): Promise<T> {
     if (this.requestTimeoutMs <= 0) return promise;
 
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
         reject(new EscrowRpcTimeoutError(this.requestTimeoutMs, endpoint));
       }, this.requestTimeoutMs);
-      timer.unref?.();
-      promise.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      );
+      (timer as { unref?: () => void }).unref?.();
+    });
+
+    // Ensure all endpoint probe promises and timeout wrappers have explicit .catch()
+    // handlers attached before Promise.race aggregation (#7633).
+    promise.catch(() => {});
+    timeoutPromise.catch(() => {});
+
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
     });
   }
 
@@ -2456,6 +3251,16 @@ export class EscrowClient {
     return this.pool.execute((connection) => connection.getLatestBlockhash());
   }
 
+  /** Fetches the latest blockhash with exponential backoff on transient RPC errors. */
+  public async getLatestBlockhashWithRetry(
+    maxRetries = 3,
+    baseBackoffMs = 500,
+  ): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+    return this.pool.execute((connection) =>
+      fetchLatestBlockhashWithBackoff(connection, maxRetries, baseBackoffMs),
+    );
+  }
+
   /** Fetches a transaction's signature status through the failover pool. */
   public async getSignatureStatus(
     signature: string,
@@ -2490,6 +3295,20 @@ export class EscrowClient {
       pollSignatureStatus: (signature) => this.getSignatureStatus(signature),
     });
   }
+
+  /**
+   * Subscribes to signature confirmation via WebSocket with automatic two-stage
+   * HTTP polling fallback.
+   */
+  public subscribeToConfirmation(
+    signature: string,
+    options?: Omit<SubscribeToEscrowConfirmationOptions, "pool">,
+  ): EscrowConfirmationSubscription {
+    return subscribeToEscrowConfirmation(signature, {
+      ...options,
+      pool: this.pool,
+    });
+  }
 }
 
 let defaultEscrowClient: EscrowClient | null = null;
@@ -2510,4 +3329,1198 @@ export function resetEscrowClient(): void {
   defaultEscrowClient = null;
 }
 
+// ===========================================================================
+// WebSocket Confirmation Streaming & Monotonic State Machine (#7773)
+// ===========================================================================
+
+export type EscrowConfirmationStatus =
+  | "pending"
+  | "processed"
+  | "confirmed"
+  | "finalized"
+  | "fallback_polling"
+  | "failed"
+  | "timeout";
+
+export type EscrowConfirmationSource = "websocket" | "http_polling";
+
+export interface EscrowConfirmationEvent {
+  signature: string;
+  status: EscrowConfirmationStatus;
+  source: EscrowConfirmationSource;
+  slot?: number | null;
+  error?: string | null;
+  timestamp: number;
+}
+
+export interface EscrowConfirmationCallbacks {
+  onStatusChange?: (event: EscrowConfirmationEvent) => void;
+  onProcessed?: (event: EscrowConfirmationEvent) => void;
+  onConfirmed?: (event: EscrowConfirmationEvent) => void;
+  onFinalized?: (event: EscrowConfirmationEvent) => void;
+  onFallbackPolling?: (event: EscrowConfirmationEvent) => void;
+  onError?: (error: Error, event: EscrowConfirmationEvent) => void;
+  onTimeout?: (event: EscrowConfirmationEvent) => void;
+}
+
+export interface SubscribeToEscrowConfirmationOptions {
+  connection?: Connection;
+  pool?: EscrowRpcConnectionPool;
+  commitment?: "processed" | "confirmed" | "finalized";
+  confirmTimeoutMs?: number; // Stage 1 watchdog: 30s default
+  confirmationTimeoutMs?: number; // alias
+  finalizeTimeoutMs?: number; // Stage 2 watchdog: 15s default
+  finalizationTimeoutMs?: number; // alias
+  overallTimeoutMs?: number; // Overall budget timeout: 55s default
+  pollIntervalMs?: number; // HTTP fallback poll initial interval: 2s or 500ms default
+  httpPollingIntervalMs?: number; // alias
+  minPollIntervalMs?: number; // Minimum backoff interval (default: 500ms)
+  maxPollIntervalMs?: number; // Maximum backoff cap (default: 8000ms)
+  pollBackoffMultiplier?: number; // Exponential backoff multiplier (default: 2.0)
+  lastValidBlockHeight?: number; // For blockhash expiration detection
+  callbacks?: EscrowConfirmationCallbacks;
+  pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  onWebSocketDisconnect?: (reason?: string) => void;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface EscrowConfirmationSubscription {
+  signature: string;
+  getStatus: () => EscrowConfirmationStatus;
+  getLatestEvent: () => EscrowConfirmationEvent;
+  unsubscribe: () => void;
+  promise: Promise<EscrowConfirmationEvent>;
+}
+
+export const ESCROW_CONFIRM_WATCHDOG_MS = 30_000;
+export const ESCROW_FINALIZE_WATCHDOG_MS = 15_000;
+export const ESCROW_STREAMING_OVERALL_TIMEOUT_MS = 55_000;
+export const ESCROW_STREAMING_POLL_INTERVAL_MS = 2_000;
+export const ESCROW_MIN_POLL_INTERVAL_MS = 500;
+export const ESCROW_MAX_POLL_INTERVAL_MS = 8_000;
+export const ESCROW_POLL_BACKOFF_MULTIPLIER = 2.0;
+
+export class EscrowConfirmationStateMachine {
+  private currentStatus: EscrowConfirmationStatus = "pending";
+  private currentSource: EscrowConfirmationSource = "websocket";
+  private currentCommitmentRank = 0; // 0: none/pending, 1: processed, 2: confirmed, 3: finalized
+  private _isTerminal = false;
+  private latestEvent: EscrowConfirmationEvent;
+  private readonly signature: string;
+  private readonly callbacks?: EscrowConfirmationCallbacks;
+  private readonly now: () => number;
+  private listeners: Array<(event: EscrowConfirmationEvent) => void> = [];
+  public readonly promise: Promise<EscrowConfirmationEvent>;
+  private resolvePromise!: (value: EscrowConfirmationEvent) => void;
+  private rejectPromise!: (reason: any) => void;
+
+  constructor(
+    signature: string,
+    callbacks?: EscrowConfirmationCallbacks,
+    now: () => number = Date.now,
+  ) {
+    this.signature = signature;
+    this.callbacks = callbacks;
+    this.now = now;
+    this.latestEvent = {
+      signature,
+      status: "pending",
+      source: "websocket",
+      slot: null,
+      error: null,
+      timestamp: this.now(),
+    };
+
+    this.promise = new Promise<EscrowConfirmationEvent>((resolve, reject) => {
+      this.resolvePromise = resolve;
+      this.rejectPromise = reject;
+    });
+  }
+
+  public abort(reason = "Subscription cancelled"): void {
+    if (this._isTerminal) return;
+    this._isTerminal = true;
+    const err = new Error(reason);
+    this.promise.catch(() => {});
+    this.rejectPromise(err);
+  }
+
+  public getStatus(): EscrowConfirmationStatus {
+    return this.currentStatus;
+  }
+
+  public getCommitmentRank(): number {
+    return this.currentCommitmentRank;
+  }
+
+  public getLatestEvent(): EscrowConfirmationEvent {
+    return { ...this.latestEvent };
+  }
+
+  public isDone(): boolean {
+    return this._isTerminal;
+  }
+
+  public isTerminal(): boolean {
+    return this._isTerminal;
+  }
+
+  public subscribe(
+    listener: (event: EscrowConfirmationEvent) => void,
+  ): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  public transition(
+    newStatus: EscrowConfirmationStatus,
+    sourceOrOptions?:
+      | EscrowConfirmationSource
+      | { slot?: number | null; error?: string | null; reason?: string },
+    optionsParam?: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    },
+  ): EscrowConfirmationEvent | null {
+    if (this._isTerminal) {
+      return null;
+    }
+
+    let source: EscrowConfirmationSource = "websocket";
+    let options: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    } = {};
+
+    if (typeof sourceOrOptions === "string") {
+      source = sourceOrOptions;
+      if (optionsParam) options = optionsParam;
+    } else if (
+      typeof sourceOrOptions === "object" &&
+      sourceOrOptions !== null
+    ) {
+      options = sourceOrOptions;
+    }
+
+    // Determine commitment rank
+    let targetRank = this.currentCommitmentRank;
+    if (newStatus === "processed") targetRank = 1;
+    else if (newStatus === "confirmed") targetRank = 2;
+    else if (newStatus === "finalized") targetRank = 3;
+
+    // Reject out-of-order commitment regressions
+    // e.g. processed arriving when already confirmed (1 < 2)
+    if (
+      (newStatus === "processed" ||
+        newStatus === "confirmed" ||
+        newStatus === "finalized") &&
+      targetRank < this.currentCommitmentRank
+    ) {
+      return null;
+    }
+
+    // Duplicate event check
+    if (
+      newStatus === this.currentStatus &&
+      targetRank === this.currentCommitmentRank &&
+      newStatus !== "fallback_polling"
+    ) {
+      return null;
+    }
+
+    // Update state
+    this.currentStatus = newStatus;
+    this.currentSource = source;
+    if (targetRank > this.currentCommitmentRank) {
+      this.currentCommitmentRank = targetRank;
+    }
+
+    const event: EscrowConfirmationEvent = {
+      signature: this.signature,
+      status: newStatus,
+      source,
+      slot: options.slot ?? this.latestEvent.slot ?? null,
+      error: options.error ?? null,
+      timestamp: this.now(),
+    };
+    this.latestEvent = event;
+
+    // Check terminal
+    if (
+      newStatus === "finalized" ||
+      newStatus === "failed" ||
+      newStatus === "timeout"
+    ) {
+      this._isTerminal = true;
+      if (newStatus === "finalized") {
+        this.resolvePromise(event);
+      } else {
+        const err = new Error(
+          options.error || `Escrow confirmation ended in state: ${newStatus}`,
+        );
+        // Avoid unhandled rejection crash if caller doesn't attach .catch to promise
+        this.promise.catch(() => {});
+        this.rejectPromise(err);
+      }
+    }
+
+    // Fire listeners and callbacks safely
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (lErr) {
+        console.error("[EscrowStateMachine] Error in listener:", lErr);
+      }
+    }
+
+    try {
+      this.callbacks?.onStatusChange?.(event);
+      if (newStatus === "processed") this.callbacks?.onProcessed?.(event);
+      else if (newStatus === "confirmed") this.callbacks?.onConfirmed?.(event);
+      else if (newStatus === "finalized") {
+        this.callbacks?.onFinalized?.(event);
+      } else if (newStatus === "fallback_polling") {
+        this.callbacks?.onFallbackPolling?.(event);
+      } else if (newStatus === "failed") {
+        const err = new Error(options.error || "Escrow confirmation failed");
+        this.callbacks?.onError?.(err, event);
+      } else if (newStatus === "timeout") {
+        this.callbacks?.onTimeout?.(event);
+      }
+    } catch (cbErr) {
+      console.error("[EscrowStateMachine] Error in callback:", cbErr);
+    }
+
+    return event;
+  }
+}
+
+/**
+ * Subscribes to Solana transaction signature confirmation via WebSocket RPC subscriptions
+ * with automatic two-stage fallback to HTTP polling.
+ *
+ * Stage 1 (0-30s): Listens on WebSocket at processed, confirmed, and finalized commitment.
+ * If confirmed/finalized is not received within 30s, transitions to fallback_polling.
+ * Stage 2: Once confirmed, if finalized is not received within 15s, maintains HTTP polling until finality.
+ * Overall budget (55s): Terminates safely before serverless execution boundaries.
+ */
+export function subscribeToEscrowConfirmation(
+  signature: string,
+  options: SubscribeToEscrowConfirmationOptions = {},
+): EscrowConfirmationSubscription {
+  if (!signature || typeof signature !== "string" || !signature.trim()) {
+    throw new Error("Valid transaction signature is required");
+  }
+  const cleanSignature = signature.trim();
+
+  const confirmTimeoutMs =
+    options.confirmationTimeoutMs ??
+    options.confirmTimeoutMs ??
+    ESCROW_CONFIRM_WATCHDOG_MS;
+  const finalizeTimeoutMs =
+    options.finalizationTimeoutMs ??
+    options.finalizeTimeoutMs ??
+    ESCROW_FINALIZE_WATCHDOG_MS;
+  const overallTimeoutMs =
+    options.overallTimeoutMs ?? ESCROW_STREAMING_OVERALL_TIMEOUT_MS;
+  const initialPollDelayMs =
+    options.httpPollingIntervalMs ??
+    options.pollIntervalMs ??
+    options.minPollIntervalMs ??
+    ESCROW_MIN_POLL_INTERVAL_MS;
+  const maxPollIntervalMs =
+    options.maxPollIntervalMs ?? ESCROW_MAX_POLL_INTERVAL_MS;
+  const pollBackoffMultiplier =
+    options.pollBackoffMultiplier ?? ESCROW_POLL_BACKOFF_MULTIPLIER;
+  const lastValidBlockHeight = options.lastValidBlockHeight;
+  const targetCommitment = options.commitment ?? "finalized";
+  const now = options.now ?? Date.now;
+
+  let currentPollDelayMs = initialPollDelayMs;
+
+  const stateMachine = new EscrowConfirmationStateMachine(
+    cleanSignature,
+    options.callbacks,
+    now,
+  );
+
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  let finalizeTimer: ReturnType<typeof setTimeout> | undefined;
+  let overallTimer: ReturnType<typeof setTimeout> | undefined;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let isUnsubscribed = false;
+  let isPollingActive = false;
+
+  let connection: Connection | null = options.connection ?? null;
+  const pool = options.pool ?? getEscrowRpcPool();
+
+  let processedSubId: number | undefined;
+  let confirmedSubId: number | undefined;
+  let finalizedSubId: number | undefined;
+  let subStateRemovers: Array<() => void> = [];
+
+  const cleanupListeners = () => {
+    for (const remover of subStateRemovers) {
+      try {
+        remover();
+      } catch {}
+    }
+    subStateRemovers = [];
+
+    if (connection) {
+      const activeConn = connection;
+      if (processedSubId !== undefined) {
+        const id = processedSubId;
+        processedSubId = undefined;
+        try {
+          void activeConn.removeSignatureListener(id);
+        } catch {}
+      }
+      if (confirmedSubId !== undefined) {
+        const id = confirmedSubId;
+        confirmedSubId = undefined;
+        try {
+          void activeConn.removeSignatureListener(id);
+        } catch {}
+      }
+      if (finalizedSubId !== undefined) {
+        const id = finalizedSubId;
+        finalizedSubId = undefined;
+        try {
+          void activeConn.removeSignatureListener(id);
+        } catch {}
+      }
+    }
+  };
+
+  const cleanupTimers = () => {
+    if (confirmTimer) {
+      clearTimeout(confirmTimer);
+      confirmTimer = undefined;
+    }
+    if (finalizeTimer) {
+      clearTimeout(finalizeTimer);
+      finalizeTimer = undefined;
+    }
+    if (overallTimer) {
+      clearTimeout(overallTimer);
+      overallTimer = undefined;
+    }
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = undefined;
+    }
+  };
+
+  const unsubscribe = () => {
+    if (isUnsubscribed) return;
+    isUnsubscribed = true;
+    cleanupTimers();
+    void cleanupListeners();
+    stateMachine.abort("Subscription unsubscribed by caller");
+  };
+
+  // Start overall timeout timer
+  overallTimer = setTimeout(() => {
+    if (stateMachine.isDone() || isUnsubscribed) return;
+    stateMachine.transition(
+      "timeout",
+      isPollingActive ? "http_polling" : "websocket",
+      {
+        error: `Confirmation timed out after ${overallTimeoutMs}ms`,
+      },
+    );
+    unsubscribe();
+  }, overallTimeoutMs);
+  overallTimer.unref?.();
+
+  // Helper to trigger HTTP fallback polling loop
+  const triggerHttpFallback = (reason?: string) => {
+    if (stateMachine.isDone() || isUnsubscribed || isPollingActive) return;
+    isPollingActive = true;
+    options.onWebSocketDisconnect?.(reason);
+    stateMachine.transition("fallback_polling", "http_polling", {
+      error: reason,
+    });
+    void pollOnce();
+  };
+
+  // Helper to check blockhash expiration
+  const checkBlockhashExpired = async (): Promise<boolean> => {
+    if (lastValidBlockHeight === undefined || lastValidBlockHeight === null) {
+      return false;
+    }
+    try {
+      let currentHeight: number;
+      if (connection) {
+        currentHeight = await connection.getBlockHeight(targetCommitment);
+      } else {
+        currentHeight = await pool.execute((conn) =>
+          conn.getBlockHeight(targetCommitment),
+        );
+      }
+      return currentHeight > lastValidBlockHeight;
+    } catch {
+      return false;
+    }
+  };
+
+  // Single status fetch shared by every polling path. Each request is bounded
+  // by a 5s abort deadline so a blackholed RPC node can never hang the loop;
+  // a timeout rejects and is handled by the caller like any other poll error.
+  const fetchSignatureStatus = (): Promise<SignatureStatus | null> =>
+    withRpcPollTimeout(
+      async () => {
+        if (options.pollSignatureStatus) {
+          return options.pollSignatureStatus(cleanSignature);
+        }
+        if (connection) {
+          const res = await connection.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          });
+          return res.value?.[0] ?? null;
+        }
+        const res = await pool.execute((conn) =>
+          conn.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          }),
+        );
+        return res.value?.[0] ?? null;
+      },
+      { endpoint: "escrow-confirmation-poll" },
+    );
+
+  // Helper to poll signature status once
+  const pollOnce = async () => {
+    if (stateMachine.isDone() || isUnsubscribed) return;
+
+    let status: SignatureStatus | null = null;
+    try {
+      status = await fetchSignatureStatus();
+    } catch (pollErr) {
+      console.warn(
+        `[EscrowStreaming] HTTP poll failed for ${cleanSignature}:`,
+        pollErr,
+      );
+      scheduleNextPoll();
+      return;
+    }
+
+    if (stateMachine.isDone() || isUnsubscribed) return;
+
+    if (status) {
+      if (status.err) {
+        stateMachine.transition("failed", "http_polling", {
+          slot: status.slot,
+          error:
+            typeof status.err === "string"
+              ? status.err
+              : JSON.stringify(status.err),
+        });
+        unsubscribe();
+        return;
+      }
+
+      const commitment = status.confirmationStatus;
+      if (commitment === "finalized" || status.confirmations === null) {
+        stateMachine.transition("finalized", "http_polling", {
+          slot: status.slot,
+        });
+        unsubscribe();
+        return;
+      }
+
+      if (commitment === "confirmed") {
+        stateMachine.transition("confirmed", "http_polling", {
+          slot: status.slot,
+        });
+
+        if (targetCommitment === "confirmed") {
+          unsubscribe();
+          return;
+        }
+
+        // Continue polling for finalization
+        if (!finalizeTimer) {
+          finalizeTimer = setTimeout(() => {
+            // Watchdog: If finalizeTimer expires, polling continues
+          }, finalizeTimeoutMs);
+          finalizeTimer.unref?.();
+        }
+      } else if (commitment === "processed") {
+        stateMachine.transition("processed", "http_polling", {
+          slot: status.slot,
+        });
+        if (targetCommitment === "processed") {
+          unsubscribe();
+          return;
+        }
+      }
+    } else {
+      // If status is not found, check if blockhash expired
+      const isExpired = await checkBlockhashExpired();
+      if (isExpired && !stateMachine.isDone() && !isUnsubscribed) {
+        let finalCheckSucceeded = false;
+        try {
+          let finalRes: SignatureStatus | null = null;
+          if (options.pollSignatureStatus) {
+            finalRes = await options.pollSignatureStatus(cleanSignature);
+            finalCheckSucceeded = true;
+          } else if (connection) {
+            const res = await connection.getSignatureStatuses(
+              [cleanSignature],
+              {
+                searchTransactionHistory: true,
+              },
+            );
+            finalRes = res.value?.[0] ?? null;
+            finalCheckSucceeded = true;
+          } else {
+            const res = await pool.execute((conn) =>
+              conn.getSignatureStatuses([cleanSignature], {
+                searchTransactionHistory: true,
+              }),
+            );
+            finalRes = res.value?.[0] ?? null;
+            finalCheckSucceeded = true;
+          }
+
+          if (finalRes && !finalRes.err) {
+            const finalCommitment = finalRes.confirmationStatus;
+            if (
+              finalCommitment === "finalized" ||
+              finalRes.confirmations === null
+            ) {
+              stateMachine.transition("finalized", "http_polling", {
+                slot: finalRes.slot,
+              });
+              unsubscribe();
+              return;
+            } else if (finalCommitment === "confirmed") {
+              stateMachine.transition("confirmed", "http_polling", {
+                slot: finalRes.slot,
+              });
+              if (targetCommitment === "confirmed") {
+                unsubscribe();
+                return;
+              }
+            }
+          }
+        } catch {
+          finalCheckSucceeded = false;
+        }
+
+        if (finalCheckSucceeded && !stateMachine.isDone() && !isUnsubscribed) {
+          stateMachine.transition("timeout", "http_polling", {
+            error: `Transaction blockhash expired (current block height exceeded ${lastValidBlockHeight})`,
+          });
+          unsubscribe();
+          return;
+        }
+      }
+    }
+
+    scheduleNextPoll();
+  };
+
+  const scheduleNextPoll = () => {
+    if (stateMachine.isDone() || isUnsubscribed) return;
+    const delay = currentPollDelayMs;
+    // Exponential backoff
+    currentPollDelayMs = Math.min(
+      maxPollIntervalMs,
+      Math.round(currentPollDelayMs * pollBackoffMultiplier),
+    );
+
+    pollTimer = setTimeout(() => {
+      void pollOnce();
+    }, delay);
+    pollTimer.unref?.();
+  };
+
+  // Stage 1 Confirmation Watchdog (30s): If confirmed is not reached within 30s, activate HTTP fallback
+  confirmTimer = setTimeout(() => {
+    if (stateMachine.getCommitmentRank() < 2 && !stateMachine.isDone()) {
+      triggerHttpFallback("30-second WebSocket confirmation watchdog expired");
+    }
+  }, confirmTimeoutMs);
+  confirmTimer.unref?.();
+
+  const registerSubDisconnectListener = (conn: any, subId: number) => {
+    let wasSubscribed = false;
+    if (typeof conn._onSubscriptionStateChange === "function") {
+      try {
+        const remove = conn._onSubscriptionStateChange(
+          subId,
+          (state: string) => {
+            if (stateMachine.isDone() || isUnsubscribed) return;
+            if (state === "subscribed") {
+              wasSubscribed = true;
+            } else if (state === "error") {
+              triggerHttpFallback(
+                `WebSocket subscription ${subId} entered state 'error'`,
+              );
+            } else if (state === "pending" && wasSubscribed) {
+              // Only trigger fallback if subscription was previously active and dropped back to pending
+              triggerHttpFallback(
+                `WebSocket subscription ${subId} disconnected (dropped to 'pending')`,
+              );
+            }
+          },
+        );
+        if (typeof remove === "function") {
+          subStateRemovers.push(remove);
+        }
+      } catch {}
+    }
+  };
+
+  const setupListeners = (conn: Connection) => {
+    connection = conn;
+    if (stateMachine.isDone() || isUnsubscribed) return;
+
+    // Attach connection-level socket error/close listeners if present (for mock or custom providers)
+    const connAny = conn as any;
+    if (typeof connAny.on === "function") {
+      const onWsError = (err: any) => {
+        triggerHttpFallback(`WebSocket error: ${err?.message || err}`);
+      };
+      const onWsClose = () => {
+        triggerHttpFallback("WebSocket connection closed");
+      };
+      connAny.on("error", onWsError);
+      connAny.on("close", onWsClose);
+      connAny.on("disconnect", onWsClose);
+      subStateRemovers.push(() => {
+        try {
+          connAny.off?.("error", onWsError);
+          connAny.off?.("close", onWsClose);
+          connAny.off?.("disconnect", onWsClose);
+        } catch {}
+      });
+    }
+
+    // 1. Processed commitment listener
+    try {
+      processedSubId = conn.onSignatureWithOptions(
+        cleanSignature,
+        (notification, context) => {
+          if (stateMachine.isDone() || isUnsubscribed) return;
+          const err =
+            (notification as any)?.err ?? (notification as any)?.result?.err;
+          if (err) {
+            stateMachine.transition("failed", "websocket", {
+              slot: context?.slot,
+              error: typeof err === "string" ? err : JSON.stringify(err),
+            });
+            unsubscribe();
+            return;
+          }
+          stateMachine.transition("processed", "websocket", {
+            slot: context?.slot,
+          });
+          if (targetCommitment === "processed") {
+            unsubscribe();
+          }
+        },
+        { commitment: "processed" },
+      );
+      if (processedSubId !== undefined) {
+        registerSubDisconnectListener(conn, processedSubId);
+      }
+    } catch (e) {
+      console.warn(
+        "[EscrowStreaming] Failed to subscribe to processed notification:",
+        e,
+      );
+    }
+
+    // 2. Confirmed commitment listener
+    try {
+      confirmedSubId = conn.onSignatureWithOptions(
+        cleanSignature,
+        (notification, context) => {
+          if (stateMachine.isDone() || isUnsubscribed) return;
+          const err =
+            (notification as any)?.err ?? (notification as any)?.result?.err;
+          if (err) {
+            stateMachine.transition("failed", "websocket", {
+              slot: context?.slot,
+              error: typeof err === "string" ? err : JSON.stringify(err),
+            });
+            unsubscribe();
+            return;
+          }
+
+          // Clear Stage 1 confirmation watchdog
+          if (confirmTimer) {
+            clearTimeout(confirmTimer);
+            confirmTimer = undefined;
+          }
+
+          stateMachine.transition("confirmed", "websocket", {
+            slot: context?.slot,
+          });
+
+          if (targetCommitment === "confirmed") {
+            unsubscribe();
+            return;
+          }
+
+          // Start Stage 2 Finalization Watchdog (15s):
+          // If finalized is not received within 15s of confirmed, trigger HTTP polling
+          if (!finalizeTimer && !stateMachine.isDone()) {
+            finalizeTimer = setTimeout(() => {
+              if (
+                stateMachine.getCommitmentRank() < 3 &&
+                !stateMachine.isDone()
+              ) {
+                triggerHttpFallback(
+                  "15-second post-confirmation finalization watchdog expired",
+                );
+              }
+            }, finalizeTimeoutMs);
+            finalizeTimer.unref?.();
+          }
+        },
+        { commitment: "confirmed" },
+      );
+      if (confirmedSubId !== undefined) {
+        registerSubDisconnectListener(conn, confirmedSubId);
+      }
+    } catch (e) {
+      console.warn(
+        "[EscrowStreaming] Failed to subscribe to confirmed notification:",
+        e,
+      );
+    }
+
+    // 3. Finalized commitment listener
+    try {
+      finalizedSubId = conn.onSignatureWithOptions(
+        cleanSignature,
+        (notification, context) => {
+          if (stateMachine.isDone() || isUnsubscribed) return;
+          const err =
+            (notification as any)?.err ?? (notification as any)?.result?.err;
+          if (err) {
+            stateMachine.transition("failed", "websocket", {
+              slot: context?.slot,
+              error: typeof err === "string" ? err : JSON.stringify(err),
+            });
+            unsubscribe();
+            return;
+          }
+
+          stateMachine.transition("finalized", "websocket", {
+            slot: context?.slot,
+          });
+          unsubscribe();
+        },
+        { commitment: "finalized" },
+      );
+      if (finalizedSubId !== undefined) {
+        registerSubDisconnectListener(conn, finalizedSubId);
+      }
+    } catch (e) {
+      console.warn(
+        "[EscrowStreaming] Failed to subscribe to finalized notification:",
+        e,
+      );
+    }
+
+    // If all three subscriptions failed to register, fall back immediately to HTTP polling
+    if (
+      processedSubId === undefined &&
+      confirmedSubId === undefined &&
+      finalizedSubId === undefined
+    ) {
+      triggerHttpFallback(
+        "WebSocket subscription registration failed across all commitments",
+      );
+    }
+  };
+
+  // Initialize WebSocket subscriptions
+  if (connection) {
+    setupListeners(connection);
+  } else {
+    (async () => {
+      try {
+        let conn: Connection | undefined;
+        if (typeof (pool as any).getActiveConnection === "function") {
+          conn = await (pool as any).getActiveConnection();
+        } else if (typeof (pool as any).getConnection === "function") {
+          conn = await (pool as any).getConnection();
+        } else {
+          conn = await pool.execute((c) => Promise.resolve(c));
+        }
+
+        if (conn && !isUnsubscribed && !stateMachine.isDone()) {
+          setupListeners(conn);
+        }
+      } catch (connErr) {
+        console.warn(
+          "[EscrowStreaming] Failed to acquire connection for WebSocket subscription:",
+          connErr,
+        );
+        triggerHttpFallback(
+          "Failed to acquire connection for WebSocket subscription",
+        );
+      }
+    })();
+  }
+
+  return {
+    signature: cleanSignature,
+    getStatus: () => stateMachine.getStatus(),
+    getLatestEvent: () => stateMachine.getLatestEvent(),
+    unsubscribe,
+    promise: stateMachine.promise,
+  };
+}
+
 export * from "./solanaPayEscrow";
+export * from "./priorityFeeEstimator";
+export * from "./escrowTransactionRetry";
+
+// ---------------------------------------------------------------------------
+// Rate-limit retry & stateful settlement client
+// ---------------------------------------------------------------------------
+
+export const RPC_RETRY_INITIAL_DELAY_MS = 500;
+export const RPC_RETRY_MULTIPLIER = 2;
+export const RPC_MAX_RETRIES = 3;
+export const RPC_JITTER_RANGE_MS = 200;
+export const RPC_BUSY_USER_MESSAGE = "Solana RPC busy. Please retry shortly.";
+
+export interface RpcRetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  multiplier?: number;
+  jitterRangeMs?: number;
+  randomFn?: () => number;
+  sleepFn?: (ms: number) => Promise<void>;
+}
+
+export function isRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+
+  if (typeof error === "string") {
+    return /\b429\b|too many requests/i.test(error);
+  }
+
+  if (typeof error === "object") {
+    const errObj = error as {
+      status?: unknown;
+      statusCode?: unknown;
+      code?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+
+    const numericCodes = [errObj.status, errObj.statusCode, errObj.code];
+    if (numericCodes.some((val) => val === 429 || val === "429")) {
+      return true;
+    }
+
+    if (typeof errObj.message === "string" && isRateLimitError(errObj.message)) {
+      return true;
+    }
+
+    if (errObj.cause && isRateLimitError(errObj.cause)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function computeBackoffDelayMs(
+  retryIndex: number,
+  options: Pick<
+    RpcRetryOptions,
+    "initialDelayMs" | "multiplier" | "jitterRangeMs" | "randomFn"
+  > = {},
+): number {
+  const initialDelayMs = options.initialDelayMs ?? RPC_RETRY_INITIAL_DELAY_MS;
+  const multiplier = options.multiplier ?? RPC_RETRY_MULTIPLIER;
+  const jitterRangeMs = options.jitterRangeMs ?? RPC_JITTER_RANGE_MS;
+  const randomFn = options.randomFn ?? Math.random;
+
+  const exponentialDelay =
+    initialDelayMs * Math.pow(multiplier, Math.max(0, retryIndex));
+  const jitter = (randomFn() * 2 - 1) * jitterRangeMs;
+  return Math.max(0, Math.round(exponentialDelay + jitter));
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function withRpcRateLimitRetry<T>(
+  operation: () => Promise<T>,
+  options: RpcRetryOptions = {},
+): Promise<T> {
+  const maxRetries = options.maxRetries ?? RPC_MAX_RETRIES;
+  const sleepFn = options.sleepFn ?? defaultSleep;
+
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isRateLimitError(error)) {
+        throw error;
+      }
+
+      if (attempt >= maxRetries) {
+        const busyError = new Error(RPC_BUSY_USER_MESSAGE);
+        (busyError as Error & { cause?: unknown }).cause = error;
+        throw busyError;
+      }
+
+      const delayMs = computeBackoffDelayMs(attempt, options);
+      attempt += 1;
+      await sleepFn(delayMs);
+    }
+  }
+}
+
+export interface SettlementRequest {
+  escrowId: string;
+  targetState: Extract<
+    EscrowLifecycleState,
+    "released" | "refunded" | "partially_refunded"
+  >;
+  idempotencyKey: string;
+  refundBasisPoints?: number;
+  nowUnixSeconds?: number;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
+}
+
+export interface SettlementReceipt {
+  idempotencyKey: string;
+  txSignature: string;
+  escrow: EscrowRecord;
+  deduplicated: boolean;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
+}
+
+export interface EscrowAccountSnapshot {
+  escrowId: string;
+  status: "funded" | "released" | "refunded" | "pending";
+  lamports: number;
+}
+
+export interface SolanaEscrowRpcLike {
+  getAccountInfo?: (address: string) => Promise<unknown>;
+  getEscrowStatus?: (escrowId: string) => Promise<EscrowAccountSnapshot>;
+  estimatePriorityFee?: (
+    record: EscrowRecord,
+  ) => Promise<number | PriorityFeeEstimate>;
+  submitSettlement?: (
+    record: EscrowRecord,
+    idempotencyKey: string,
+    options?: {
+      priorityFeeMicroLamports?: number;
+      priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
+    },
+  ) => Promise<{ txSignature: string }>;
+}
+
+export class SolanaEscrowClient {
+  private readonly rpc: SolanaEscrowRpcLike;
+  private readonly retryOptions: RpcRetryOptions;
+  private readonly escrows = new Map<string, EscrowRecord>();
+  private readonly settlementReceipts = new Map<string, SettlementReceipt>();
+  private readonly inFlightSettlements = new Map<
+    string,
+    Promise<SettlementReceipt>
+  >();
+
+  constructor(
+    rpc: SolanaEscrowRpcLike = {},
+    initialEscrowsOrRetry: EscrowRecord[] | RpcRetryOptions = [],
+  ) {
+    this.rpc = rpc;
+    if (Array.isArray(initialEscrowsOrRetry)) {
+      this.retryOptions = {};
+      for (const item of initialEscrowsOrRetry) {
+        this.escrows.set(item.escrowId, item);
+      }
+    } else {
+      this.retryOptions = initialEscrowsOrRetry ?? {};
+    }
+  }
+
+  public async getEscrowStatus(escrowId: string): Promise<EscrowAccountSnapshot> {
+    return withRpcRateLimitRetry(async () => {
+      if (typeof this.rpc.getEscrowStatus === "function") {
+        return this.rpc.getEscrowStatus(escrowId);
+      }
+      if (typeof this.rpc.getAccountInfo === "function") {
+        const info = await this.rpc.getAccountInfo(escrowId);
+        return {
+          escrowId,
+          status: info ? "funded" : "pending",
+          lamports: 0,
+        };
+      }
+      throw new Error("No RPC method available on escrow client");
+    }, this.retryOptions);
+  }
+
+  public registerEscrow(record: EscrowRecord): void {
+    this.escrows.set(record.escrowId, record);
+  }
+
+  public getEscrow(escrowId: string): EscrowRecord | undefined {
+    return this.escrows.get(escrowId);
+  }
+
+  public openDispute(
+    escrowId: string,
+    disputeReason: string,
+    nowUnixSeconds?: number,
+  ): EscrowRecord {
+    const current = this.escrows.get(escrowId);
+    if (!current) {
+      throw new Error(`Escrow "${escrowId}" not found`);
+    }
+    const updated = transitionEscrowRecord(current, "disputed", {
+      disputeReason,
+      nowUnixSeconds,
+    });
+    this.escrows.set(escrowId, updated);
+    return updated;
+  }
+
+  public async settleEscrow(
+    request: SettlementRequest,
+  ): Promise<SettlementReceipt> {
+    const existingReceipt = this.settlementReceipts.get(request.idempotencyKey);
+    if (existingReceipt) {
+      return { ...existingReceipt, deduplicated: true };
+    }
+
+    const inFlight = this.inFlightSettlements.get(request.idempotencyKey);
+    if (inFlight) {
+      const receipt = await inFlight;
+      return { ...receipt, deduplicated: true };
+    }
+
+    const execution = (async (): Promise<SettlementReceipt> => {
+      const current = this.escrows.get(request.escrowId);
+      if (!current) {
+        throw new Error(`Escrow "${request.escrowId}" not found`);
+      }
+
+      const nextRecord = transitionEscrowRecord(current, request.targetState, {
+        refundBasisPoints: request.refundBasisPoints,
+        nowUnixSeconds: request.nowUnixSeconds,
+      });
+
+      let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+      if (
+        request.priorityFeeMicroLamports !== undefined ||
+        request.maxPriorityFeeMicroLamports !== undefined ||
+        typeof this.rpc.estimatePriorityFee === "function"
+      ) {
+        let estimatedFee: number | null = null;
+        if (
+          request.priorityFeeMicroLamports === undefined &&
+          typeof this.rpc.estimatePriorityFee === "function"
+        ) {
+          const estimated = await this.rpc.estimatePriorityFee(nextRecord);
+          estimatedFee =
+            typeof estimated === "number"
+              ? estimated
+              : estimated.microLamports;
+        }
+        priorityFeeDiagnostics = resolveCappedPriorityFee({
+          explicitMicroLamports: request.priorityFeeMicroLamports,
+          estimatedMicroLamports: estimatedFee,
+          maxPriorityFeeMicroLamports: request.maxPriorityFeeMicroLamports,
+        });
+      }
+
+      const txResult =
+        typeof this.rpc.submitSettlement === "function"
+          ? await this.rpc.submitSettlement(
+              nextRecord,
+              request.idempotencyKey,
+              priorityFeeDiagnostics
+                ? {
+                    priorityFeeMicroLamports:
+                      priorityFeeDiagnostics.appliedMicroLamports,
+                    priorityFeeDiagnostics,
+                  }
+                : undefined,
+            )
+          : {
+              txSignature: `sig_${request.escrowId}_${request.idempotencyKey}`,
+            };
+
+      this.escrows.set(request.escrowId, nextRecord);
+
+      const receipt: SettlementReceipt = {
+        idempotencyKey: request.idempotencyKey,
+        txSignature: txResult.txSignature,
+        escrow: nextRecord,
+        deduplicated: false,
+        ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
+      };
+      this.settlementReceipts.set(request.idempotencyKey, receipt);
+      return receipt;
+    })();
+
+    this.inFlightSettlements.set(request.idempotencyKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightSettlements.delete(request.idempotencyKey);
+    }
+  }
+
+  public async triggerGracePeriodAutoRefund(
+    escrowId: string,
+    idempotencyKey: string,
+    nowUnixSeconds?: number,
+  ): Promise<SettlementReceipt> {
+    const current = this.escrows.get(escrowId);
+    if (!current) {
+      throw new Error(`Escrow "${escrowId}" not found`);
+    }
+
+    const eligible = isAutoRefundEligible({
+      state: current.state,
+      fundedAtUnixSeconds: current.fundedAtUnixSeconds,
+      gracePeriodSeconds: current.gracePeriodSeconds,
+      hostCheckedIn: current.hostCheckedIn,
+      nowUnixSeconds,
+    });
+
+    if (!eligible) {
+      throw new EscrowTransitionError(
+        current.state,
+        "refunded",
+        "Escrow is not eligible for grace-period auto-refund",
+      );
+    }
+
+    return this.settleEscrow({
+      escrowId,
+      targetState: "refunded",
+      idempotencyKey,
+      nowUnixSeconds,
+    });
+  }
+}

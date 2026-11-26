@@ -49,8 +49,8 @@ export default function SignInPage() {
       </div>
 
       {/* Right Side - Sign In Form */}
-      <div className="flex-1 flex items-center justify-center p-4 lg:p-12">
-        <div className="w-full max-w-md">
+      <div className="min-w-0 flex-1 flex items-center justify-center p-4 lg:p-12">
+        <div className="w-full min-w-0 max-w-md break-words text-sm">
           {/* Mobile Logo */}
           <div className="lg:hidden mb-8 text-center">
             <Link href="/" className="inline-flex items-center gap-2">

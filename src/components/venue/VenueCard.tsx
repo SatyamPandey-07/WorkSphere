@@ -1,231 +1,504 @@
 "use client";
 
- fix/telemetry-ws-backoff-jitter
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { Copy, Check } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
+import {
+  generateWalkingIsochrone,
+  IsochronePolygon,
+  IsochronePresetMinutes,
+  ISOCHRONE_PRESETS,
+} from "@/lib/routing/ecoRoutingEngine";
+import {
+  useBleProximity,
+  type BleProximityResult,
+} from "@/hooks/useBleProximity";
 
- fix/canvas-provider-idb-memory-leak
- main
-import React from "react";
-import Image from "next/image";
-import { PhotoAttribution } from "./VenueGallery";
-
-export interface VenueCardProps {
-  id: string;
-  name: string;
-  address?: string;
-  imageUrl?: string;
-  attribution?: PhotoAttribution;
-  rating?: number;
-  wifiSpeed?: number;
-  noiseLevel?: string;
-  onClick?: () => void;
+export interface Coordinates {
+  lat: number;
+  lng: number;
 }
 
-export function VenueCard({
-  name,
-  address,
-  imageUrl,
-  attribution,
-  rating,
-  wifiSpeed,
-  noiseLevel,
-  onClick,
-}: VenueCardProps) {
-  // Fallback check for photographer string
-  const photographerName = attribution?.photographer?.trim() || "Verified Contributor";
+export interface VenueCardData {
+  id: string;
+  name: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  latitude?: number;
+  longitude?: number;
+  neighborhood?: string;
+}
+
+export interface VenueCardProps {
+  venue: VenueCardData;
+  userLocation?: Coordinates | null;
+  onSelect?: (venue: VenueCardData) => void;
+  className?: string;
+  showIsochroneMap?: boolean;
+  enableBleProximity?: boolean;
+}
+
+export const WALKING_SPEED_KMH = 4.8;
+export const TRANSIT_SPEED_KMH = 20;
+
+export function hasValidCoordinates(
+  coord: { lat?: unknown; lng?: unknown } | null | undefined,
+): coord is Coordinates {
+  if (!coord) return false;
+  return (
+    typeof coord.lat === "number" &&
+    Number.isFinite(coord.lat) &&
+    coord.lat >= -90 &&
+    coord.lat <= 90 &&
+    typeof coord.lng === "number" &&
+    Number.isFinite(coord.lng) &&
+    coord.lng >= -180 &&
+    coord.lng <= 180
+  );
+}
+
+export function extractVenueCoordinates(
+  venue: VenueCardData,
+): Coordinates | null {
+  const candidate: Coordinates = {
+    lat: venue.lat ?? venue.latitude ?? Number.NaN,
+    lng: venue.lng ?? venue.longitude ?? Number.NaN,
+  };
+  return hasValidCoordinates(candidate) ? candidate : null;
+}
+
+export function haversineDistanceKm(a: Coordinates, b: Coordinates): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h =
+    sinLat * sinLat +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+export function estimateMinutesForSpeed(
+  distanceKm: number,
+  speedKmh: number,
+): number {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
+  if (!Number.isFinite(speedKmh) || speedKmh <= 0) return 0;
+  return Math.max(1, Math.round((distanceKm / speedKmh) * 60));
+}
+
+export function formatTravelDuration(totalMinutes: number): string {
+  const safeMinutes = Math.max(0, Math.round(totalMinutes));
+  if (safeMinutes < 60) {
+    return `${safeMinutes} min`;
+  }
+  const hours = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
+}
+
+export function getVenueTravelEstimates(
+  userLocation: Coordinates | null | undefined,
+  venue: VenueCardData,
+): {
+  distanceKm: number;
+  walkMinutes: number;
+  transitMinutes: number;
+  walkLabel: string;
+  transitLabel: string;
+} | null {
+  if (!hasValidCoordinates(userLocation)) return null;
+  const venueCoords = extractVenueCoordinates(venue);
+  if (!venueCoords) return null;
+
+  const distanceKm = haversineDistanceKm(userLocation, venueCoords);
+  const walkMinutes = estimateMinutesForSpeed(distanceKm, WALKING_SPEED_KMH);
+  const transitMinutes = estimateMinutesForSpeed(distanceKm, TRANSIT_SPEED_KMH);
+
+  return {
+    distanceKm,
+    walkMinutes,
+    transitMinutes,
+    walkLabel: `${formatTravelDuration(walkMinutes)} walk`,
+    transitLabel: `${formatTravelDuration(transitMinutes)} transit`,
+  };
+}
+
+export const VenueCard: React.FC<VenueCardProps> = ({
+  venue,
+  userLocation,
+  onSelect,
+  className = "",
+  showIsochroneMap = true,
+  enableBleProximity = false,
+}) => {
+  const estimates = getVenueTravelEstimates(userLocation, venue);
+  const venueCoords = extractVenueCoordinates(venue);
+  const [selectedMinutes, setSelectedMinutes] =
+    useState<IsochronePresetMinutes>(5);
+  const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyAddress = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!venue.address) return;
+
+    let success = false;
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        navigator.clipboard.writeText
+      ) {
+        await navigator.clipboard.writeText(venue.address);
+        success = true;
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = venue.address;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        success = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = venue.address;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        success = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch {
+        success = false;
+      }
+    }
+
+    if (success) {
+      setCopied(true);
+      toast("Venue address copied to clipboard!", "success");
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopied(false);
+        copyTimeoutRef.current = null;
+      }, 2000);
+    } else {
+      toast("Failed to copy address to clipboard", "error");
+    }
+  };
+
+  const bleProximity: BleProximityResult = useBleProximity();
+
+  const hasGps = hasValidCoordinates(userLocation);
+
+  // Generate isochrone polygon when userLocation is available
+  const isochrone: IsochronePolygon | null = useMemo(() => {
+    if (!hasGps || !userLocation) return null;
+    return generateWalkingIsochrone(userLocation, selectedMinutes);
+  }, [hasGps, userLocation, selectedMinutes]);
+
+  // Compute SVG viewBox and polygon points to render overlay cleanly with a fixed scale
+  const svgMapData = useMemo(() => {
+    if (!isochrone || !userLocation) return null;
+
+    const width = 280;
+    const height = 140;
+    const center = { x: width / 2, y: height / 2 };
+
+    // Standard map projection scale: max 15-min walk is 1.25 km (~0.0112 degrees).
+    // Use fixed degrees-per-pixel so that a 5-min, 10-min, and 15-min ring visibly expands.
+    const maxSpanDeg = 0.035; // ~3.8 km total viewport span
+    const scale = (height - 20) / maxSpanDeg; // pixels per degree
+
+    const toSvgCoords = (pt: { lat: number; lng: number }) => {
+      // Longitude correction for latitude cos factor
+      const cosLat = Math.cos((userLocation.lat * Math.PI) / 180) || 1;
+      const x = center.x + (pt.lng - userLocation.lng) * cosLat * scale;
+      const y = center.y - (pt.lat - userLocation.lat) * scale;
+      return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+    };
+
+    const originSvg = center;
+    const venueSvg = venueCoords ? toSvgCoords(venueCoords) : null;
+    const polyPoints = isochrone.coordinates
+      .map((pt) => {
+        const svgPt = toSvgCoords(pt);
+        return `${svgPt.x},${svgPt.y}`;
+      })
+      .join(" ");
+
+    return {
+      width,
+      height,
+      originSvg,
+      venueSvg,
+      polyPoints,
+    };
+  }, [isochrone, userLocation, venueCoords]);
 
   return (
-    <div
-      onClick={onClick}
-      className="group relative flex flex-col overflow-hidden rounded-xl bg-slate-900 border border-slate-800 p-4 shadow-md transition-all hover:border-slate-700 cursor-pointer"
+    <article
+      data-testid={`venue-card-${venue.id}`}
+      onClick={onSelect ? () => onSelect(venue) : undefined}
+      className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
+        onSelect ? "cursor-pointer" : ""
+      } ${className}`.trim()}
     >
-      {/* Venue Photo Container */}
-      {imageUrl && (
-        <div className="relative h-40 w-full overflow-hidden rounded-lg bg-slate-800">
-          <Image
-            src={imageUrl}
-            alt={name}
-            fill
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
-          />
-        </div>
-      )}
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-base font-semibold text-slate-900">{venue.name}</h3>
 
-      {/* Venue Details */}
-      <div className="mt-3 flex flex-col gap-1">
-        <h3 className="font-semibold text-lg text-slate-100 group-hover:text-indigo-400 transition-colors">
-          {name}
-        </h3>
-        {address && <p className="text-xs text-slate-400">{address}</p>}
-
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
-          {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
-          {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
-          {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
-        </div>
-
-        {/* Photo Attribution with secure link & fallback safeguard */}
-        {attribution && (
-          <div className="mt-2 text-[11px] text-slate-500">
-            Photo by{" "}
-            {attribution.photographerUrl ? (
-              <a
-                href={attribution.photographerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="underline hover:text-slate-300"
+        {enableBleProximity && (
+          <div
+            data-testid="venue-ble-proximity-indicator"
+            className="inline-flex items-center gap-1.5"
+          >
+            {bleProximity.status === "nearby" && (
+              <span
+                data-testid="ble-proximity-nearby-badge"
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 animate-pulse"
+                title={`Beacon nearby (~${bleProximity.distance}m, ${bleProximity.rssi} dBm)`}
               >
-                {photographerName}
-              </a>
-            ) : (
-              <span>{photographerName}</span>
+                <span aria-hidden="true">📡</span>
+                <span>Nearby ({bleProximity.distance}m)</span>
+              </span>
+            )}
+            {bleProximity.status === "connected" &&
+              bleProximity.distance !== null && (
+                <span
+                  data-testid="ble-proximity-connected-badge"
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                  title={`Beacon detected (~${bleProximity.distance}m)`}
+                >
+                  <span aria-hidden="true">📶</span>
+                  <span>{bleProximity.distance}m away</span>
+                </span>
+              )}
+            {bleProximity.status === "searching" && (
+              <span
+                data-testid="ble-proximity-searching-badge"
+                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              >
+                <span aria-hidden="true">⏳</span>
+                <span>Searching beacons...</span>
+              </span>
+            )}
+            {bleProximity.status === "idle" && bleProximity.isSupported && (
+              <button
+                type="button"
+                data-testid="ble-proximity-scan-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void bleProximity.startScanning();
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
+                title="Scan for partner hub BLE beacon"
+              >
+                <span aria-hidden="true">📡</span>
+                <span>Detect Beacon</span>
+              </button>
+            )}
+            {!bleProximity.isSupported && (
+              <span
+                data-testid="ble-proximity-unsupported-badge"
+                className="text-[11px] text-slate-400"
+                title="BLE proximity is unsupported in this browser"
+              >
+                BLE unavailable
+              </span>
             )}
           </div>
         )}
       </div>
-    </div>
-  );
- fix/telemetry-ws-backoff-jitter
-}
 
-}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+        <span data-testid="venue-address">{venue.address}</span>
 
-import React, { useState } from "react";
-import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
-import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
-
-export interface VenueCardProps {
-  venue: {
-    id: string;
-    name: string;
-    description?: string;
-    imageUrl?: string;
-  };
-  onBookmark?: (id: string) => void;
-  onFavorite?: (id: string) => void;
-  onShare?: (id: string) => void;
-  /**
-   * Instant booking action for the card's primary button.
-   * When provided, the button renders a keyboard shortcut tooltip hint.
-   */
-  onBook?: (id: string) => void;
-  /**
-   * Shortcut hint shown for the booking action.
-   * Pass `null` to render the booking button without a tooltip hint.
-   */
-  bookingHotkey?: string | null;
-}
-
-const focusRingClasses =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
-
-export const VenueCard: React.FC<VenueCardProps> = ({
-  venue,
-  onBookmark,
-  onFavorite,
-  onShare,
-  onBook,
-  bookingHotkey = "B",
-}) => {
-  const [isBookmarked, setIsBookmarked] = useState(false);
-  const [isFavorited, setIsFavorited] = useState(false);
-
-  const handleBookmark = () => {
-    setIsBookmarked((prev) => !prev);
-    if (onBookmark) onBookmark(venue.id);
-  };
-
-  const handleFavorite = () => {
-    setIsFavorited((prev) => !prev);
-    if (onFavorite) onFavorite(venue.id);
-  };
-
-  const handleShare = () => {
-    if (onShare) onShare(venue.id);
-  };
-
-  const bookingButton = (
-    <button
-      type="button"
-      onClick={() => onBook?.(venue.id)}
-      aria-label={`Instant booking for ${venue.name}`}
-      className={`flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 ${focusRingClasses}`}
-    >
-      <CalendarCheck className="h-4 w-4" aria-hidden="true" />
-      <span>Book now</span>
-    </button>
-  );
-
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-zinc-100 shadow-md">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="truncate text-lg font-bold">{venue.name}</h3>
-        <div className="flex items-center gap-2">
-          {/* Bookmark Button */}
+        {venue.address && (
           <button
             type="button"
-            onClick={handleBookmark}
-            aria-label={`Bookmark ${venue.name}`}
-            aria-pressed={isBookmarked}
-            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 ${
-              isBookmarked ? "text-emerald-400" : "text-zinc-400"
-            } ${focusRingClasses}`}
+            data-testid="copy-venue-address-btn"
+            onClick={handleCopyAddress}
+            aria-label={
+              copied
+                ? "Address copied to clipboard"
+                : `Copy address for ${venue.name}`
+            }
+            title={copied ? "Copied!" : "Copy address"}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
           >
-            <Bookmark className="h-5 w-5" aria-hidden="true" />
+            {copied ? (
+              <>
+                <Check
+                  className="h-3.5 w-3.5 text-emerald-600 animate-in zoom-in-75 duration-200"
+                  aria-hidden="true"
+                />
+                <span
+                  data-testid="copy-address-success-label"
+                  className="text-emerald-600 font-medium text-[11px]"
+                >
+                  Copied!
+                </span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Copy address</span>
+              </>
+            )}
           </button>
+        )}
 
-          {/* Favorite Button */}
-          <button
-            type="button"
-            onClick={handleFavorite}
-            aria-label={`Favorite ${venue.name}`}
-            aria-pressed={isFavorited}
-            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 ${
-              isFavorited ? "text-rose-500" : "text-zinc-400"
-            } ${focusRingClasses}`}
+        {estimates && (
+          <div
+            data-testid="venue-travel-chips"
+            className="inline-flex flex-wrap items-center gap-1.5"
           >
-            <Heart className="h-5 w-5" aria-hidden="true" />
-          </button>
-
-          {/* Quick Share Button */}
-          <button
-            type="button"
-            onClick={handleShare}
-            aria-label={`Share ${venue.name}`}
-            className={`rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-800 ${focusRingClasses}`}
-          >
-            <Share2 className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
+            <span
+              data-testid="venue-walk-chip"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700"
+            >
+              <span aria-hidden="true">🚶</span>
+              <span>{estimates.walkLabel}</span>
+            </span>
+            <span
+              data-testid="venue-transit-chip"
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700"
+            >
+              <span aria-hidden="true">🚇</span>
+              <span>{estimates.transitLabel}</span>
+            </span>
+          </div>
+        )}
       </div>
 
-      {venue.description && (
-        <p className="line-clamp-2 text-sm text-zinc-400">
-          {venue.description}
-        </p>
-      )}
+      {showIsochroneMap && (
+        <div
+          data-testid="venue-isochrone-section"
+          className="mt-3 border-t border-slate-100 pt-3"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+              <span>Walking Reach</span>
+              {isochrone && (
+                <span className="text-[11px] font-normal text-slate-500">
+                  (~{isochrone.radiusMeters}m)
+                </span>
+              )}
+            </span>
 
-      {onBook && (
-        <div className="mt-3">
-          {bookingHotkey === null ? (
-            bookingButton
-          ) : (
-            <ShortcutTooltip
-              content="Instant booking"
-              shortcut={bookingHotkey}
-              withModifier={false}
-              position="top"
-              className="w-full"
+            {/* Travel-time preset controls */}
+            <div
+              data-testid="isochrone-preset-controls"
+              role="group"
+              aria-label="Walking time radius"
+              className="inline-flex rounded-lg bg-slate-100 p-0.5"
             >
-              {bookingButton}
-            </ShortcutTooltip>
+              {ISOCHRONE_PRESETS.map((preset) => {
+                const isSelected = selectedMinutes === preset;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    data-testid={`isochrone-preset-${preset}`}
+                    aria-pressed={isSelected}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedMinutes(preset);
+                    }}
+                    className={`rounded-md px-2 py-0.5 text-xs font-medium transition ${
+                      isSelected
+                        ? "bg-white text-emerald-700 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {preset} min
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Interactive map display or location message */}
+          {hasGps && svgMapData ? (
+            <div
+              data-testid="venue-isochrone-map"
+              className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+            >
+              <svg
+                viewBox={`0 0 ${svgMapData.width} ${svgMapData.height}`}
+                className="w-full h-28 block select-none"
+                data-testid="isochrone-svg-overlay"
+              >
+                {/* Isochrone Polygon Ring */}
+                <polygon
+                  data-testid="isochrone-polygon"
+                  points={svgMapData.polyPoints}
+                  fill="rgba(16, 185, 129, 0.18)"
+                  stroke="#10b981"
+                  strokeWidth="2"
+                  strokeDasharray="none"
+                />
+
+                {/* User Origin Pin */}
+                <circle
+                  data-testid="user-location-pin"
+                  cx={svgMapData.originSvg.x}
+                  cy={svgMapData.originSvg.y}
+                  r="5"
+                  fill="#059669"
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                />
+
+                {/* Venue Target Pin */}
+                {svgMapData.venueSvg && (
+                  <g data-testid="venue-location-pin">
+                    <circle
+                      cx={svgMapData.venueSvg.x}
+                      cy={svgMapData.venueSvg.y}
+                      r="4"
+                      fill="#4f46e5"
+                      stroke="#ffffff"
+                      strokeWidth="1.5"
+                    />
+                  </g>
+                )}
+              </svg>
+            </div>
+          ) : (
+            <div
+              data-testid="isochrone-gps-required"
+              className="rounded-lg bg-amber-50/80 border border-amber-200/60 p-2 text-xs text-amber-800 flex items-center gap-1.5"
+            >
+              <span aria-hidden="true">📍</span>
+              <span>
+                Location access is required for walking radius overlay.
+              </span>
+            </div>
           )}
         </div>
       )}
-    </div>
+    </article>
   );
 };
-
-export default VenueCard;
- main
- main

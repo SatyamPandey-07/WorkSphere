@@ -1,4 +1,5 @@
 "use client";
+import { getSseReconnectDelay } from "@/lib/sseReconnect";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
@@ -42,7 +43,8 @@ export function useDeskReservationCountdown({
   const [expiresAt, setExpiresAt] = useState<number | null>(
     initialExpiresAt || null,
   );
-  const [totalDuration, setTotalDuration] = useState<number>(totalDurationSeconds);
+  const [totalDuration, setTotalDuration] =
+    useState<number>(totalDurationSeconds);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(() => {
     if (!initialExpiresAt) return 0;
     return Math.max(0, Math.ceil((initialExpiresAt - Date.now()) / 1000));
@@ -66,7 +68,10 @@ export function useDeskReservationCountdown({
   useEffect(() => {
     if (initialExpiresAt) {
       setExpiresAt(initialExpiresAt);
-      const remaining = Math.max(0, Math.ceil((initialExpiresAt - Date.now()) / 1000));
+      const remaining = Math.max(
+        0,
+        Math.ceil((initialExpiresAt - Date.now()) / 1000),
+      );
       setRemainingSeconds(remaining);
       setIsExpired(remaining <= 0);
       warningFiredRef.current = false;
@@ -79,7 +84,8 @@ export function useDeskReservationCountdown({
 
   // Cross-tab broadcast channel synchronization
   useEffect(() => {
-    if (typeof window === "undefined" || !("BroadcastChannel" in window)) return;
+    if (typeof window === "undefined" || !("BroadcastChannel" in window))
+      return;
 
     try {
       const channel = new BroadcastChannel(DESK_COUNTDOWN_CHANNEL);
@@ -97,7 +103,10 @@ export function useDeskReservationCountdown({
           setIsExpired(false);
           warningFiredRef.current = false;
           onExtendedRef.current?.(data.expiresAt);
-        } else if (data.type === "COUNTDOWN_RELEASED" || data.type === "COUNTDOWN_EXPIRED") {
+        } else if (
+          data.type === "COUNTDOWN_RELEASED" ||
+          data.type === "COUNTDOWN_EXPIRED"
+        ) {
           setIsExpired(true);
           setRemainingSeconds(0);
           setExpiresAt(null);
@@ -120,61 +129,115 @@ export function useDeskReservationCountdown({
     if (!venueId || !deskId) return;
 
     let eventSource: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let disposed = false;
 
-    try {
-      eventSource = new EventSource(
-        `/api/reservations/events?venueId=${encodeURIComponent(venueId)}`,
-      );
+    const handleExpirationNotification = (payloadRaw: string) => {
+      try {
+        const payload = JSON.parse(payloadRaw);
 
-      eventSource.onopen = () => {
-        setIsLiveSyncActive(true);
-      };
+        if (
+          (payload.type === "DESK_HOLD_EXPIRED" ||
+            payload.type === "SEAT_HOLD_EXPIRED") &&
+          (payload.deskId === deskId || payload.seatId === deskId)
+        ) {
+          setIsExpired(true);
+          setRemainingSeconds(0);
+          setExpiresAt(null);
+          onExpireRef.current?.(deskId);
 
-      const handleExpirationNotification = (payloadRaw: string) => {
-        try {
-          const payload = JSON.parse(payloadRaw);
-          if (
-            (payload.type === "DESK_HOLD_EXPIRED" || payload.type === "SEAT_HOLD_EXPIRED") &&
-            (payload.deskId === deskId || payload.seatId === deskId)
-          ) {
-            setIsExpired(true);
-            setRemainingSeconds(0);
-            setExpiresAt(null);
-            onExpireRef.current?.(deskId);
-
-            // Broadcast to other tabs
-            try {
-              channelRef.current?.postMessage({
-                type: "COUNTDOWN_EXPIRED",
-                venueId,
-                deskId,
-              });
-            } catch {}
-          }
-        } catch {
-          // Ignore invalid frames
+          // Broadcast to other tabs
+          try {
+            channelRef.current?.postMessage({
+              type: "COUNTDOWN_EXPIRED",
+              venueId,
+              deskId,
+            });
+          } catch {}
         }
-      };
+      } catch {
+        // Ignore invalid frames
+      }
+    };
 
-      eventSource.addEventListener("desk_expired", (e: MessageEvent) => {
-        handleExpirationNotification(e.data);
-      });
+    const connect = () => {
+      if (disposed) return;
 
-      eventSource.addEventListener("availability", (e: MessageEvent) => {
-        handleExpirationNotification(e.data);
-      });
-
-      eventSource.onerror = () => {
-        setIsLiveSyncActive(false);
-      };
-    } catch {
-      setIsLiveSyncActive(false);
-    }
-
-    return () => {
       if (eventSource) {
         eventSource.close();
+        eventSource = null;
       }
+
+      try {
+        const source = new EventSource(
+          `/api/reservations/events?venueId=${encodeURIComponent(venueId)}`,
+        );
+
+        eventSource = source;
+
+        source.onopen = () => {
+          if (disposed || eventSource !== source) return;
+
+          retryAttempt = 0;
+          setIsLiveSyncActive(true);
+        };
+
+        source.addEventListener("desk_expired", (e: MessageEvent) => {
+          handleExpirationNotification(e.data);
+        });
+
+        source.addEventListener("availability", (e: MessageEvent) => {
+          handleExpirationNotification(e.data);
+        });
+
+        source.onerror = () => {
+          if (disposed || eventSource !== source) return;
+
+          source.close();
+          eventSource = null;
+          setIsLiveSyncActive(false);
+
+          if (retryTimer !== null) return;
+
+          const delay = getSseReconnectDelay(retryAttempt);
+          retryAttempt += 1;
+
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            connect();
+          }, delay);
+        };
+      } catch {
+        setIsLiveSyncActive(false);
+
+        if (retryTimer !== null) return;
+
+        const delay = getSseReconnectDelay(retryAttempt);
+        retryAttempt += 1;
+
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          connect();
+        }, delay);
+      }
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+
       setIsLiveSyncActive(false);
     };
   }, [venueId, deskId]);
@@ -189,7 +252,11 @@ export function useDeskReservationCountdown({
 
       setRemainingSeconds(secLeft);
 
-      if (secLeft <= warningThresholdSeconds && !warningFiredRef.current && secLeft > 0) {
+      if (
+        secLeft <= warningThresholdSeconds &&
+        !warningFiredRef.current &&
+        secLeft > 0
+      ) {
         warningFiredRef.current = true;
         onWarningRef.current?.(secLeft);
       }
@@ -225,11 +292,16 @@ export function useDeskReservationCountdown({
   // Progress percentage (0% = expired, 100% = fresh)
   const progressPercentage = useMemo(() => {
     if (totalDuration <= 0) return 0;
-    return Math.min(100, Math.max(0, Math.round((remainingSeconds / totalDuration) * 100)));
+    return Math.min(
+      100,
+      Math.max(0, Math.round((remainingSeconds / totalDuration) * 100)),
+    );
   }, [remainingSeconds, totalDuration]);
 
-  const isExpiringSoon = remainingSeconds > 0 && remainingSeconds <= warningThresholdSeconds;
-  const isActive = !!deskId && !!expiresAt && remainingSeconds > 0 && !isExpired;
+  const isExpiringSoon =
+    remainingSeconds > 0 && remainingSeconds <= warningThresholdSeconds;
+  const isActive =
+    !!deskId && !!expiresAt && remainingSeconds > 0 && !isExpired;
 
   /**
    * Extends the countdown timer atomically on Redis.
@@ -239,18 +311,24 @@ export function useDeskReservationCountdown({
       if (!deskId || !venueId) return false;
 
       try {
-        const res = await fetch(`/api/venues/${venueId}/seats/${deskId}/countdown`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "extend", additionalSeconds }),
-        });
+        const res = await fetch(
+          `/api/venues/${venueId}/seats/${deskId}/countdown`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "extend", additionalSeconds }),
+          },
+        );
 
         if (!res.ok) return false;
 
         const data = await res.json();
         if (data.success && data.expiresAt) {
           setExpiresAt(data.expiresAt);
-          const newRemaining = Math.max(0, Math.ceil((data.expiresAt - Date.now()) / 1000));
+          const newRemaining = Math.max(
+            0,
+            Math.ceil((data.expiresAt - Date.now()) / 1000),
+          );
           setRemainingSeconds(newRemaining);
           setTotalDuration((prev) => Math.max(prev, newRemaining));
           setIsExpired(false);
@@ -284,9 +362,12 @@ export function useDeskReservationCountdown({
     if (!deskId || !venueId) return false;
 
     try {
-      const res = await fetch(`/api/venues/${venueId}/seats/${deskId}/countdown`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/venues/${venueId}/seats/${deskId}/countdown`,
+        {
+          method: "DELETE",
+        },
+      );
 
       setExpiresAt(null);
       setRemainingSeconds(0);
@@ -313,12 +394,17 @@ export function useDeskReservationCountdown({
     if (!deskId || !venueId) return;
 
     try {
-      const res = await fetch(`/api/venues/${venueId}/seats/${deskId}/countdown`);
+      const res = await fetch(
+        `/api/venues/${venueId}/seats/${deskId}/countdown`,
+      );
       if (res.ok) {
         const data = await res.json();
         if (data.isLocked && data.expiresAt) {
           setExpiresAt(data.expiresAt);
-          setRemainingSeconds(data.remainingSeconds || Math.max(0, Math.ceil((data.expiresAt - Date.now()) / 1000)));
+          setRemainingSeconds(
+            data.remainingSeconds ||
+              Math.max(0, Math.ceil((data.expiresAt - Date.now()) / 1000)),
+          );
           setIsExpired(false);
         } else {
           setIsExpired(true);

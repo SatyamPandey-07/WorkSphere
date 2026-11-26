@@ -9,6 +9,7 @@ import {
 } from "@/lib/venues/favoriteStorage";
 import type { OfflineVenue } from "@/lib/offlineStorage";
 import { useToast } from "@/components/ui/Toast";
+import { useSound } from "@/components/SoundProvider";
 import { cn } from "@/lib/utils";
 
 export interface BookmarkVenueButtonProps {
@@ -30,6 +31,8 @@ export interface BookmarkVenueButtonProps {
   ) => Promise<boolean | void>;
   className?: string;
   disabled?: boolean;
+  /** Optional toggle to suppress tactile audio feedback for this specific instance */
+  disableSound?: boolean;
   "data-testid"?: string;
 }
 
@@ -49,9 +52,11 @@ export function BookmarkVenueButton({
   onPersist,
   className = "",
   disabled = false,
+  disableSound = false,
   "data-testid": dataTestId,
 }: BookmarkVenueButtonProps) {
   const { toast } = useToast();
+  const { playBookmarkSound } = useSound({ suppressError: true });
   const [isFavorited, setIsFavorited] = useState<boolean>(() => {
     if (typeof initialIsFavorited === "boolean") return initialIsFavorited;
     return isVenueFavoritedLocally(venueId);
@@ -130,6 +135,15 @@ export function BookmarkVenueButton({
       setIsAnimating(true);
       setJustToggled(true);
 
+      // Play tactile micro-acoustic sound non-blockingly respecting user's global mute setting
+      if (!disableSound) {
+        try {
+          playBookmarkSound?.(nextState);
+        } catch {
+          // Audio playback failure must never interrupt the optimistic bookmark update
+        }
+      }
+
       if (showLoadingOnToggle) {
         setInternalLoading(true);
       }
@@ -188,6 +202,8 @@ export function BookmarkVenueButton({
       onToggle,
       onPersist,
       toast,
+      disableSound,
+      playBookmarkSound,
     ],
   );
 

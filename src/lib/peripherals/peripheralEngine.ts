@@ -135,22 +135,21 @@ class PeripheralLockManager {
 export const peripheralLockManager = new PeripheralLockManager();
 
 /**
- * Generates a secure, deterministic 4-digit unlock PIN for a locker bay.
+ * Generates a cryptographically secure, unpredictable 4-digit unlock PIN for a locker bay (#9582).
  */
-export function generateLockerPin(itemId: string, userId: string): string {
-  const hash = crypto
-    .createHash("sha256")
-    .update(`${itemId}:${userId}:${Date.now().toString().slice(0, 8)}`)
-    .digest("hex");
-  const num = parseInt(hash.slice(0, 4), 16) % 10000;
-  return num.toString().padStart(4, "0");
+export function generateLockerPin(_itemId?: string, _userId?: string): string {
+  return crypto.randomInt(1000, 10000).toString();
 }
 
 /**
  * Calculates rental fees and final balance upon item return.
  */
 export function calculateRentalCompletion(
-  rental: PeripheralRental,
+  rental: {
+    startTime: string | Date;
+    hourlyRate: number;
+    depositAmount: number;
+  },
   returnTime = new Date(),
 ): { durationHours: number; rentalCost: number; refundedDeposit: number } {
   const start = new Date(rental.startTime);

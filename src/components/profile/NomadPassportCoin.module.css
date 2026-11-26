@@ -171,6 +171,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .rotor {
-    transition-duration: 1ms;
+    transition: none !important;
   }
 }

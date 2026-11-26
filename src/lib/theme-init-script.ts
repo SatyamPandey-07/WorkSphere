@@ -57,7 +57,11 @@ export const THEME_INIT_SCRIPT = `
       purple: "#a855f7",
       emerald: "#10b981",
       amber: "#f59e0b",
-      "lantern-emerald": "#00ff88"
+      "lantern-emerald": "#00ff88",
+      indigo: "#4338ca",
+      rose: "#be123c",
+      cyan: "#0e7490",
+      violet: "#6d28d9"
     };
     var accent = accentColors[accentStored] || accentColors.blue;
     document.documentElement.style.setProperty("--primary-accent", accent);

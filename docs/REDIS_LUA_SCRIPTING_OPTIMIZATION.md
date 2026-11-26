@@ -40,7 +40,7 @@ Redis client instantiation is implemented in two patterns across the codebase:
 
 1. **Lazy Singleton Pattern with Environment Guard**:
 
-   Used in rate limiting, analytics, database telemetry, and performance telemetry ([src/lib/rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts#L43-L63), [src/lib/redis.ts](file:///c:/Codes/WorkSphere/src/lib/redis.ts#L5-L21), [src/lib/analytics.ts](file:///c:/Codes/WorkSphere/src/lib/analytics.ts#L34-L53), [src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts#L58-L79), [src/lib/performanceTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts#L37-L58)).
+   Used in rate limiting, analytics, database telemetry, and performance telemetry ([src/lib/rateLimit.ts](../src/lib/rateLimit.ts#L43-L63), [src/lib/redis.ts](../src/lib/redis.ts#L5-L21), [src/lib/analytics.ts](../src/lib/analytics.ts#L34-L53), [src/lib/dbTelemetry.ts](../src/lib/dbTelemetry.ts#L58-L79), [src/lib/performanceTelemetry.ts](../src/lib/performanceTelemetry.ts#L37-L58)).
 
    ```typescript
    import { Redis } from "@upstash/redis";
@@ -71,7 +71,7 @@ Redis client instantiation is implemented in two patterns across the codebase:
 
 2. **Direct Environment Instantiation**:
 
-   Used in queue processing, event bus, and background workers ([src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts#L5), [src/lib/queue.ts](file:///c:/Codes/WorkSphere/src/lib/queue.ts#L3), [src/lib/reminderCron.ts](file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts#L6), [worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts#L9)).
+   Used in queue processing, event bus, and background workers ([src/lib/events/bus.ts](../src/lib/events/bus.ts#L5), [src/lib/queue.ts](../src/lib/queue.ts#L3), [src/lib/reminderCron.ts](../src/lib/reminderCron.ts#L6), [worker/pdfWorker.ts](../worker/pdfWorker.ts#L9)).
 
    ```typescript
    import { Redis } from "@upstash/redis";
@@ -135,7 +135,7 @@ rateLimit.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts
+../src/lib/rateLimit.ts
 
 )
 
@@ -197,7 +197,7 @@ analytics.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/analytics.ts
+../src/lib/analytics.ts
 
 )
 
@@ -245,7 +245,7 @@ analytics.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/analytics.ts
+../src/lib/analytics.ts
 
 )
 
@@ -297,7 +297,7 @@ dbTelemetry.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts
+../src/lib/dbTelemetry.ts
 
 )
 
@@ -345,7 +345,7 @@ dbTelemetry.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts
+../src/lib/dbTelemetry.ts
 
 )
 
@@ -393,7 +393,7 @@ dbTelemetry.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts
+../src/lib/dbTelemetry.ts
 
 )
 
@@ -445,7 +445,7 @@ performanceTelemetry.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts
+../src/lib/performanceTelemetry.ts
 
 )
 
@@ -501,7 +501,7 @@ bus.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/events/bus.ts
+../src/lib/events/bus.ts
 
 )
 
@@ -557,7 +557,7 @@ queue.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/queue.ts
+../src/lib/queue.ts
 
 )
 
@@ -569,7 +569,7 @@ pdfWorker.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/worker/pdfWorker.ts
+../worker/pdfWorker.ts
 
 )
 
@@ -629,7 +629,7 @@ reminderCron.ts
 
 ](
 
-file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts
+../src/lib/reminderCron.ts
 
 )
 
@@ -759,7 +759,7 @@ The repository implements a **Sliding Window Log** algorithm.
 
 ## Lua Script Architecture
 
-The repository contains **one custom Lua script**, located in [src/lib/rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts#L15-L39).
+The repository contains **one custom Lua script**, located in [src/lib/rateLimit.ts](../src/lib/rateLimit.ts#L15-L39).
 
 ### Script Code Listing
 
@@ -837,11 +837,11 @@ Concurrency issues and race conditions are mitigated through four explicit patte
 
 1. **Single-Threaded Lua Execution**: Redis executes the `SLIDING_WINDOW_LUA` script atomically. The sequence of purging expired entries, counting cardinality, adding a new token, and updating key TTL happens without interruption from concurrent serverless requests.
 
-2. **Redis Pipelines**: Multi-command write operations in telemetry ([src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts#L105-L116) and [src/lib/performanceTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts#L102-L108)) use `redis.pipeline()` to batch `LPUSH`, `LTRIM`, `SADD`, and `HINCRBY` commands into a single round-trip.
+2. **Redis Pipelines**: Multi-command write operations in telemetry ([src/lib/dbTelemetry.ts](../src/lib/dbTelemetry.ts#L105-L116) and [src/lib/performanceTelemetry.ts](../src/lib/performanceTelemetry.ts#L102-L108)) use `redis.pipeline()` to batch `LPUSH`, `LTRIM`, `SADD`, and `HINCRBY` commands into a single round-trip.
 
-3. **Atomic Queue Transfer (`LMOVE`)**: In both the Webhook Event Bus ([src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts#L38-L43)) and PDF Worker ([worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts#L195-L200)), jobs are transferred atomically from the incoming list to a processing list using `LMOVE` (`RIGHT` to `LEFT`). This ensures no job is lost if a worker process crashes mid-poll.
+3. **Atomic Queue Transfer (`LMOVE`)**: In both the Webhook Event Bus ([src/lib/events/bus.ts](../src/lib/events/bus.ts#L38-L43)) and PDF Worker ([worker/pdfWorker.ts](../worker/pdfWorker.ts#L195-L200)), jobs are transferred atomically from the incoming list to a processing list using `LMOVE` (`RIGHT` to `LEFT`). This ensures no job is lost if a worker process crashes mid-poll.
 
-4. **Explicit Lock / Key Deduplication (`SET ex`)**: The booking reminder cron ([src/lib/reminderCron.ts](file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts#L107-L111)) uses `redis.get()` check followed by `redis.set(redisKey, "sent", { ex: 7200 })` to enforce idempotent email dispatch.
+4. **Explicit Lock / Key Deduplication (`SET ex`)**: The booking reminder cron ([src/lib/reminderCron.ts](../src/lib/reminderCron.ts#L107-L111)) uses `redis.get()` check followed by `redis.set(redisKey, "sent", { ex: 7200 })` to enforce idempotent email dispatch.
 
 ---
 
@@ -851,13 +851,13 @@ Concurrency issues and race conditions are mitigated through four explicit patte
 
 - **Generation Point**: Timestamps are generated application-side in Node.js before calling `redis.eval()`.
 
-- **Test Utility / Microsecond Member Helper**: In test suite [src/**tests**/lib/rateLimit.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/rateLimit.test.ts#L108-L118), a `microTimestampMember` function is tested (`1700000000000012:a`) to demonstrate stringifying seconds and microseconds for unique sorted set member collisions under microsecond resolution.
+- **Test Utility / Microsecond Member Helper**: In test suite [src/**tests**/lib/rateLimit.test.ts](../src/__tests__/lib/rateLimit.test.ts#L108-L118), a `microTimestampMember` function is tested (`1700000000000012:a`) to demonstrate stringifying seconds and microseconds for unique sorted set member collisions under microsecond resolution.
 
 ---
 
 ## Concurrency Handling
 
-- **Distributed Workers**: PDF generation workers ([worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts)) and Webhook handlers ([src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts)) handle concurrent polling safely using atomic `LMOVE` state movement.
+- **Distributed Workers**: PDF generation workers ([worker/pdfWorker.ts](../worker/pdfWorker.ts)) and Webhook handlers ([src/lib/events/bus.ts](../src/lib/events/bus.ts)) handle concurrent polling safely using atomic `LMOVE` state movement.
 
 - **Watchdog / Stale Recovery**:
 
@@ -901,7 +901,7 @@ The repository applies the following Redis memory optimization rules:
 
 1. **Graceful Fallback to In-Memory**: All public-facing rate limiting and telemetry functions catch Redis errors and fall back to local in-memory alternatives without throwing uncaught exceptions to the caller.
 
-2. **Next.js `after()` Lifecycle Integration**: In [src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts#L123-L129), async Redis writes are scheduled using Next.js 15+ `after()` to ensure telemetry flushes complete asynchronously without delaying serverless HTTP response times.
+2. **Next.js `after()` Lifecycle Integration**: In [src/lib/dbTelemetry.ts](../src/lib/dbTelemetry.ts#L123-L129), async Redis writes are scheduled using Next.js 15+ `after()` to ensure telemetry flushes complete asynchronously without delaying serverless HTTP response times.
 
 3. **Queue Stale Job Recovery**: Webhook event processing and PDF worker loops run periodic recovery passes to rescue unacknowledged jobs left in processing lists due to node crashes or process restarts.
 
@@ -1287,36 +1287,36 @@ No load test scripts or benchmarking data present.
 
 ## Repository Files Audited
 
-- [package.json](file:///c:/Codes/WorkSphere/package.json)
+- [package.json](../package.json)
 
-- [src/lib/rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts)
+- [src/lib/rateLimit.ts](../src/lib/rateLimit.ts)
 
-- [src/lib/redis.ts](file:///c:/Codes/WorkSphere/src/lib/redis.ts)
+- [src/lib/redis.ts](../src/lib/redis.ts)
 
-- [src/lib/analytics.ts](file:///c:/Codes/WorkSphere/src/lib/analytics.ts)
+- [src/lib/analytics.ts](../src/lib/analytics.ts)
 
-- [src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts)
+- [src/lib/dbTelemetry.ts](../src/lib/dbTelemetry.ts)
 
-- [src/lib/performanceTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts)
+- [src/lib/performanceTelemetry.ts](../src/lib/performanceTelemetry.ts)
 
-- [src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts)
+- [src/lib/events/bus.ts](../src/lib/events/bus.ts)
 
-- [src/lib/queue.ts](file:///c:/Codes/WorkSphere/src/lib/queue.ts)
+- [src/lib/queue.ts](../src/lib/queue.ts)
 
-- [src/lib/reminderCron.ts](file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts)
+- [src/lib/reminderCron.ts](../src/lib/reminderCron.ts)
 
-- [worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts)
+- [worker/pdfWorker.ts](../worker/pdfWorker.ts)
 
-- [src/**tests**/lib/rateLimit.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/rateLimit.test.ts)
+- [src/**tests**/lib/rateLimit.test.ts](../src/__tests__/lib/rateLimit.test.ts)
 
-- [src/**tests**/lib/dbTelemetry.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/dbTelemetry.test.ts)
+- [src/**tests**/lib/dbTelemetry.test.ts](../src/__tests__/lib/dbTelemetry.test.ts)
 
-- [src/**tests**/lib/eventBus.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/eventBus.test.ts)
+- [src/**tests**/lib/eventBus.test.ts](../src/__tests__/lib/eventBus.test.ts)
 
-- [src/app/api/auth/forgot-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/forgot-password/route.ts)
+- [src/app/api/auth/forgot-password/route.ts](../src/app/api/auth/forgot-password/route.ts)
 
-- [src/app/api/auth/resend-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/resend-otp/route.ts)
+- [src/app/api/auth/resend-otp/route.ts](../src/app/api/auth/resend-otp/route.ts) (Retired: returns HTTP 410 Gone; authentication handled via Clerk)
 
-- [src/app/api/auth/reset-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/reset-password/route.ts)
+- [src/app/api/auth/reset-password/route.ts](../src/app/api/auth/reset-password/route.ts)
 
-- [src/app/api/auth/verify-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/verify-otp/route.ts)
+- [src/app/api/auth/verify-otp/route.ts](../src/app/api/auth/verify-otp/route.ts)

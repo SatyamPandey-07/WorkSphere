@@ -3,13 +3,14 @@
  */
 
 import {
-  solanaPayEscrowManager,
   reserveSeatOptimistically,
   rollbackSeatReservation,
   getSeatReservationState,
   resetSeatReservations,
-  DEFAULT_CONFIRMATION_TIMEOUT_MS,
-  type SeatReservationState,
+  calculatePriorityFeeForAttempt,
+  isBlockhashExpiredError,
+  verifyBlockheightExpiration,
+  fetchLatestBlockhashWithBackoff,
   type ReserveSeatOptions,
 } from "@/lib/solana/solanaPayEscrow";
 import {
@@ -40,18 +41,25 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
     subCounter = 1;
 
     mockConnection = {
-      onSignatureWithOptions: jest.fn().mockImplementation(
-        (signature: string, callback: any, options: { commitment: string }) => {
-          const id = subCounter++;
-          signatureCallbacks.set(id, {
-            signature,
-            callback,
-            commitment: options?.commitment ?? "confirmed",
-          });
-          return id;
-        },
-      ),
-      removeSignatureListener: mockRemoveSignatureListener.mockResolvedValue(undefined),
+      onSignatureWithOptions: jest
+        .fn()
+        .mockImplementation(
+          (
+            signature: string,
+            callback: any,
+            options: { commitment: string },
+          ) => {
+            const id = subCounter++;
+            signatureCallbacks.set(id, {
+              signature,
+              callback,
+              commitment: options?.commitment ?? "confirmed",
+            });
+            return id;
+          },
+        ),
+      removeSignatureListener:
+        mockRemoveSignatureListener.mockResolvedValue(undefined),
     };
   });
 
@@ -275,7 +283,9 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
       });
 
       // Trigger confirmed with on-chain error
-      triggerSignatureNotification("confirmed", { InstructionError: [0, "Custom(1)"] });
+      triggerSignatureNotification("confirmed", {
+        InstructionError: [0, "Custom(1)"],
+      });
 
       const state = getSeatReservationState("seat-failed");
       expect(state?.state).toBe("available");
@@ -285,7 +295,10 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
 
       expect(onError).toHaveBeenCalledWith(
         expect.any(Error),
-        expect.objectContaining({ state: "available", paymentStatus: "failed" }),
+        expect.objectContaining({
+          state: "available",
+          paymentStatus: "failed",
+        }),
       );
       expect(onRollback).toHaveBeenCalledWith(
         expect.stringContaining("Transaction failed on-chain"),
@@ -312,11 +325,15 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
       });
 
       // State is provisionally reserved initially
-      expect(getSeatReservationState("seat-timeout")?.state).toBe("provisionally_reserved");
+      expect(getSeatReservationState("seat-timeout")?.state).toBe(
+        "provisionally_reserved",
+      );
 
       // Advance clock by 59 seconds — still waiting
       jest.advanceTimersByTime(59_000);
-      expect(getSeatReservationState("seat-timeout")?.state).toBe("provisionally_reserved");
+      expect(getSeatReservationState("seat-timeout")?.state).toBe(
+        "provisionally_reserved",
+      );
 
       // Advance clock past 60 seconds
       jest.advanceTimersByTime(1_500);
@@ -324,7 +341,9 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
       const state = getSeatReservationState("seat-timeout");
       expect(state?.state).toBe("available");
       expect(state?.paymentStatus).toBe("timeout");
-      expect(state?.error).toContain("timed out after 60 seconds (dropped from mempool)");
+      expect(state?.error).toContain(
+        "timed out after 60 seconds (dropped from mempool)",
+      );
       expect(state?.error).toContain("restored to available");
 
       expect(onError).toHaveBeenCalled();
@@ -352,7 +371,9 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
 
       expect(rolledBack?.state).toBe("available");
       expect(rolledBack?.paymentStatus).toBe("failed");
-      expect(rolledBack?.error).toBe("User cancelled transaction in wallet dialog");
+      expect(rolledBack?.error).toBe(
+        "User cancelled transaction in wallet dialog",
+      );
       expect(getSeatReservationState("seat-manual")?.state).toBe("available");
       expect(mockRemoveSignatureListener).toHaveBeenCalled();
     });
@@ -415,6 +436,211 @@ describe("SolanaPayEscrow: Optimistic UI & WebSocket Confirmation (#7169)", () =
           powSubmission: invalidSubmission,
         }),
       ).rejects.toThrow("Invalid Proof-of-Work");
+    });
+  });
+
+  describe("Slot expiration & dynamic retry lifecycle (#9635)", () => {
+    describe("Priority fee & blockhash helpers", () => {
+      it("calculates stepped micro-lamport priority fee across retry attempts", () => {
+        expect(calculatePriorityFeeForAttempt(5_000, 0)).toBe(5_000);
+        expect(calculatePriorityFeeForAttempt(5_000, 1, 1.5)).toBe(7_500);
+        expect(calculatePriorityFeeForAttempt(5_000, 2, 1.5)).toBe(11_250);
+        expect(calculatePriorityFeeForAttempt(500_000, 3, 1.5, 1_000_000)).toBe(
+          1_000_000,
+        );
+      });
+
+      it("detects blockhash and slot expiration error variants", () => {
+        expect(isBlockhashExpiredError("Blockhash not found")).toBe(true);
+        expect(
+          isBlockhashExpiredError("TransactionExpiredBlockheightExceededError"),
+        ).toBe(true);
+        expect(
+          isBlockhashExpiredError(new Error("blockhash has expired")),
+        ).toBe(true);
+        expect(
+          isBlockhashExpiredError({ message: "BlockheightExceeded" }),
+        ).toBe(true);
+        expect(isBlockhashExpiredError("InstructionError: Custom(1)")).toBe(
+          false,
+        );
+        expect(isBlockhashExpiredError(null)).toBe(false);
+      });
+
+      it("verifies blockheight expiration against current cluster block height", async () => {
+        const mockConn = {
+          getBlockHeight: jest.fn().mockResolvedValue(200_150),
+        } as unknown as Connection;
+
+        const notExpired = await verifyBlockheightExpiration(mockConn, 200_200);
+        expect(notExpired.expired).toBe(false);
+        expect(notExpired.currentBlockHeight).toBe(200_150);
+
+        const expired = await verifyBlockheightExpiration(mockConn, 200_100);
+        expect(expired.expired).toBe(true);
+        expect(expired.currentBlockHeight).toBe(200_150);
+      });
+
+      it("fetches latest blockhash with exponential backoff on transient errors", async () => {
+        jest.useRealTimers();
+        try {
+          const mockConn = {
+            getLatestBlockhash: jest
+              .fn()
+              .mockRejectedValueOnce(new Error("429 Too Many Requests"))
+              .mockResolvedValueOnce({
+                blockhash: "fresh_blockhash_123",
+                lastValidBlockHeight: 300_000,
+              }),
+          } as unknown as Connection;
+
+          const result = await fetchLatestBlockhashWithBackoff(mockConn, 3, 10);
+          expect(result.blockhash).toBe("fresh_blockhash_123");
+          expect(result.lastValidBlockHeight).toBe(300_000);
+          expect(mockConn.getLatestBlockhash).toHaveBeenCalledTimes(2);
+        } finally {
+          jest.useFakeTimers();
+        }
+      });
+    });
+
+    describe("Clock drift & slot lag handling", () => {
+      it("does not prematurely roll back when blockhash is still valid on-chain despite timeout", async () => {
+        mockConnection.getBlockHeight = jest.fn().mockResolvedValue(100_050);
+
+        const onRollback = jest.fn();
+        await reserveSeatOptimistically({
+          connection: mockConnection as Connection,
+          seatId: "seat-drift-1",
+          venueId: "venue-drift",
+          signature: "sig_drift_1",
+          payerWallet: "wallet-drift",
+          amount: 1,
+          timeoutMs: 10_000,
+          lastValidBlockHeight: 100_200, // Still valid (100_050 <= 100_200)
+          callbacks: { onRollback },
+        });
+
+        expect(getSeatReservationState("seat-drift-1")?.state).toBe(
+          "provisionally_reserved",
+        );
+
+        // Advance past initial 10s timeout
+        await jest.advanceTimersByTimeAsync(11_000);
+
+        // Should NOT roll back because blockhash has not expired on-chain
+        expect(onRollback).not.toHaveBeenCalled();
+        expect(getSeatReservationState("seat-drift-1")?.state).toBe(
+          "provisionally_reserved",
+        );
+      });
+    });
+
+    describe("Automatic retry and re-signing lifecycle", () => {
+      it("re-queries blockhash and retries transaction broadcast before failing", async () => {
+        mockConnection.getBlockHeight = jest.fn().mockResolvedValue(100_300);
+        mockConnection.getLatestBlockhash = jest.fn().mockResolvedValue({
+          blockhash: "fresh_blockhash_retry_1",
+          lastValidBlockHeight: 100_450,
+        });
+
+        const resubmitTransaction = jest
+          .fn()
+          .mockResolvedValue("sig_retry_success");
+        const onRetry = jest.fn();
+        const onStateChange = jest.fn();
+        const onConfirmed = jest.fn();
+
+        await reserveSeatOptimistically({
+          connection: mockConnection as Connection,
+          seatId: "seat-retry-1",
+          venueId: "venue-retry",
+          signature: "sig_initial_stale",
+          payerWallet: "wallet-retry",
+          amount: 1,
+          timeoutMs: 5_000,
+          lastValidBlockHeight: 100_200, // Expired (100_300 > 100_200)
+          recentBlockhash: "stale_hash",
+          retryConfig: {
+            maxRetries: 2,
+            baseBackoffMs: 100,
+            priorityFeeMicroLamports: 5_000,
+            feeBumpMultiplier: 1.5,
+          },
+          resubmitTransaction,
+          callbacks: { onRetry, onStateChange, onConfirmed },
+        });
+
+        // Trigger timeout & expiration check
+        await jest.advanceTimersByTimeAsync(6_000);
+
+        expect(onRetry).toHaveBeenCalledWith(
+          1,
+          expect.stringContaining(
+            "Re-querying fresh blockhash with exponential backoff",
+          ),
+          expect.anything(),
+        );
+        expect(resubmitTransaction).toHaveBeenCalledWith(
+          "fresh_blockhash_retry_1",
+          100_450,
+          7_500, // 5000 * 1.5 = 7500
+        );
+
+        // State updated to new signature
+        const state = getSeatReservationState("seat-retry-1");
+        expect(state?.signature).toBe("sig_retry_success");
+        expect(state?.retryAttempt).toBe(1);
+        expect(state?.state).toBe("provisionally_reserved");
+
+        // Now confirm the retried transaction
+        triggerSignatureNotification("confirmed", null, 100_400);
+
+        expect(getSeatReservationState("seat-retry-1")?.state).toBe(
+          "confirmed",
+        );
+        expect(onConfirmed).toHaveBeenCalled();
+      });
+
+      it("gracefully rolls back when retries are exhausted", async () => {
+        mockConnection.getBlockHeight = jest.fn().mockResolvedValue(200_000);
+        mockConnection.getLatestBlockhash = jest.fn().mockResolvedValue({
+          blockhash: "fresh_hash_each_attempt",
+          lastValidBlockHeight: 200_100,
+        });
+
+        const resubmitTransaction = jest
+          .fn()
+          .mockRejectedValue(
+            new Error("TransactionExpiredBlockheightExceededError"),
+          );
+        const onRollback = jest.fn();
+
+        await reserveSeatOptimistically({
+          connection: mockConnection as Connection,
+          seatId: "seat-exhaust-1",
+          venueId: "venue-exhaust",
+          signature: "sig_exhaust_0",
+          payerWallet: "wallet-exhaust",
+          amount: 1,
+          timeoutMs: 2_000,
+          lastValidBlockHeight: 199_000, // Already expired
+          retryConfig: {
+            maxRetries: 1,
+            baseBackoffMs: 50,
+          },
+          resubmitTransaction,
+          callbacks: { onRollback },
+        });
+
+        await jest.advanceTimersByTimeAsync(3_000);
+        await jest.advanceTimersByTimeAsync(3_000);
+
+        const state = getSeatReservationState("seat-exhaust-1");
+        expect(state?.state).toBe("available");
+        expect(state?.paymentStatus).toBe("timeout");
+        expect(onRollback).toHaveBeenCalled();
+      });
     });
   });
 });

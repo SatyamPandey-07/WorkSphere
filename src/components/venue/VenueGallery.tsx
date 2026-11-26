@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import { sanitizeExternalHttpUrl } from "@/lib/utils";
 
 export interface PhotoAttribution {
   photographer?: string;
@@ -34,6 +35,7 @@ export function VenueGallery({
 
   // Fallback to "Verified Contributor" if photographer is undefined or empty
   const photographerName = attribution?.photographer?.trim() || "Verified Contributor";
+  const safePhotographerUrl = sanitizeExternalHttpUrl(attribution?.photographerUrl);
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
@@ -69,9 +71,9 @@ export function VenueGallery({
       {attribution && (
         <div className="text-xs text-slate-400 mt-1">
           Photo by{" "}
-          {attribution.photographerUrl ? (
+          {safePhotographerUrl ? (
             <a
-              href={attribution.photographerUrl}
+              href={safePhotographerUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="underline hover:text-slate-200 transition-colors"

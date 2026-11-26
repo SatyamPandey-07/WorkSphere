@@ -65,3 +65,45 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+/**
+ * Reconciles browser subscription ownership with the authenticated user account.
+ * Used during account switching on shared browsers to avoid reporting false subscriptions
+ * or cross-account notification leaks.
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const endpoint = req.nextUrl.searchParams.get("endpoint");
+    if (!endpoint) {
+      return NextResponse.json({ error: "Missing endpoint" }, { status: 400 });
+    }
+
+    const subscription = await prisma.pushSubscription.findUnique({
+      where: { endpoint },
+      select: { userId: true },
+    });
+
+    const isSubscribed = Boolean(
+      subscription && subscription.userId === userId,
+    );
+    const isOwnedByOther = Boolean(
+      subscription && subscription.userId !== userId,
+    );
+
+    return NextResponse.json({
+      isSubscribed,
+      isOwnedByOther,
+    });
+  } catch (error) {
+    console.error("[Push] Check subscription error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}

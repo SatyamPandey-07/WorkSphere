@@ -168,15 +168,22 @@ export function isPrivateIPv6(ip: string): boolean {
   // 9. 2001:2::/48 (Benchmarking prefix RFC 5180)
   if (h[0] === 0x2001 && h[1] === 0x0002 && h[2] === 0) return true;
 
-  // 10. ::ffff:0:0/96 (IPv4-mapped) & ::ffff:0:a.b.c.d (IPv4-translated)
-  if (
+  // 10. IPv4-mapped (::ffff:a.b.c.d) and IPv4-translated (::ffff:0:a.b.c.d)
+  const isIPv4Mapped =
     h[0] === 0 &&
     h[1] === 0 &&
     h[2] === 0 &&
     h[3] === 0 &&
     h[4] === 0 &&
-    h[5] === 0xffff
-  ) {
+    h[5] === 0xffff;
+  const isIPv4Translated =
+    h[0] === 0 &&
+    h[1] === 0 &&
+    h[2] === 0 &&
+    h[3] === 0 &&
+    h[4] === 0xffff &&
+    h[5] === 0;
+  if (isIPv4Mapped || isIPv4Translated) {
     const b1 = (h[6] >> 8) & 0xff;
     const b2 = h[6] & 0xff;
     const b3 = (h[7] >> 8) & 0xff;

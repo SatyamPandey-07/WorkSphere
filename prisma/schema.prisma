@@ -425,7 +425,9 @@ model AmenityValidation {
   amenity   String // e.g., "wifi", "outlets", "ergonomic"
   upvotes   Int           @default(0)
   downvotes Int           @default(0)
-  votes     AmenityVote[]
+  disputeEscalatedAt DateTime?
+  settlementDeadline DateTime?
+  votes              AmenityVote[]
 
   @@unique([venueId, amenity])
   @@index([venueId])

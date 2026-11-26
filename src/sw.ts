@@ -33,6 +33,18 @@ export type CacheLike = {
   keys: () => Promise<readonly Request[] | Request[]>;
 };
 
+export function isQuotaExceededError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const quotaError = error as { name?: unknown; code?: unknown };
+  return (
+    quotaError.name === "QuotaExceededError" ||
+    quotaError.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    quotaError.code === 22 ||
+    quotaError.code === 1014
+  );
+}
+
 /**
  * Cache expiration plugin managing LRU count limits (maxEntries: 100)
  * and TTL eviction (maxAgeSeconds: 14 days).
@@ -77,11 +89,56 @@ export class CacheExpirationPlugin {
     return this.metadataStore.size;
   }
 
+  async evictOldestEntries(
+    cache: CacheLike,
+    proportion: number = 0.2,
+  ): Promise<string[]> {
+    const keys = (await cache.keys()).filter((request) =>
+      isVenuePhotoUrl(request.url),
+    );
+    const cachedUrls = new Set(keys.map((request) => request.url));
+    for (const url of this.metadataStore.keys()) {
+      if (!cachedUrls.has(url)) this.metadataStore.delete(url);
+    }
+    for (const request of keys) {
+      if (!this.metadataStore.has(request.url)) {
+        this.metadataStore.set(request.url, 0);
+      }
+    }
+
+    const count = this.metadataStore.size;
+    if (count === 0) return [];
+
+    const evictionCount = Math.min(
+      count,
+      Math.max(1, Math.ceil(count * proportion)),
+    );
+    const oldestEntries = Array.from(this.metadataStore.entries())
+      .sort(
+        ([urlA, timeA], [urlB, timeB]) =>
+          timeA - timeB || urlA.localeCompare(urlB),
+      )
+      .slice(0, evictionCount);
+    const deletedUrls: string[] = [];
+
+    for (const [url] of oldestEntries) {
+      if (await cache.delete(new Request(url))) {
+        this.metadataStore.delete(url);
+        deletedUrls.push(url);
+      }
+    }
+
+    return deletedUrls;
+  }
+
   /**
    * Expire stale entries past TTL or drop oldest LRU items exceeding maxEntries.
    * Returns list of deleted URLs.
    */
-  async expireEntries(cache: CacheLike, now: number = Date.now()): Promise<string[]> {
+  async expireEntries(
+    cache: CacheLike,
+    now: number = Date.now(),
+  ): Promise<string[]> {
     const deletedUrls: string[] = [];
 
     // 1. Evict entries that exceed maxAgeSeconds
@@ -119,6 +176,7 @@ export interface StaleWhileRevalidateOptions {
 export class StaleWhileRevalidate {
   readonly cacheName: string;
   readonly expiration: CacheExpirationPlugin;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: StaleWhileRevalidateOptions = {}) {
     this.cacheName = options.cacheName ?? VENUE_PHOTO_CACHE_NAME;
@@ -128,6 +186,51 @@ export class StaleWhileRevalidate {
         maxEntries: MAX_VENUE_PHOTO_ENTRIES,
         maxAgeSeconds: VENUE_PHOTO_MAX_AGE_SECONDS,
       });
+  }
+
+  private async cacheResponse(
+    cache: CacheLike,
+    request: Request,
+    response: Response,
+  ): Promise<void> {
+    const write = this.writeQueue.then(async () => {
+      try {
+        await cache.put(request, response.clone());
+      } catch (error) {
+        if (!isQuotaExceededError(error)) throw error;
+
+        console.warn(
+          "[SW] Venue photo cache quota exceeded; evicting the oldest photos and retrying once.",
+        );
+        try {
+          await this.expiration.evictOldestEntries(cache);
+        } catch (evictionError) {
+          console.warn(
+            "[SW] Unable to evict venue photos after quota error:",
+            evictionError,
+          );
+        }
+
+        try {
+          await cache.put(request, response.clone());
+        } catch (retryError) {
+          if (!isQuotaExceededError(retryError)) throw retryError;
+          console.warn(
+            "[SW] Venue photo cache retry still exceeded quota; serving the image without caching it.",
+          );
+          return;
+        }
+      }
+
+      this.expiration.updateTimestamp(request.url);
+      await this.expiration.expireEntries(cache);
+    });
+
+    this.writeQueue = write.then(
+      () => undefined,
+      () => undefined,
+    );
+    return write;
   }
 
   async handle({
@@ -160,12 +263,10 @@ export class StaleWhileRevalidate {
           networkResponse &&
           (networkResponse.status === 200 || networkResponse.status === 0)
         ) {
-          await cache.put(request, networkResponse.clone());
-          this.expiration.updateTimestamp(request.url);
-          await this.expiration.expireEntries(cache);
+          await this.cacheResponse(cache, request, networkResponse.clone());
         }
         return networkResponse;
-      } catch (error) {
+      } catch {
         // Silently swallow network errors during background revalidation
         return null;
       }
@@ -234,4 +335,46 @@ export async function handleVenuePhotoFetch(
   fetchFn?: typeof fetch,
 ): Promise<Response> {
   return venuePhotoStrategy.handle({ request, event, cacheInstance, fetchFn });
+}
+
+// ─── Service Worker Offline Mutation Sync Handler (Issue #9618) ───────────────
+import {
+  OfflineMutationQueue,
+  offlineMutationQueue,
+  DEFAULT_SYNC_TAG,
+} from "./core/sync/OfflineMutationQueue";
+
+/**
+ * Service Worker sync event listener callback for processing queued offline mutations.
+ * Processes queued offline mutations using Decorrelated Jitter backoff on 5xx errors.
+ */
+export async function handleOfflineMutationSync(
+  queue: OfflineMutationQueue = offlineMutationQueue,
+): Promise<{ succeeded: number; failed: number }> {
+  return queue.flush({ reason: "sync_event" });
+}
+
+/**
+ * Attaches the background sync event listener to the service worker global scope.
+ */
+export function registerOfflineMutationSyncHandler(
+  queue: OfflineMutationQueue = offlineMutationQueue,
+  targetScope: any = typeof self !== "undefined" ? self : undefined,
+) {
+  if (!targetScope || typeof targetScope.addEventListener !== "function") {
+    return;
+  }
+
+  targetScope.addEventListener("sync", (event: any) => {
+    if (
+      event.tag === DEFAULT_SYNC_TAG ||
+      event.tag === "offline-mutation-sync"
+    ) {
+      if (typeof event.waitUntil === "function") {
+        event.waitUntil(handleOfflineMutationSync(queue));
+      } else {
+        void handleOfflineMutationSync(queue);
+      }
+    }
+  });
 }

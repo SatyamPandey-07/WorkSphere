@@ -1,6 +1,6 @@
 # Technical Specification: NomadTaxEngine 183-Day Rule, Tax Treaty Logic, and Compliance Certificate Generation
 
-This document provides a comprehensive technical architecture and reference guide for WorkSphere's **NomadTaxEngine** ([src/lib/tax/nomadTaxEngine.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/tax/nomadTaxEngine.ts), [src/components/billing/NomadTaxComplianceDashboard.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/components/billing/NomadTaxComplianceDashboard.tsx), and [src/app/api/tax/nomad-compliance/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/tax/nomad-compliance/route.ts)).
+This document provides a comprehensive technical architecture and reference guide for WorkSphere's **NomadTaxEngine** ([src/lib/tax/nomadTaxEngine.ts](../../src/lib/tax/nomadTaxEngine.ts), [src/components/billing/NomadTaxComplianceDashboard.tsx](../../src/components/billing/NomadTaxComplianceDashboard.tsx), and [src/app/api/tax/nomad-compliance/route.ts](../../src/app/api/tax/nomad-compliance/route.ts)).
 
 ---
 
@@ -80,9 +80,9 @@ WorkSphere's **NomadTaxEngine** automatically audits verified workspace check-in
 ## 2. Architectural Overview
 
 The compliance suite is implemented in three primary modules:
-- **Domain Engine** ([src/lib/tax/nomadTaxEngine.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/tax/nomadTaxEngine.ts)): Pure algorithmic engine responsible for calendar date grouping, collision arbitration, moving window aggregations, and CSV formatting.
-- **Client Visualization** ([src/components/billing/NomadTaxComplianceDashboard.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/components/billing/NomadTaxComplianceDashboard.tsx)): Interactive dashboard providing real-time visual feedback, quota progress bars, country expense breakdowns, and export triggers.
-- **REST Gateway** ([src/app/api/tax/nomad-compliance/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/tax/nomad-compliance/route.ts)): Next.js App Router endpoints handling database queries, on-demand collision computations, and downloadable file generation.
+- **Domain Engine** ([src/lib/tax/nomadTaxEngine.ts](../../src/lib/tax/nomadTaxEngine.ts)): Pure algorithmic engine responsible for calendar date grouping, collision arbitration, moving window aggregations, and CSV formatting.
+- **Client Visualization** ([src/components/billing/NomadTaxComplianceDashboard.tsx](../../src/components/billing/NomadTaxComplianceDashboard.tsx)): Interactive dashboard providing real-time visual feedback, quota progress bars, country expense breakdowns, and export triggers.
+- **REST Gateway** ([src/app/api/tax/nomad-compliance/route.ts](../../src/app/api/tax/nomad-compliance/route.ts)): Next.js App Router endpoints handling database queries, on-demand collision computations, and downloadable file generation.
 
 ---
 
@@ -455,9 +455,9 @@ Accepts raw physical presence entries to resolve collisions, or exports formatte
 
 ## 9. Repository Code Reference Map
 
-- Core Tax Engine: [src/lib/tax/nomadTaxEngine.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/tax/nomadTaxEngine.ts)
-- Compliance Dashboard Component: [src/components/billing/NomadTaxComplianceDashboard.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/components/billing/NomadTaxComplianceDashboard.tsx)
-- REST API Endpoint: [src/app/api/tax/nomad-compliance/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/tax/nomad-compliance/route.ts)
-- Analytics Page: [src/app/analytics/nomad-tax/page.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/analytics/nomad-tax/page.tsx)
-- Unit & Collision Tests: [src/__tests__/lib/nomadTaxEngine.test.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/__tests__/lib/nomadTaxEngine.test.ts)
-- Tax Exporter Domain Utility: [src/lib/export/domain/taxExporter.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/export/domain/taxExporter.ts)
+- Core Tax Engine: [src/lib/tax/nomadTaxEngine.ts](../../src/lib/tax/nomadTaxEngine.ts)
+- Compliance Dashboard Component: [src/components/billing/NomadTaxComplianceDashboard.tsx](../../src/components/billing/NomadTaxComplianceDashboard.tsx)
+- REST API Endpoint: [src/app/api/tax/nomad-compliance/route.ts](../../src/app/api/tax/nomad-compliance/route.ts)
+- Analytics Page: [src/app/analytics/nomad-tax/page.tsx](../../src/app/analytics/nomad-tax/page.tsx)
+- Unit & Collision Tests: [src/__tests__/lib/nomadTaxEngine.test.ts](../../src/__tests__/lib/nomadTaxEngine.test.ts)
+- Tax Exporter Domain Utility: [src/lib/export/domain/taxExporter.ts](../../src/lib/export/domain/taxExporter.ts)

@@ -44,6 +44,8 @@ import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { VenueSearchEmptyState } from "@/components/venues/VenueSearchEmptyState";
 import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
+import { ChatUnreadBadge } from "@/components/chat/ChatUnreadBadge";
+import { useUnreadMessageTracking } from "@/lib/chat/unreadTracker";
 import { useBatteryStatus } from "@/hooks/useBatteryStatus";
 import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
 import {
@@ -176,6 +178,12 @@ function AppPage() {
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
+
+  const isChatVisible = isSidebarOpen && mobileView === "chat";
+  const { unreadCount } = useUnreadMessageTracking({
+    roomId: sessionId || "default",
+    isChatOpen: isChatVisible,
+  });
   const [routeProfile, setRouteProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
@@ -769,16 +777,28 @@ function AppPage() {
       <div className="lg:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
-          aria-label={`Chat (${formatShortcut("/")})`}
+          aria-label={
+            unreadCount > 0
+              ? `Chat (${unreadCount > 99 ? "99+" : unreadCount} unread messages, ${formatShortcut("/")})`
+              : `Chat (${formatShortcut("/")})`
+          }
           aria-keyshortcuts={getAriaKeyshortcuts("/")}
           title={`Chat (${formatShortcut("/")})`}
-          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all relative ${
             mobileView === "chat"
               ? "accent-text accent-bg-10 accent-bg-dark-20 border-b-2 accent-border"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
-          <MessageCircle className="w-5 h-5" />
+          <div className="relative inline-flex items-center">
+            <MessageCircle className="w-5 h-5" />
+            {mobileView !== "chat" && unreadCount > 0 && (
+              <ChatUnreadBadge
+                count={unreadCount}
+                className="absolute -top-2 -right-3"
+              />
+            )}
+          </div>
           Chat
         </button>
         <button
@@ -1046,11 +1066,21 @@ function AppPage() {
                   exit={{ x: 100, opacity: 0 }}
                   transition={{ type: "spring", bounce: 0, duration: 0.4 }}
                   onClick={() => setIsSidebarOpen(true)}
-                  aria-label={`Open AI Chat (${formatShortcut("/")})`}
+                  aria-label={
+                    unreadCount > 0
+                      ? `Open AI Chat (${unreadCount > 99 ? "99+" : unreadCount} unread messages, ${formatShortcut("/")})`
+                      : `Open AI Chat (${formatShortcut("/")})`
+                  }
                   aria-keyshortcuts={getAriaKeyshortcuts("/")}
-                  className="flex items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white shadow-lg pl-1"
+                  className="relative flex items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white shadow-lg pl-1"
                 >
                   <ChevronLeft className="w-5 h-5" />
+                  {unreadCount > 0 && (
+                    <ChatUnreadBadge
+                      count={unreadCount}
+                      className="absolute -top-2 -left-2"
+                    />
+                  )}
                 </motion.button>
               </ShortcutTooltip>
             </div>

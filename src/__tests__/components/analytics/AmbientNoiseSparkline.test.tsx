@@ -17,7 +17,9 @@ describe("AmbientNoiseSparkline threshold alert badge and line", () => {
     const thresholdLine = screen.getByTestId("noise-threshold-line");
     expect(thresholdLine).toBeInTheDocument();
     expect(thresholdLine).toHaveAttribute("stroke-dasharray", "4 3");
-    expect(screen.getByTestId("noise-threshold-label")).toHaveTextContent("65 dB");
+    expect(screen.getByTestId("noise-threshold-label")).toHaveTextContent(
+      "65 dB",
+    );
 
     // Alert badge must not render when reading is below threshold
     expect(
@@ -56,6 +58,9 @@ describe("AmbientNoiseSparkline threshold alert badge and line", () => {
 
     // Rolling 5-minute average of 70 and 74 is 72 dB (> 65 dB)
     const badge = screen.getByTestId("noise-threshold-alert-badge");
+    const announcement = screen.getByRole("status");
+    expect(announcement).toHaveAttribute("aria-live", "polite");
+    expect(announcement).toHaveTextContent("Ambient noise threshold exceeded");
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent("High Noise Level: 72 dB");
     expect(badge).toHaveAttribute(
@@ -83,7 +88,9 @@ describe("AmbientNoiseSparkline threshold alert badge and line", () => {
       />,
     );
 
-    expect(screen.getByTestId("noise-threshold-label")).toHaveTextContent("75 dB");
+    expect(screen.getByTestId("noise-threshold-label")).toHaveTextContent(
+      "75 dB",
+    );
     expect(
       screen.queryByTestId("noise-threshold-alert-badge"),
     ).not.toBeInTheDocument();

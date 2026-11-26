@@ -23,6 +23,35 @@ Content type: `application/json`
 
 | Field | Type | Required | Validation |
 | --- | --- | --- | --- |
+| `reason` | string | yes | Trimmed string. Must be between 5 and 18 characters in length and match one of the allowed enum values. |
+| `details` | string | no | Trimmed string. |
+
+Allowed `reason` values and character lengths:
+
+- `other` (5 characters - minimum allowed length)
+- `no_wifi` (7 characters)
+- `duplicate` (9 characters)
+- `wrong_hours` (11 characters)
+- `wrong_address` (13 characters)
+- `permanently_closed` (18 characters - maximum allowed length)
+
+### Reason Validation Rules & Behavior
+
+The API performs strict validation on the `reason` field via Zod enum parsing in `src/app/api/venues/[venueId]/flag/route.ts` through the shared `apiHandler`:
+
+1. **Character Length Constraints:**
+   - **Minimum Length:** 5 characters (`"other"`).
+   - **Maximum Length:** 18 characters (`"permanently_closed"`).
+2. **Missing or Empty Reason:**
+   - If the `reason` field is omitted, null, or empty string (`""`), validation fails with HTTP `400 Bad Request`.
+3. **Reason Shorter than Minimum (< 5 characters):**
+   - Any value shorter than 5 characters cannot match any valid enum reason and is rejected with HTTP `400 Bad Request`.
+4. **Reason Longer than Maximum (> 18 characters):**
+   - Any string exceeding 18 characters cannot match any valid enum reason and is rejected with HTTP `400 Bad Request`.
+5. **Valid Reason Within Allowed Range (5–18 characters):**
+   - Must exactly equal one of the 6 allowed values: `permanently_closed`, `wrong_hours`, `no_wifi`, `wrong_address`, `duplicate`, or `other`. Any arbitrary string within this length range that does not match an allowed value is rejected.
+
+The optional `details` field is trimmed before persistence.
 | `reason` | string | yes | Trimmed and must be one of the values below. |
 | `details` | string | no | Trimmed string. |
 

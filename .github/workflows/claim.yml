@@ -162,7 +162,7 @@ jobs:
               if (assignees.length > 0) {
                 const currentAssignees = assignees.map(a => `@${a.login}`).join(', ');
                 const alreadyAssignedMsg = `Hi @${commenter}, this issue is already assigned to ${currentAssignees}. Please feel free to check out other unassigned open issues on the repository! 🚀`;
-                
+
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -189,7 +189,7 @@ jobs:
 
               if (activeIssuesCount >= 10) {
                 const limitMsg = `Hi @${commenter}! You currently have **${activeIssuesCount}** active assigned issues, which reaches our limit of 10 active assigned issues per person. Please submit PRs or resolve your current assigned issues before claiming new ones! Thanks for your contributions! 🚀`;
-                
+
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,

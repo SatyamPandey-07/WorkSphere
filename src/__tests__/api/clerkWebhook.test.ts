@@ -2,7 +2,6 @@ import { POST } from "@/app/api/webhooks/clerk/route";
 import { prisma } from "@/lib/prisma";
 import { Webhook as StandardWebhook } from "standardwebhooks";
 
-
 jest.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
@@ -54,8 +53,7 @@ describe("Clerk Webhook Handler & Verification", () => {
           : new Date();
 
     const wh = new StandardWebhook(options?.secret || TEST_SECRET);
-    const signature =
-      options?.customSignature || wh.sign(id, ts, rawBody);
+    const signature = options?.customSignature || wh.sign(id, ts, rawBody);
 
     const headers: Record<string, string> = {};
     if (!options?.omitId) {
@@ -503,7 +501,9 @@ describe("Clerk Webhook Handler & Verification", () => {
       };
 
       (prisma.user.upsert as jest.Mock).mockRejectedValue(
-        new Error("Fatal connection failure to Postgres: connection refused at 10.0.0.1"),
+        new Error(
+          "Fatal connection failure to Postgres: connection refused at 10.0.0.1",
+        ),
       );
 
       const req = createSignedRequest(payload);
@@ -532,7 +532,8 @@ describe("Clerk Webhook Handler & Verification", () => {
         email: "dup@example.com",
         firstName: "Dup",
         lastName: "Licat",
-        imageUrl: "https://ui-avatars.com/api/?name=DL&background=6366f1&color=fff",
+        imageUrl:
+          "https://ui-avatars.com/api/?name=DL&background=6366f1&color=fff",
       });
 
       const req1 = createSignedRequest(payload, { id: "msg_dup_1" });
@@ -557,7 +558,6 @@ describe("Clerk Webhook Handler & Verification", () => {
 });
 describe("Clerk webhook user.updated null email handling (#9267)", () => {
   it("returns 200 OK and updates profile fields cleanly when user.updated has empty email_addresses and null primary_email_address_id", async () => {
-    
     const secret =
       process.env.CLERK_WEBHOOK_SIGNING_SECRET ||
       "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";

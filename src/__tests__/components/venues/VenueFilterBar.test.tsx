@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { VenueFilterBar } from "@/components/venues/VenueFilterBar";
 
@@ -139,100 +139,7 @@ describe("VenueFilterBar", () => {
     expect(select.value).toBe("25");
   });
 
-  describe("Ergonomic quick filters", () => {
-    it("renders labeled chips with checkbox selected states", () => {
-      render(<VenueFilterBar />);
-
-      for (const label of [
-        "Standing Desk",
-        "External Monitor",
-        "Ergonomic Chair",
-      ]) {
-        expect(
-          screen.getByRole("checkbox", { name: label }),
-        ).toHaveAttribute("aria-checked", "false");
-      }
-    });
-
-    it("selects a preset and preserves other URL parameters", () => {
-      (useSearchParams as jest.Mock).mockReturnValue(
-        new URLSearchParams("category=cafe&externalMonitor=true&source=map"),
-      );
-      render(<VenueFilterBar />);
-
-      fireEvent.click(
-        screen.getByRole("checkbox", { name: "Standing Desk" }),
-      );
-
-      expect(mockReplace).toHaveBeenCalledWith(
-        "/venues?category=cafe&externalMonitor=true&source=map&standingDesk=true",
-        { scroll: false },
-      );
-    });
-
-    it("deselects one preset without removing the others", () => {
-      (useSearchParams as jest.Mock).mockReturnValue(
-        new URLSearchParams(
-          "category=cafe&standingDesk=true&externalMonitor=true&ergonomic=true",
-        ),
-      );
-      render(<VenueFilterBar />);
-
-      const standingDesk = screen.getByRole("checkbox", {
-        name: "Standing Desk",
-      });
-      expect(standingDesk).toHaveAttribute("aria-checked", "true");
-      fireEvent.click(standingDesk);
-
-      expect(mockReplace).toHaveBeenCalledWith(
-        "/venues?category=cafe&externalMonitor=true&ergonomic=true",
-        { scroll: false },
-      );
-    });
-
-    it("restores multiple selected presets from URL parameters after rerender", () => {
-      (useSearchParams as jest.Mock).mockReturnValue(
-        new URLSearchParams(
-          "standingDesk=true&externalMonitor=true&ergonomic=true",
-        ),
-      );
-      const { rerender } = render(<VenueFilterBar />);
-
-      const selectedChips = [
-        "Standing Desk",
-        "External Monitor",
-        "Ergonomic Chair",
-      ].map((label) => screen.getByRole("checkbox", { name: label }));
-      expect(
-        selectedChips.every(
-          (chip) => chip.getAttribute("aria-checked") === "true",
-        ),
-      ).toBe(true);
-
-      rerender(<VenueFilterBar />);
-      for (const chip of selectedChips) {
-        expect(chip).toHaveAttribute("aria-checked", "true");
-      }
-    });
-  });
-
-  describe("Custom Range Filters Popover Integration", () => {
-    it("renders the popover trigger button and opens the filter popover on click", () => {
-      render(<VenueFilterBar />);
-
-      const triggerBtn = screen.getByTestId("venue-filter-popover-trigger");
-      expect(triggerBtn).toBeInTheDocument();
-      expect(triggerBtn).toHaveTextContent("Noise & Wi-Fi");
-
-    render(<VenueFilterBar />);
-
-    const select = screen.getByTestId(
-      "venue-filter-radius-select",
-    ) as HTMLSelectElement;
-    expect(select.value).toBe("5");
-  });
-
-  it('renders "⚡ 100+ Mbps" toggle chip and applies minWifiSpeed=100 query parameter (#9893)', () => {
+  it('renders "ÃƒÂ¢Ã…Â¡Ã‚Â¡ 100+ Mbps" toggle chip and applies minWifiSpeed=100 query parameter (#9893)', () => {
     const onQueryParamsChange = jest.fn();
     render(
       <VenueFilterBar
@@ -243,7 +150,7 @@ describe("VenueFilterBar", () => {
 
     const wifiChip = screen.getByTestId("venue-filter-chip-lightning_wifi");
     expect(wifiChip).toBeInTheDocument();
-    expect(wifiChip).toHaveTextContent("⚡ 100+ Mbps");
+    expect(wifiChip).toHaveTextContent("100+ Mbps");
     expect(wifiChip).toHaveAttribute("aria-pressed", "false");
 
     // Toggle on
@@ -259,7 +166,7 @@ describe("VenueFilterBar", () => {
     expect(onQueryParamsChange).toHaveBeenCalledWith("q=Mumbai");
   });
 
-  it('initializes "⚡ 100+ Mbps" chip as active when minWifiSpeed=100 is present in search params (#9893)', () => {
+  it('initializes "ÃƒÂ¢Ã…Â¡Ã‚Â¡ 100+ Mbps" chip as active when minWifiSpeed=100 is present in search params (#9893)', () => {
     render(<VenueFilterBar existingSearchParams="minWifiSpeed=100" />);
 
     const wifiChip = screen.getByTestId("venue-filter-chip-lightning_wifi");

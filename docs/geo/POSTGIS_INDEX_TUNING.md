@@ -11,6 +11,7 @@ This guide provides technical reference and tuning recommendations for geospatia
 PostgreSQL's B-tree index structures only order scalar values along a single dimension. Geospatial queries require multi-dimensional range evaluation where locations are evaluated simultaneously along orthogonal latitude and longitude axes.
 
 PostGIS provides Generalized Search Tree (**GiST**) indexing for spatial columns. In PostGIS, GiST constructs a hierarchical R-tree structure:
+
 - **Bounding Boxes (MBR)**: Each index node represents the Minimum Bounding Box (or bounding box on a sphere) enclosing its child geometries.
 - **Hierarchical Pruning**: When evaluating a spatial predicate (such as `ST_DWithin` or bounding-box overlap `&&`), PostgreSQL traverses the tree, evaluating overlap against bounding boxes. Branches whose bounding boxes do not intersect the query envelope are pruned immediately, avoiding linear table scans across unrelated candidate rows.
 
@@ -24,6 +25,7 @@ ALTER TABLE "Venue" ADD COLUMN IF NOT EXISTS "coordinates" geography(Point, 4326
 ```
 
 Key characteristics of the `geography` type:
+
 - **Spherical / Spheroidal Math**: Calculations are performed on the WGS84 oblate spheroid (or sphere) rather than a flat Cartesian plane.
 - **Native Meter Units**: Distances and tolerances in functions such as `ST_DWithin` are natively specified in **meters**, avoiding planar degree-to-meter distortion that varies by latitude.
 - **Index Bounding Boxes**: For `geography`, GiST bounding boxes wrap spherical coordinates. Near the poles and the anti-meridian ($\pm 180^\circ$ longitude), spherical bounding boxes correctly wrap around without Cartesian edge clipping.
@@ -66,15 +68,15 @@ When filtering venues by proximity radius, developers frequently compare `ST_DWi
 
 ### Comparison Matrix
 
-| Property | `ST_DWithin` | `ST_DistanceSphere` |
-| :--- | :--- | :--- |
-| **Primary Purpose** | Boolean spatial predicate (tests if distance $\le$ radius) | Scalar distance calculation (computes distance on a sphere) |
-| **Input Types** | `geography, geography, float8` (or `geometry, geometry, float8`) | `geometry, geometry` (points with lon/lat coordinates) |
-| **Distance Unit** | **Meters** (when using `geography`); Cartesian units (when using `geometry`) | **Meters** (assumes WGS84 spherical radius $\approx 6,370,986\,\text{m}$) |
-| **Earth Model** | **Spheroid** (WGS84 ellipsoid by default, or sphere if `use_spheroid = false`) | **Sphere** (simplifying spherical approximation) |
-| **Index Acceleration** | **Yes**: Native GiST index binding via internal bounding-box expansion (`&&`) | **No**: Cannot directly leverage a GiST index as a boolean search predicate |
-| **Typical Query Role** | `WHERE` clause radius filtering | `SELECT` projection for distance display or sorting fallback |
-| **Query Planner Impact** | Allows `Bitmap Index Scan` or `Index Scan` to discard non-candidate rows | Requires evaluating distance for every row unless filtered upstream |
+| Property                 | `ST_DWithin`                                                                   | `ST_DistanceSphere`                                                         |
+| :----------------------- | :----------------------------------------------------------------------------- | :-------------------------------------------------------------------------- |
+| **Primary Purpose**      | Boolean spatial predicate (tests if distance $\le$ radius)                     | Scalar distance calculation (computes distance on a sphere)                 |
+| **Input Types**          | `geography, geography, float8` (or `geometry, geometry, float8`)               | `geometry, geometry` (points with lon/lat coordinates)                      |
+| **Distance Unit**        | **Meters** (when using `geography`); Cartesian units (when using `geometry`)   | **Meters** (assumes WGS84 spherical radius $\approx 6,370,986\,\text{m}$)   |
+| **Earth Model**          | **Spheroid** (WGS84 ellipsoid by default, or sphere if `use_spheroid = false`) | **Sphere** (simplifying spherical approximation)                            |
+| **Index Acceleration**   | **Yes**: Native GiST index binding via internal bounding-box expansion (`&&`)  | **No**: Cannot directly leverage a GiST index as a boolean search predicate |
+| **Typical Query Role**   | `WHERE` clause radius filtering                                                | `SELECT` projection for distance display or sorting fallback                |
+| **Query Planner Impact** | Allows `Bitmap Index Scan` or `Index Scan` to discard non-candidate rows       | Requires evaluating distance for every row unless filtered upstream         |
 
 ### Why `ST_DWithin` is Preferred for Radius Filtering
 
@@ -150,6 +152,7 @@ Execution Time: 0.358 ms
 ```
 
 #### Interpretation
+
 - **`Index Scan using venue_coordinates_gist`**: PostgreSQL directly uses the GiST index to order rows by distance and prune venues outside the 5,000-meter radius.
 - **`Buffers: shared hit=28`**: All required index and table pages were already present in PostgreSQL shared buffers. Zero disk reads were required.
 - **`actual time=0.080..0.306 rows=20`**: The query stopped scanning immediately after retrieving 20 rows satisfying the limit, achieving sub-millisecond execution.
@@ -178,6 +181,7 @@ Execution Time: 42.195 ms
 ```
 
 #### Interpretation
+
 - **`Seq Scan on "Venue"`**: PostgreSQL had to read all 50,000 rows in the table because the dynamic expression could not use `venue_coordinates_gist`.
 - **`Rows Removed by Filter: 49952`**: PostGIS computed the full geodetic distance for 50,000 rows, discarding nearly all of them.
 - **`Buffers: shared hit=142 read=512`**: Required reading 512 pages from disk, introducing I/O latency.
@@ -189,39 +193,50 @@ Execution Time: 42.195 ms
 ## 5. Query Optimization Recommendations
 
 ### 1. Ensure Query Predicates Match Indexed Columns
+
 Ensure queries reference the indexed `coordinates` column rather than dynamically rebuilding the point:
+
 ```sql
 -- Recommended:
 WHERE ST_DWithin(v."coordinates", ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radius)
 ```
+
 If queries must use `(v."longitude", v."latitude")`, consider creating a functional index:
+
 ```sql
-CREATE INDEX venue_expr_coordinates_gist ON "Venue" 
+CREATE INDEX venue_expr_coordinates_gist ON "Venue"
 USING GIST ((ST_SetSRID(ST_MakePoint("longitude", "latitude"), 4326)::geography));
 ```
 
 ### 2. Maintain Realistic Search Radii
+
 - Limit maximum search radius to reasonable boundaries (e.g., WorkSphere caps radius at 50,000 meters in `SpatialVenueSearchInputSchema`).
 - Extremely large radii (e.g. covering an entire hemisphere) degrade GiST index selectivity; if nearly every venue matches, the query planner may deliberately choose a sequential scan over an index scan.
 
 ### 3. Order Coordinates as Longitude, Latitude (X, Y)
+
 In standard GIS convention and PostGIS:
 $$\text{Point}(X, Y) \iff \text{Point}(\text{Longitude}, \text{Latitude})$$
 Inverting coordinates into `ST_MakePoint(lat, lon)` generates nonsensical coordinates (e.g., latitude outside $[-90, 90]$ or flipped hemispheres). WorkSphere enforces this via `toPostGisLonLatTuple` in `src/lib/search/spatialVenueSearch.ts`.
 
 ### 4. Parameterize Dynamic Values
+
 Always bind parameters (`$1`, `$2`, `:radius`) to allow PostgreSQL to reuse prepared execution plans and prevent SQL injection:
+
 ```typescript
-Prisma.sql`WHERE ST_DWithin(v."coordinates", ${originPoint}, ${radiusMeters})`
+Prisma.sql`WHERE ST_DWithin(v."coordinates", ${originPoint}, ${radiusMeters})`;
 ```
 
 ### 5. Maintain Table Statistics with `ANALYZE`
+
 GiST index cost estimations rely on up-to-date spatial statistics stored in `pg_statistic`. Run periodic maintenance on spatial tables:
+
 ```sql
 ANALYZE "Venue";
 ```
 
 ### 6. Avoid `EXPLAIN ANALYZE` in Production APIs
+
 `EXPLAIN ANALYZE` **executes** the query to collect actual timings and buffer counts. It should only be run in staging, administrative scripts, or read-only diagnostic sessions, never inside customer-facing API routes.
 
 ---

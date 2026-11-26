@@ -1,8 +1,8 @@
 # Byzantine Fault Tolerant (BFT) Consensus Coordinator Threat Model & Recovery Runbook
 
-**File:** `docs/consensus/BFT_COORDINATOR_THREAT_MODEL.md`  
-**Reference Code:** [`src/core/consensus/BFTConsensusCoordinator.ts`](../../src/core/consensus/BFTConsensusCoordinator.ts)  
-**Tests:** [`src/__tests__/consensus/BFTConsensusCoordinator.test.ts`](../../src/__tests__/consensus/BFTConsensusCoordinator.test.ts)  
+**File:** `docs/consensus/BFT_COORDINATOR_THREAT_MODEL.md`
+**Reference Code:** [`src/core/consensus/BFTConsensusCoordinator.ts`](../../src/core/consensus/BFTConsensusCoordinator.ts)
+**Tests:** [`src/__tests__/consensus/BFTConsensusCoordinator.test.ts`](../../src/__tests__/consensus/BFTConsensusCoordinator.test.ts)
 **Target Specification:** Issue #8624
 
 ---

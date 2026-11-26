@@ -6,10 +6,16 @@ import {
   recordFallbackActivation,
   recordFallbackRecovery,
   getFallbackMetricsSnapshot,
+  getFallbackTelemetrySnapshot,
+  resetFallbackTelemetry,
   formatFallbackMetricsPrometheus,
   isFallbackActive,
 } from "@/lib/rateLimit/tokenBucketFallback";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  buildSystemVitalsSnapshot,
+  formatSystemVitalsPrometheus,
+} from "@/lib/export/domain/systemVitalExporter";
 import type { MiddlewareContext } from "@/lib/middleware/types";
 
 // Mock @/lib/tokenBucketRateLimit before importing rateLimitMiddleware
@@ -152,16 +158,34 @@ describe("TokenBucketLimiter Unit Tests", () => {
   // 5. Configuration validation
   describe("5. Configuration validation", () => {
     it("throws clear errors on non-positive or non-finite capacity", () => {
-      expect(() => new TokenBucketLimiter({ capacity: 0, refillRatePerSecond: 1 })).toThrow();
-      expect(() => new TokenBucketLimiter({ capacity: -5, refillRatePerSecond: 1 })).toThrow();
-      expect(() => new TokenBucketLimiter({ capacity: Infinity, refillRatePerSecond: 1 })).toThrow();
-      expect(() => new TokenBucketLimiter({ capacity: NaN, refillRatePerSecond: 1 })).toThrow();
+      expect(
+        () => new TokenBucketLimiter({ capacity: 0, refillRatePerSecond: 1 }),
+      ).toThrow();
+      expect(
+        () => new TokenBucketLimiter({ capacity: -5, refillRatePerSecond: 1 }),
+      ).toThrow();
+      expect(
+        () =>
+          new TokenBucketLimiter({
+            capacity: Infinity,
+            refillRatePerSecond: 1,
+          }),
+      ).toThrow();
+      expect(
+        () => new TokenBucketLimiter({ capacity: NaN, refillRatePerSecond: 1 }),
+      ).toThrow();
     });
 
     it("throws clear errors on non-positive or non-finite refillRatePerSecond", () => {
-      expect(() => new TokenBucketLimiter({ capacity: 5, refillRatePerSecond: 0 })).toThrow();
-      expect(() => new TokenBucketLimiter({ capacity: 5, refillRatePerSecond: -2 })).toThrow();
-      expect(() => new TokenBucketLimiter({ capacity: 5, refillRatePerSecond: NaN })).toThrow();
+      expect(
+        () => new TokenBucketLimiter({ capacity: 5, refillRatePerSecond: 0 }),
+      ).toThrow();
+      expect(
+        () => new TokenBucketLimiter({ capacity: 5, refillRatePerSecond: -2 }),
+      ).toThrow();
+      expect(
+        () => new TokenBucketLimiter({ capacity: 5, refillRatePerSecond: NaN }),
+      ).toThrow();
     });
 
     it("throws clear errors on negative burstAllowance", () => {
@@ -275,13 +299,17 @@ describe("API Gateway Middleware Fallback Integration Tests", () => {
     // Route /api/venues matches search tier (limit 60)
     // Make 60 requests that should be allowed under fallback
     for (let i = 0; i < 60; i++) {
-      const req = new NextRequest("http://localhost/api/venues?q=work", { method: "GET" });
+      const req = new NextRequest("http://localhost/api/venues?q=work", {
+        method: "GET",
+      });
       const res = await rateLimitMiddleware(req, ctx, mockNext);
       expect(res.status).toBe(200);
     }
 
     // 61st request should be rejected by in-memory token bucket fallback with 429
-    const reqRejected = new NextRequest("http://localhost/api/venues?q=work", { method: "GET" });
+    const reqRejected = new NextRequest("http://localhost/api/venues?q=work", {
+      method: "GET",
+    });
     const resRejected = await rateLimitMiddleware(reqRejected, ctx, mockNext);
     expect(resRejected.status).toBe(429);
 
@@ -301,12 +329,16 @@ describe("API Gateway Middleware Fallback Integration Tests", () => {
 
     // Mutations tier limit = 10
     for (let i = 0; i < 10; i++) {
-      const req = new NextRequest("http://localhost/api/reviews", { method: "POST" });
+      const req = new NextRequest("http://localhost/api/reviews", {
+        method: "POST",
+      });
       const res = await rateLimitMiddleware(req, ctx, mockNext);
       expect(res.status).toBe(200);
     }
 
-    const reqRejected = new NextRequest("http://localhost/api/reviews", { method: "POST" });
+    const reqRejected = new NextRequest("http://localhost/api/reviews", {
+      method: "POST",
+    });
     const resRejected = await rateLimitMiddleware(reqRejected, ctx, mockNext);
     expect(resRejected.status).toBe(429);
   });
@@ -318,7 +350,9 @@ describe("API Gateway Middleware Fallback Integration Tests", () => {
     mockedCheckTokenBucket.mockRejectedValueOnce(err503);
 
     const ctx = createMockContext("user-recovery");
-    const req1 = new NextRequest("http://localhost/api/venues", { method: "GET" });
+    const req1 = new NextRequest("http://localhost/api/venues", {
+      method: "GET",
+    });
     const res1 = await rateLimitMiddleware(req1, ctx, mockNext);
     expect(res1.status).toBe(200);
 
@@ -333,7 +367,9 @@ describe("API Gateway Middleware Fallback Integration Tests", () => {
       identity: "search:user-recovery",
     });
 
-    const req2 = new NextRequest("http://localhost/api/venues", { method: "GET" });
+    const req2 = new NextRequest("http://localhost/api/venues", {
+      method: "GET",
+    });
     const res2 = await rateLimitMiddleware(req2, ctx, mockNext);
     expect(res2.status).toBe(200);
     expect(res2.headers.get("RateLimit-Remaining")).toBe("59");
@@ -390,7 +426,11 @@ describe("Fallback Telemetry Counters & Snapshot Exporter", () => {
     expect(isFallbackActive()).toBe(false);
 
     // Second outage episode from t=5000ms to t=5400ms (duration = 400ms)
-    recordFallbackActivation("503 Service Unavailable", "tier:mutations", 5_000);
+    recordFallbackActivation(
+      "503 Service Unavailable",
+      "tier:mutations",
+      5_000,
+    );
     const secondLimiter = getOrCreateFallbackLimiter("tier:mutations", 1, 1, 0);
     expect(secondLimiter.consume("client-2", 1, 200).allowed).toBe(true);
     expect(secondLimiter.consume("client-2", 1, 200).allowed).toBe(false);
@@ -408,8 +448,12 @@ describe("Fallback Telemetry Counters & Snapshot Exporter", () => {
 
     const prom = formatFallbackMetricsPrometheus(finalSnapshot);
     expect(prom).toContain("worksphere_ratelimit_fallback_activations_total 2");
-    expect(prom).toContain("worksphere_ratelimit_fallback_duration_ms_total 2400");
-    expect(prom).toContain('worksphere_ratelimit_fallback_requests_total{outcome="rejected"} 2');
+    expect(prom).toContain(
+      "worksphere_ratelimit_fallback_duration_ms_total 2400",
+    );
+    expect(prom).toContain(
+      'worksphere_ratelimit_fallback_requests_total{outcome="rejected"} 2',
+    );
   });
 
   it("resets telemetry counters cleanly via resetFallbackMetrics and resetFallbackLimiters", () => {
@@ -430,7 +474,9 @@ describe("Fallback Telemetry Counters & Snapshot Exporter", () => {
     expect(afterMetricsReset.lastReason).toBeNull();
 
     resetFallbackLimiters();
-    expect(Object.keys(getFallbackMetricsSnapshot(2_000).tiers)).toHaveLength(0);
+    expect(Object.keys(getFallbackMetricsSnapshot(2_000).tiers)).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -517,8 +563,12 @@ describe("Fallback Telemetry Metrics Exporter (#10302)", () => {
     const ctx = { userId: "telemetry-user" } as MiddlewareContext;
     // Mutations tier limit = 10 -> 10 allowed + 2 rejected
     for (let i = 0; i < 12; i++) {
-      const req = new NextRequest("http://localhost/api/reviews", { method: "POST" });
-      await rateLimitMiddleware(req, ctx, async () => NextResponse.json({ ok: true }));
+      const req = new NextRequest("http://localhost/api/reviews", {
+        method: "POST",
+      });
+      await rateLimitMiddleware(req, ctx, async () =>
+        NextResponse.json({ ok: true }),
+      );
     }
 
     const midSnapshot = getFallbackTelemetrySnapshot();
@@ -535,7 +585,9 @@ describe("Fallback Telemetry Metrics Exporter (#10302)", () => {
 
     const prom = formatSystemVitalsPrometheus(vitals);
     expect(prom).toContain("worksphere_rate_limit_fallback_active 1");
-    expect(prom).toContain("worksphere_rate_limit_fallback_activations_total 1");
+    expect(prom).toContain(
+      "worksphere_rate_limit_fallback_activations_total 1",
+    );
     expect(prom).toContain("worksphere_rate_limit_fallback_requests_total 12");
     expect(prom).toContain("worksphere_rate_limit_fallback_rejected_total 2");
 
@@ -550,8 +602,12 @@ describe("Fallback Telemetry Metrics Exporter (#10302)", () => {
       identity: "mutations:telemetry-user",
     });
 
-    const recoveryReq = new NextRequest("http://localhost/api/reviews", { method: "POST" });
-    await rateLimitMiddleware(recoveryReq, ctx, async () => NextResponse.json({ ok: true }));
+    const recoveryReq = new NextRequest("http://localhost/api/reviews", {
+      method: "POST",
+    });
+    await rateLimitMiddleware(recoveryReq, ctx, async () =>
+      NextResponse.json({ ok: true }),
+    );
 
     expect(getFallbackTelemetrySnapshot().active).toBe(false);
   });

@@ -11,7 +11,7 @@ The Guest Split Payment API enables guests invited to a workspace booking to rev
 When a host reserves a workspace and adds guests, the billing system computes individual shares (via `calculateSplitBill`) and generates a signed payment token for each participant. Guests receive a payment link (e.g. `/pay/split/{token}`) containing this token. The endpoint operates under a cryptographically verified Bearer Token Capability model: external guests can access checkout and complete payment without requiring a prior Clerk account, while authenticated users are seamlessly supported in dual mode. Security is strictly enforced through HMAC-SHA256 signatures, bounded token lifetime, resource scoping, IP rate limiting, and database-level idempotency.
 
 > [!IMPORTANT]
-> **Internal State Recording vs. External Settlement:**  
+> **Internal State Recording vs. External Settlement:**
 > The guest split-payment endpoint records payment status directly within the WorkSphere database (`BookingGuest` table). The endpoint **does not** integrate with an external payment gateway (such as Stripe, PayPal, or Adyen), does not process credit cards, does not collect payment method tokens, and does not verify third-party settlement webhooks.
 >
 > The endpoint verifies only the token signature and expiration timestamp. The amount and currency in the token are used to record internal WorkSphere payment state (`paidAt`, `paidAmountCents`, `paidCurrency`). No money transfer, card charge, or external payment-provider settlement is verified by the system, and a valid token is not evidence of external funds transfer.
@@ -33,15 +33,15 @@ When a host reserves a workspace and adds guests, the billing system computes in
 
 WorkSphere protects split-payment routes using a defense-in-depth Bearer Token Capability model designed specifically for external workspace guests:
 
-- **Bearer Capability Model:**  
+- **Bearer Capability Model:**
   Workspace guests often do not possess a registered WorkSphere / Clerk user account. Requiring account registration would disrupt frictionless guest attendance. Consequently, the signed token (`{token}`) serves as a self-authenticating, cryptographically signed bearer capability token.
-- **Dual-Mode Session Support:**  
+- **Dual-Mode Session Support:**
   The route handlers inspect optional Clerk authentication via `auth()`. If the visitor is an authenticated WorkSphere user, their session identity is acknowledged in dual mode; unauthenticated guest attendees presenting a valid signed token are fully authorized to view details and execute payment.
-- **Sliding-Window Rate Limiting:**  
+- **Sliding-Window Rate Limiting:**
   Both `GET` and `POST` handlers enforce sliding-window IP rate limiting (30 requests per 60 seconds per client IP via `@/lib/rateLimit`). Automated token guessing, enumeration, or signature brute-forcing requests receive an immediate **HTTP 429 Too Many Requests** response.
-- **Cryptographic Token Verification:**  
+- **Cryptographic Token Verification:**
   Tokens are verified using HMAC-SHA256 with constant-time equality checks (`crypto.timingSafeEqual`) against `SPLIT_PAYMENT_SECRET`. Tokens are bounded by strict expiration timestamps (`expiresAt`, default 72 hours).
-- **Atomic Compare-and-Set Replay Protection:**  
+- **Atomic Compare-and-Set Replay Protection:**
   Database modifications in `POST` use an atomic compare-and-set transition (`WHERE id = guestId AND paidAt IS NULL`). Repeated or concurrent submissions can only ever record one payment, preventing replay and double-spending vulnerabilities.
 
 ---
@@ -121,7 +121,7 @@ const SPLIT_SECRET = process.env.SPLIT_PAYMENT_SECRET || "<in-source-fallback>";
 ```
 
 > [!WARNING]
-> **Production Secret Requirement:**  
+> **Production Secret Requirement:**
 > The system enforces a fail-closed policy when `SPLIT_PAYMENT_SECRET` is absent, weak (under 32 characters), or configured to known insecure defaults in production environments (`NODE_ENV === "production"`). Production deployments must configure a unique, high-entropy `SPLIT_PAYMENT_SECRET` of at least 32 characters in their environment configuration.
 
 ### Operational Considerations
@@ -356,7 +356,7 @@ The split-payment recording flow enforces strict idempotency:
 1. **Compare-and-Swap Filter:** The update requires `paidAt: null` and active status (`status: { notIn: ["CANCELLED", "DECLINED"] }`) in the `updateMany` criteria.
 2. **Conditional Update Outcome (`marked.count !== 1`):** When `marked.count !== 1`, the route returns `{ "success": true, "message": "Already paid" }`. As documented in the implementation, this occurs either because:
    - Another concurrent request recorded payment, OR
-   - The guest was cancelled between the initial lookup and conditional update.  
+   - The guest was cancelled between the initial lookup and conditional update.
      A failed conditional update does not prove that payment was already recorded; it indicates that the guest record no longer satisfied the atomic update criteria.
 3. **Event Emission Handling:** Only the request that successfully records the payment attempts to emit `booking:guest-rsvp`. Already-paid and losing concurrent requests do not emit it. Event emission happens after the database transaction commits, and any failures are caught and logged without affecting the committed payment. The system does not implement a transactional outbox or provide guaranteed delivery or retry mechanics for the event.
 

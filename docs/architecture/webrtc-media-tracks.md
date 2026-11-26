@@ -1,4 +1,4 @@
-﻿# WebRTC Media Track Controller Architecture
+# WebRTC Media Track Controller Architecture
 
 ```mermaid
 stateDiagram-v2
@@ -8,3 +8,4 @@ stateDiagram-v2
     ScreenSharing --> FallbackMediaOnly: NotAllowedError / OverconstrainedError / ended
     FallbackMediaOnly --> ScreenSharing: Retry startScreenShare(track)
     IdleMediaOnly --> [*]: dispose()
+```

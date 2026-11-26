@@ -18,6 +18,10 @@ import {
   Armchair,
 } from "lucide-react";
 import { buildVenueSearchParams } from "@/lib/venues/searchQuery";
+import {
+  ALLOWED_RADIUS_OPTIONS,
+  useSearchPreferences,
+} from "@/hooks/useSearchPreferences";
 
 // ---------------------------------------------------------------------------
 // Types & Defaults
@@ -71,6 +75,7 @@ export const DEFAULT_VENUE_AMENITY_FILTERS: VenueFilterOption[] = [
   { id: "dogFriendly", label: "Pet Friendly", paramKey: "dogFriendly" },
   { id: "veganOptions", label: "Vegan Options", paramKey: "veganOptions" },
   { id: "outdoorPatio", label: "Outdoor Seating", paramKey: "outdoorPatio" },
+  { id: "lightning_wifi", label: "⚡ 100+ Mbps", paramKey: "minWifiSpeed" },
   {
     id: "standing_desks",
     label: "Standing Desk",

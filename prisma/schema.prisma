@@ -1410,3 +1410,17 @@ enum AmenityIncidentSeverity {
   medium
   critical
 }
+
+// Persistent replay protection for corporate team-pass attestations (#10241).
+model TeamPassAttestationNonce {
+  id           String   @id @default(cuid())
+  nonce        String   @unique
+  venueId      String
+  attestationId String
+  memberId     String
+  consumedAt   DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([venueId, consumedAt])
+  @@index([expiresAt])
+}

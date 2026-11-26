@@ -1,10 +1,10 @@
 # Cryptographic Specification: Schnorr Threshold & Multi-Signature Aggregation
 
-> **Document Target:** `docs/security/schnorr-threshold-signatures.md`  
-> **Source Target:** [`src/core/crypto/SchnorrThresholdAggregator.ts`](../../src/core/crypto/SchnorrThresholdAggregator.ts)  
-> **Test Target:** [`src/__tests__/crypto/SchnorrThresholdAggregator.test.ts`](../../src/__tests__/crypto/SchnorrThresholdAggregator.test.ts)  
-> **Related Implementations:** [`src/core/crypto/ThresholdSchnorrMuSig.ts`](../../src/core/crypto/ThresholdSchnorrMuSig.ts), [`src/core/crypto/ThresholdSignatureScheme.ts`](../../src/core/crypto/ThresholdSignatureScheme.ts)  
-> **Status:** Production Cryptographic Specification  
+> **Document Target:** `docs/security/schnorr-threshold-signatures.md`
+> **Source Target:** [`src/core/crypto/SchnorrThresholdAggregator.ts`](../../src/core/crypto/SchnorrThresholdAggregator.ts)
+> **Test Target:** [`src/__tests__/crypto/SchnorrThresholdAggregator.test.ts`](../../src/__tests__/crypto/SchnorrThresholdAggregator.test.ts)
+> **Related Implementations:** [`src/core/crypto/ThresholdSchnorrMuSig.ts`](../../src/core/crypto/ThresholdSchnorrMuSig.ts), [`src/core/crypto/ThresholdSignatureScheme.ts`](../../src/core/crypto/ThresholdSignatureScheme.ts)
+> **Status:** Production Cryptographic Specification
 > **Issue Reference:** WorkSphere Issue #10106 (closing #10106)
 
 ---
@@ -53,10 +53,10 @@ The standardized domain parameters are:
 All point operations strictly follow affine coordinate arithmetic:
 
 - **Point Addition ($P_1 + P_2$):**
-  If $P_1 = \mathcal{O}$, return $P_2$. If $P_2 = \mathcal{O}$, return $P_1$.  
-  If $x_1 = x_2$ and $y_1 \neq y_2$, return $\mathcal{O}$.  
-  If $P_1 = P_2$ (doubling), $\lambda = \frac{3x_1^2}{2y_1} \pmod p$.  
-  If $P_1 \neq P_2$ (addition), $\lambda = \frac{y_2 - y_1}{x_2 - x_1} \pmod p$.  
+  If $P_1 = \mathcal{O}$, return $P_2$. If $P_2 = \mathcal{O}$, return $P_1$.
+  If $x_1 = x_2$ and $y_1 \neq y_2$, return $\mathcal{O}$.
+  If $P_1 = P_2$ (doubling), $\lambda = \frac{3x_1^2}{2y_1} \pmod p$.
+  If $P_1 \neq P_2$ (addition), $\lambda = \frac{y_2 - y_1}{x_2 - x_1} \pmod p$.
   $x_3 = \lambda^2 - x_1 - x_2 \pmod p$, $y_3 = \lambda(x_1 - x_3) - y_1 \pmod p$.
 - **Scalar Multiplication ($k \cdot P$):** Executed using standard double-and-add binary ladder algorithm.
 - **Curve Point Validation (`validatePoint`):**

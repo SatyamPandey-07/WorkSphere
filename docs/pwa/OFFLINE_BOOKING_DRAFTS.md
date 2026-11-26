@@ -9,9 +9,10 @@ This document specifies the technical architecture, finite state machine, client
 In distributed workspace environments, mobile and remote users frequently configure reservations in transit or under intermittent network conditions (e.g., underground subways, airplanes, or low-connectivity coworking zones). Without robust offline support, users face form data loss, session timeouts, or unhandled submission errors.
 
 WorkSphere addresses this challenge through an offline-first draft synchronization architecture:
+
 - **IndexedDB Local Persistence**: Reservation payloads are saved immediately to local storage on the client before network transmission is attempted.
 - **Asynchronous Synchronization**: Mutations are enqueued locally and flushed automatically when connectivity is restored.
-- **Client Draft vs. Confirmed Server Booking**: A clear semantic separation exists between an uncommitted local *draft* (speculative, unconfirmed, mutable locally) and an authoritative *server booking* (validated against global inventory constraints, confirmed, and persisted in PostgreSQL).
+- **Client Draft vs. Confirmed Server Booking**: A clear semantic separation exists between an uncommitted local _draft_ (speculative, unconfirmed, mutable locally) and an authoritative _server booking_ (validated against global inventory constraints, confirmed, and persisted in PostgreSQL).
 - **Causal Consistency**: Divergences between client-side offline modifications and concurrent server-side state changes are reconciled deterministically using Vector Clocks and Conflict-Free Replicated Data Type (CRDT) rules.
 
 ---
@@ -63,12 +64,12 @@ The offline booking system is structured into four primary components running in
 
 ### Component Roles and Boundaries
 
-| Component | Source File | Responsibilities | Execution Context |
-| :--- | :--- | :--- | :--- |
-| **`DraftStore`** | `src/worker/bookingSync/DraftStore.ts` | Promise-based IndexedDB wrapper for serializing, querying, mutating, and deleting local booking drafts. Manages vector clock initialization and in-memory fallback. | PWA Main Thread / Web Worker |
-| **`ConflictResolver`** | `src/worker/bookingSync/ConflictResolver.ts` | Mathematical comparison of vector clocks, causal classification (`before`, `after`, `equal`, `concurrent`), CRDT LWW register resolution, Add-Wins set unions, and monotonic tombstone enforcement. | Web Worker / PWA Main Thread |
-| **`SyncQueue`** | `src/worker/bookingSync/SyncQueue.ts` | Manages sequential background sync pipeline, network connectivity listeners (`online`), remote fetching, conflict resolution dispatch, and DOM event dispatching. | PWA Main Thread / Service Worker |
-| **Remote Booking API** | `src/app/api/bookings/sync/route.ts` | Authenticates requests via Clerk, verifies user tenancy, enforces optimistic version locking, buffers out-of-order causal mutations, and persists committed state. | Next.js Serverless Route / Node.js |
+| Component              | Source File                                  | Responsibilities                                                                                                                                                                                    | Execution Context                  |
+| :--------------------- | :------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------- |
+| **`DraftStore`**       | `src/worker/bookingSync/DraftStore.ts`       | Promise-based IndexedDB wrapper for serializing, querying, mutating, and deleting local booking drafts. Manages vector clock initialization and in-memory fallback.                                 | PWA Main Thread / Web Worker       |
+| **`ConflictResolver`** | `src/worker/bookingSync/ConflictResolver.ts` | Mathematical comparison of vector clocks, causal classification (`before`, `after`, `equal`, `concurrent`), CRDT LWW register resolution, Add-Wins set unions, and monotonic tombstone enforcement. | Web Worker / PWA Main Thread       |
+| **`SyncQueue`**        | `src/worker/bookingSync/SyncQueue.ts`        | Manages sequential background sync pipeline, network connectivity listeners (`online`), remote fetching, conflict resolution dispatch, and DOM event dispatching.                                   | PWA Main Thread / Service Worker   |
+| **Remote Booking API** | `src/app/api/bookings/sync/route.ts`         | Authenticates requests via Clerk, verifies user tenancy, enforces optimistic version locking, buffers out-of-order causal mutations, and persists committed state.                                  | Next.js Serverless Route / Node.js |
 
 ---
 
@@ -98,19 +99,19 @@ A booking reservation passes through a well-defined lifecycle on the client and 
 
 ### State Transition Matrix
 
-| Source State | Trigger / Event | Target State | Actions & Side Effects |
-| :--- | :--- | :--- | :--- |
-| *(None)* | User opens modal / saves draft | `DRAFT` | `DraftStore.createDraft()` initializes IDB entry and vector clock. |
-| `DRAFT` | User edits field locally | `DRAFT` | `DraftStore.updateDraftPayload()` increments client clock node by 1. |
-| `DRAFT` | User clicks "Book" or sync triggers | `SYNC_PENDING` | `SyncQueue.queueDraft()` enqueues IDB record and checks `navigator.onLine`. |
-| `SYNC_PENDING` | Network offline | `SYNC_PENDING` | Remains persisted in IndexedDB; awaits `window.ononline` event. |
-| `SYNC_PENDING` | POST `/api/bookings/confirm` succeeds (200 OK) | `CONFIRMED` | Draft deleted from IndexedDB; event `worksphere:booking-draft-synced` emitted. |
-| `SYNC_PENDING` | Remote draft exists; $V_{\text{draft}} > V_{\text{server}}$ | `CONFIRMED` | Server updated via PUT; draft purged from local store. |
-| `SYNC_PENDING` | Concurrent divergence on non-critical fields ($V_d \parallel V_s$) | `CONFIRMED` | Automatic CRDT merge (LWW + Set Union); updated state pushed to server. |
-| `SYNC_PENDING` | Critical field collision or terminal cancellation | `CONFLICT` | Draft preserved in IDB; `booking_sync_conflict` emitted; UI prompts user. |
-| `CONFLICT` | User chooses server state | `CONFIRMED` | Local draft discarded or overwritten with server payload. |
-| `CONFLICT` | User submits override / alternative slot | `SYNC_PENDING` | Draft updated with advanced vector clock and re-enqueued for synchronization. |
-| `DRAFT` / `SYNC_PENDING` | User cancels booking offline | `CONFIRMED` (Cancelled) | CANCELLED tombstone applied monotonically; propagated upon reconnection. |
+| Source State             | Trigger / Event                                                    | Target State            | Actions & Side Effects                                                         |
+| :----------------------- | :----------------------------------------------------------------- | :---------------------- | :----------------------------------------------------------------------------- |
+| _(None)_                 | User opens modal / saves draft                                     | `DRAFT`                 | `DraftStore.createDraft()` initializes IDB entry and vector clock.             |
+| `DRAFT`                  | User edits field locally                                           | `DRAFT`                 | `DraftStore.updateDraftPayload()` increments client clock node by 1.           |
+| `DRAFT`                  | User clicks "Book" or sync triggers                                | `SYNC_PENDING`          | `SyncQueue.queueDraft()` enqueues IDB record and checks `navigator.onLine`.    |
+| `SYNC_PENDING`           | Network offline                                                    | `SYNC_PENDING`          | Remains persisted in IndexedDB; awaits `window.ononline` event.                |
+| `SYNC_PENDING`           | POST `/api/bookings/confirm` succeeds (200 OK)                     | `CONFIRMED`             | Draft deleted from IndexedDB; event `worksphere:booking-draft-synced` emitted. |
+| `SYNC_PENDING`           | Remote draft exists; $V_{\text{draft}} > V_{\text{server}}$        | `CONFIRMED`             | Server updated via PUT; draft purged from local store.                         |
+| `SYNC_PENDING`           | Concurrent divergence on non-critical fields ($V_d \parallel V_s$) | `CONFIRMED`             | Automatic CRDT merge (LWW + Set Union); updated state pushed to server.        |
+| `SYNC_PENDING`           | Critical field collision or terminal cancellation                  | `CONFLICT`              | Draft preserved in IDB; `booking_sync_conflict` emitted; UI prompts user.      |
+| `CONFLICT`               | User chooses server state                                          | `CONFIRMED`             | Local draft discarded or overwritten with server payload.                      |
+| `CONFLICT`               | User submits override / alternative slot                           | `SYNC_PENDING`          | Draft updated with advanced vector clock and re-enqueued for synchronization.  |
+| `DRAFT` / `SYNC_PENDING` | User cancels booking offline                                       | `CONFIRMED` (Cancelled) | CANCELLED tombstone applied monotonically; propagated upon reconnection.       |
 
 ---
 
@@ -129,21 +130,25 @@ Client-side persistence is implemented in `DraftStore.ts` using native browser `
 
 ```typescript
 export interface BookingDraft {
-  id: string;                               // Primary key identifier
-  venueId: string;                          // Target venue identifier
-  userId: string;                           // Client user identifier
-  payload: Record<string, unknown>;         // Dynamic booking reservation parameters
-  timestamp: number;                        // Unix epoch timestamp of creation
-  serverVersion?: number;                   // Base server version when draft was branched
-  vectorClock?: VectorClock;                // Distributed causal vector clock
-  nodeId?: string;                          // Originating node ID (defaults to userId or client)
-  updatedAt?: number;                       // Last local modification timestamp
-  fieldClocks?: Record<string, {            // Optional fine-grained field tracking
-    timestamp: number;
-    clock: VectorClock;
-    lamport: number;
-    nodeId: string;
-  }>;
+  id: string; // Primary key identifier
+  venueId: string; // Target venue identifier
+  userId: string; // Client user identifier
+  payload: Record<string, unknown>; // Dynamic booking reservation parameters
+  timestamp: number; // Unix epoch timestamp of creation
+  serverVersion?: number; // Base server version when draft was branched
+  vectorClock?: VectorClock; // Distributed causal vector clock
+  nodeId?: string; // Originating node ID (defaults to userId or client)
+  updatedAt?: number; // Last local modification timestamp
+  fieldClocks?: Record<
+    string,
+    {
+      // Optional fine-grained field tracking
+      timestamp: number;
+      clock: VectorClock;
+      lamport: number;
+      nodeId: string;
+    }
+  >;
 }
 ```
 
@@ -167,7 +172,7 @@ To maintain causal consistency across distributed clients and the server without
 
 Let $V_a$ be the vector clock of state $A$ and $V_b$ be the vector clock of state $B$ over the universe of node keys $K = \text{keys}(V_a) \cup \text{keys}(V_b)$.
 
-$$\begin{aligned}
+$$ \begin{aligned}
 V_a \le V_b &\iff \forall k \in K, \; V_a[k] \le V_b[k] \\
 V_a < V_b &\iff (V_a \le V_b) \land (V_a \ne V_b) \quad \text{("before": } A \text{ causally precedes } B\text{)} \\
 V_a > V_b &\iff (V_b \le V_a) \land (V_a \ne V_b) \quad \text{("after": } A \text{ causally dominates } B\text{)} \\
@@ -324,7 +329,7 @@ stateDiagram-v2
     }
 
     DRAFT --> SYNC_PENDING : User submits / Connectivity available
-    
+
     state SYNC_PENDING {
         [*] --> CheckConnectivity
         CheckConnectivity --> AwaitingNetwork : navigator.onLine == false
@@ -335,7 +340,7 @@ stateDiagram-v2
     }
 
     PostNewReservation --> CONFIRMED : 200 OK received
-    
+
     FetchServerState --> EvaluateVectorClocks : Server state received
 
     state EvaluateVectorClocks {
@@ -347,7 +352,7 @@ stateDiagram-v2
 
     DraftDominates --> TransmittingMerged : Apply full draft payload
     ServerDominates --> TransmittingMerged : Retain disjoint delta fields
-    
+
     ConcurrentDivergence --> CONFLICT : Critical field collision / Cancelled
     ConcurrentDivergence --> TransmittingMerged : Non-critical CRDT merged
 
@@ -423,3 +428,4 @@ stateDiagram-v2
    - Mattern, F. (1989). *Virtual Time and Global States of Distributed Systems*. Parallel and Distributed Algorithms.
 5. **Conflict-Free Replicated Data Types (CRDTs)**:
    - Shapiro, M., Preguiça, N., Baquero, C., & Zawirski, M. (2011). *Conflict-free Replicated Data Types*. Symposium on Self-Stabilizing Systems (SSS 2011), Springer.
+$$

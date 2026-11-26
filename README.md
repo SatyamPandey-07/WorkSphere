@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-148%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-149%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-148-active-rockstars"><b>👥 Contributors (148)</b></a> •
+  <a href="#-contributors-149-active-rockstars"><b>👥 Contributors (149)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (148 Active Rockstars)
+### 🚀 Contributors (149 Active Rockstars)
 
-A massive thank you to all **148 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **149 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -1016,6 +1016,12 @@ A massive thank you to all **148 brilliant contributors and bots** building Work
         <sub><b>RitikaDevi-12</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/jerittajancy08-eng">
+        <img src="https://avatars.githubusercontent.com/u/228553216?v=4" width="55px;" height="55px;" alt="jerittajancy08-eng" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>jerittajancy08-eng</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1089,6 +1095,11 @@ A massive thank you to all **148 brilliant contributors and bots** building Work
 - **Authentication Middleware Pipeline & Token Bucket Fallback Telemetry**: Hardened auth/CSRF/security-header middleware pipeline paired with degraded-mode rate-limiter fallback metrics (`src/lib/ratelimit/tokenBucketFallback.ts`).
 - **Mesh Latency Ping Overlay & Ambient Peak Noise Alerts**: Live P2P mesh latency ping visualizer (`src/components/p2p/PeerTopologyVisualizer.tsx`) and ambient decibel peak alert toasts (`src/components/audio/SoundLevelMeter.tsx`).
 - **Whiteboard Guest Preview Mode & ZKP Animated Progress Ring**: Role-based read-only guest preview mode for collaborative whiteboards and an optional SVG progress ring in ZKP witness generation (`src/components/student/StudentDiscountVerification.tsx`).
+- **Admin Redis Ping Latency & HMR Singleton Guard**: Real-time Redis ping latency telemetry in admin diagnostics paired with HMR-safe Redis singleton initialization (`src/lib/redis.ts`).
+- **Batch Check-In Attestation Verification**: Server-side batch check-in cryptographic attestation verification for multi-seat venue check-ins.
+- **Streaming Student ZKP Batch Verification**: NDJSON per-item progress streaming in `/api/student/verify-batch` for real-time batch verification feedback.
+- **Monotonic Seat Hold Fence Tokens & Ambient Noise Threshold Badge**: Monotonic fence token validation for seat hold lock extensions (`src/lib/locks/seatHoldLock.ts`) and decibel threshold alert badges in ambient noise sparklines.
+- **NomadDeskPass QR PNG Export & SSRF Webhook Docs**: High-resolution `qrcode.react` + `html-to-image` passcard export (`src/components/bookings/NomadDeskPass.tsx`) and hardened webhook SSRF redirect revalidation docs.
 
 - **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
 - **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).

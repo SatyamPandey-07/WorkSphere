@@ -5,7 +5,10 @@
  * delayed adjudication lifecycle, settlement snapshot hashing, and aggregate reconciliation (#10167).
  */
 
-import { aggregateWeightedVotes, WeightedVoteAggregation } from "./reputationEngine";
+import {
+  aggregateWeightedVotes,
+  WeightedVoteAggregation,
+} from "./reputationEngine";
 
 export const CONSENSUS_RULE_VERSION = "2.0.0-reputation-bayes";
 export const MIN_SETTLEMENT_SAMPLE_SIZE = 5;
@@ -13,10 +16,7 @@ export const SETTLEMENT_CONFIDENCE_THRESHOLD = 80;
 export const VERIFIED_EXPLORER_THRESHOLD = 10;
 
 export type ConsensusLifecycleState =
-  | "PROVISIONAL"
-  | "ELIGIBLE_FOR_SETTLEMENT"
-  | "SETTLED"
-  | "REOPENED";
+  "PROVISIONAL" | "ELIGIBLE_FOR_SETTLEMENT" | "SETTLED" | "REOPENED";
 
 export interface SettlementSnapshot {
   validationId: string;
@@ -86,11 +86,13 @@ export function computeVoteSetSnapshotDigest(
   validationId: string,
   votes: Array<{ userId: string; isUpvote: boolean }>,
 ): string {
-  const sortedVotes = [...votes].sort((a, b) => a.userId.localeCompare(b.userId));
+  const sortedVotes = [...votes].sort((a, b) =>
+    a.userId.localeCompare(b.userId),
+  );
   const serialized = sortedVotes
     .map((v) => `${v.userId}:${v.isUpvote ? "1" : "0"}`)
     .join(";");
-  
+
   // Deterministic DJB2-like compact digest for tests/runtime
   let hash = 5381;
   const str = `${validationId}|${serialized}|${CONSENSUS_RULE_VERSION}`;
@@ -126,7 +128,8 @@ export function evaluateAmenityConsensus(
       ? Number((weighted.weightedUpvotes / effectiveTotal).toFixed(4))
       : 0.5;
 
-  let consensusDirection: "upvote" | "downvote" | "inconclusive" = "inconclusive";
+  let consensusDirection: "upvote" | "downvote" | "inconclusive" =
+    "inconclusive";
   if (rawConfidenceScore >= SETTLEMENT_CONFIDENCE_THRESHOLD) {
     consensusDirection = "upvote";
   } else if (rawConfidenceScore <= 100 - SETTLEMENT_CONFIDENCE_THRESHOLD) {
@@ -134,7 +137,10 @@ export function evaluateAmenityConsensus(
   }
 
   const existingSettlement = settledSnapshots.get(validationId);
-  const currentSnapshotDigest = computeVoteSetSnapshotDigest(validationId, votes);
+  const currentSnapshotDigest = computeVoteSetSnapshotDigest(
+    validationId,
+    votes,
+  );
 
   let state: ConsensusLifecycleState = "PROVISIONAL";
 
@@ -191,9 +197,7 @@ export function evaluateAmenityConsensus(
 /**
  * Records a formal settlement snapshot in the settlement registry.
  */
-export function recordSettlement(
-  snapshot: SettlementSnapshot,
-): void {
+export function recordSettlement(snapshot: SettlementSnapshot): void {
   settledSnapshots.set(snapshot.validationId, {
     snapshotDigest: snapshot.snapshotDigest,
     consensusDirection: snapshot.consensusDirection,

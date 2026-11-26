@@ -9,6 +9,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 ## System & Infrastructure Diagnostics
 
 - [Admin Redis ping latency diagnostic metric and status thresholds](./admin/REDIS_PING_LATENCY_DIAGNOSTICS.md)
+- [Redis HMR Singleton and Connection Reuse](./REDIS_HMR_SINGLETON.md) — `globalThis` lifecycle during Next.js HMR, development and production client reuse, Upstash configuration, and connection-pooling guidance.
 - [Clerk Webhook Integration Runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md) — signature verification, event handling, secret rotation, local testing, and troubleshooting.
 
 ## Getting Started & Contributor Guides

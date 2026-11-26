@@ -1141,7 +1141,7 @@ model VenueTelemetry {
   value      Float
   recordedAt DateTime @default(now())
 
-  @@unique([sensorId, recordedAt])
+  @@unique([sensorId, type, recordedAt])
   @@index([venueId, roomId, recordedAt])
 }
 

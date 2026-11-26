@@ -1,4 +1,4 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { GET } from "@/app/api/admin/system/route";
 import { getAdminUser } from "@/lib/admin";
 import { getAdminSystemMetrics } from "@/lib/adminSystemMetrics";

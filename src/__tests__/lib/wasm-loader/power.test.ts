@@ -1,10 +1,10 @@
-﻿import {
+import {
   createWasmMemoryTelemetry,
   WASM_PAGE_SIZE_BYTES,
-} from '@/lib/wasm-loader/power';
+} from "@/lib/wasm-loader/power";
 
-describe('WASM Linear Memory Pressure Telemetry (power.ts)', () => {
-  it('reports allocated byte pages, buffer utilization ratio, and growth deltas', () => {
+describe("WASM Linear Memory Pressure Telemetry (power.ts)", () => {
+  it("reports allocated byte pages, buffer utilization ratio, and growth deltas", () => {
     const buffer = new ArrayBuffer(WASM_PAGE_SIZE_BYTES * 4);
     const monitor = createWasmMemoryTelemetry({ nowFn: () => 5_000 });
 
@@ -22,7 +22,7 @@ describe('WASM Linear Memory Pressure Telemetry (power.ts)', () => {
     expect(grown.growthDeltaBytes).toBe(0);
   });
 
-  it('emits warning callback above 80% memory threshold and resets cleanly on cleanup', () => {
+  it("emits warning callback above 80% memory threshold and resets cleanly on cleanup", () => {
     const warnings: number[] = [];
     const buffer = new ArrayBuffer(WASM_PAGE_SIZE_BYTES * 10);
     const monitor = createWasmMemoryTelemetry({

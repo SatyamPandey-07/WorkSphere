@@ -9,6 +9,7 @@ The **`PeerTopologyVisualizer`** component ([`src/components/p2p/PeerTopologyVis
 WorkSphere uses decentralized WebRTC DataChannels and CRDT state synchronization for real-time collaboration across whiteboards, notes, and room audio. Because collaborators communicate peer-to-peer (P2P), asymmetric network conditions or distant geographic regions can lead to varying degrees of latency between nodes.
 
 `PeerTopologyVisualizer` acts as the primary HUD (Heads-Up Display) overlay for monitoring mesh health:
+
 - Identifies the local user and all active remote peers in the mesh room.
 - Renders avatar initials or profile images with safe URL sanitization.
 - Continuously reflects peer latency sampled via binary WebRTC DataChannel ping/pong heartbeats and ICE candidate-pair statistics.
@@ -38,7 +39,7 @@ flowchart TD
         Resolver["RTT Resolver: peerLatencies ?? peerTelemetry.rttMs ?? peer.rttMs ?? null"]
         TierClassifier["getLatencyBadgeTier(rttMs)"]
         UIBadges["Color-Coded Status Badges (Green / Yellow / Red / Unknown)"]
-        
+
         LatRecord --> Resolver
         TelemRecord --> Resolver
         Resolver --> TierClassifier
@@ -52,14 +53,14 @@ flowchart TD
 
 ### `PeerTopologyVisualizerProps`
 
-| Prop Name | Type | Default Value | Description |
-| :--- | :--- | :--- | :--- |
-| `localPeerId` | `string` | *(Required)* | The unique identifier or public key of the local user in the WebRTC mesh room. Displayed in parentheses next to `localDisplayName`. |
-| `localDisplayName` | `string` | `"You"` | The human-readable display name of the local user. Shown in the top header alongside their generated avatar initials. |
-| `peers` | `TopologyPeerNode[]` | *(Required)* | Array of active remote peer objects currently recognized in the collaborative room. If empty, an empty-state message is displayed. |
-| `peerLatencies` | `Record<string, number \| null>` | `undefined` | Dictionary mapping `peerId` to current round-trip latency in milliseconds, typically provided directly by `useMeshDataChannels()`. Takes precedence during RTT resolution. |
-| `peerTelemetry` | `Record<string, PeerTelemetry>` | `undefined` | Full telemetry records indexed by `peerId`, providing fallback `rttMs`, packet loss, bitrate, and relay status. |
-| `className` | `string` | `undefined` | Optional Tailwind CSS classes to override or append to the root `<section>` styling. |
+| Prop Name          | Type                             | Default Value | Description                                                                                                                                                                |
+| :----------------- | :------------------------------- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `localPeerId`      | `string`                         | _(Required)_  | The unique identifier or public key of the local user in the WebRTC mesh room. Displayed in parentheses next to `localDisplayName`.                                        |
+| `localDisplayName` | `string`                         | `"You"`       | The human-readable display name of the local user. Shown in the top header alongside their generated avatar initials.                                                      |
+| `peers`            | `TopologyPeerNode[]`             | _(Required)_  | Array of active remote peer objects currently recognized in the collaborative room. If empty, an empty-state message is displayed.                                         |
+| `peerLatencies`    | `Record<string, number \| null>` | `undefined`   | Dictionary mapping `peerId` to current round-trip latency in milliseconds, typically provided directly by `useMeshDataChannels()`. Takes precedence during RTT resolution. |
+| `peerTelemetry`    | `Record<string, PeerTelemetry>`  | `undefined`   | Full telemetry records indexed by `peerId`, providing fallback `rttMs`, packet loss, bitrate, and relay status.                                                            |
+| `className`        | `string`                         | `undefined`   | Optional Tailwind CSS classes to override or append to the root `<section>` styling.                                                                                       |
 
 ### `TopologyPeerNode` Shape
 
@@ -95,6 +96,7 @@ Latency measurement in WorkSphere occurs out-of-band on open WebRTC DataChannels
 ### 3.1 Binary Framing (`0x5049` / `'PI'`)
 
 To guarantee zero interference with application data channels:
+
 1. Every heartbeat frame begins with a 2-byte magic identifier: `0x5049` (ASCII string `"PI"` for Ping Indicator).
 2. The third byte defines the message type:
    - `0x01`: `MeshHeartbeatType.PING`
@@ -142,12 +144,12 @@ stateDiagram-v2
 
 ### Detailed Threshold Classification Table
 
-| Tier Tone | Latency Condition | Display Label | Status Text | Visual Styling | User Experience Impact |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`green`** | $\text{round}(\text{RTT}) < 50\text{ ms}$ | `"{rtt} ms"` | `Low latency` | Border: `border-emerald-500/40`<br/>Background: `bg-emerald-500/15`<br/>Text: `text-emerald-300`<br/>Dot: `bg-emerald-400` | **Optimal:** Instantaneous cursor movement, real-time concurrent drawing, zero perceptible lag. |
-| **`yellow`** | $50\text{ ms} \le \text{round}(\text{RTT}) \le 150\text{ ms}$ | `"{rtt} ms"` | `Moderate latency` | Border: `border-amber-500/40`<br/>Background: `bg-amber-500/15`<br/>Text: `text-amber-300`<br/>Dot: `bg-amber-400` | **Acceptable:** Minimal lag; CRDT conflict resolution seamlessly converges with slight delay. |
-| **`red`** | $\text{round}(\text{RTT}) > 150\text{ ms}$ | `"{rtt} ms"` | `High latency` | Border: `border-rose-500/40`<br/>Background: `bg-rose-500/15`<br/>Text: `text-rose-300`<br/>Dot: `bg-rose-400` | **Degraded:** Noticeable sync delay; cursors may appear jerky, and audio/video fallback may engage. |
-| **`unknown`** | `null`, `undefined`, $< 0$, or non-finite | `"-- ms"` | `Measuring latency` | Border: `border-zinc-700`<br/>Background: `bg-zinc-800/80`<br/>Text: `text-zinc-300`<br/>Dot: `bg-zinc-400` | **Connecting / Pending:** Initial connection handshake in progress; ping frame awaiting response. |
+| Tier Tone     | Latency Condition                                             | Display Label | Status Text         | Visual Styling                                                                                                             | User Experience Impact                                                                              |
+| :------------ | :------------------------------------------------------------ | :------------ | :------------------ | :------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
+| **`green`**   | $\text{round}(\text{RTT}) < 50\text{ ms}$                     | `"{rtt} ms"`  | `Low latency`       | Border: `border-emerald-500/40`<br/>Background: `bg-emerald-500/15`<br/>Text: `text-emerald-300`<br/>Dot: `bg-emerald-400` | **Optimal:** Instantaneous cursor movement, real-time concurrent drawing, zero perceptible lag.     |
+| **`yellow`**  | $50\text{ ms} \le \text{round}(\text{RTT}) \le 150\text{ ms}$ | `"{rtt} ms"`  | `Moderate latency`  | Border: `border-amber-500/40`<br/>Background: `bg-amber-500/15`<br/>Text: `text-amber-300`<br/>Dot: `bg-amber-400`         | **Acceptable:** Minimal lag; CRDT conflict resolution seamlessly converges with slight delay.       |
+| **`red`**     | $\text{round}(\text{RTT}) > 150\text{ ms}$                    | `"{rtt} ms"`  | `High latency`      | Border: `border-rose-500/40`<br/>Background: `bg-rose-500/15`<br/>Text: `text-rose-300`<br/>Dot: `bg-rose-400`             | **Degraded:** Noticeable sync delay; cursors may appear jerky, and audio/video fallback may engage. |
+| **`unknown`** | `null`, `undefined`, $< 0$, or non-finite                     | `"-- ms"`     | `Measuring latency` | Border: `border-zinc-700`<br/>Background: `bg-zinc-800/80`<br/>Text: `text-zinc-300`<br/>Dot: `bg-zinc-400`                | **Connecting / Pending:** Initial connection handshake in progress; ping frame awaiting response.   |
 
 ### Exact Boundary Behavior
 
@@ -163,11 +165,11 @@ stateDiagram-v2
 
 The component instruments its DOM nodes with descriptive `data-testid` attributes and dataset indicators to support deterministic unit and integration testing:
 
-| Test ID | DOM Element | Purpose & Attributes |
-| :--- | :--- | :--- |
-| `peer-topology-visualizer` | `<section>` | Root container for the component. Carries `aria-label="Collaborative workspace peer topology"`. |
-| `topology-peer-{peerId}` | `<li>` | Container element for a single remote peer card in the grid list. |
-| `peer-latency-badge-{peerId}` | `<span>` | Badge element rendering the latency pill. Includes:<br/>- `data-latency-tier="green\|yellow\|red\|unknown"`<br/>- `role="status"`<br/>- Descriptive `aria-label` |
+| Test ID                       | DOM Element | Purpose & Attributes                                                                                                                                             |
+| :---------------------------- | :---------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `peer-topology-visualizer`    | `<section>` | Root container for the component. Carries `aria-label="Collaborative workspace peer topology"`.                                                                  |
+| `topology-peer-{peerId}`      | `<li>`      | Container element for a single remote peer card in the grid list.                                                                                                |
+| `peer-latency-badge-{peerId}` | `<span>`    | Badge element rendering the latency pill. Includes:<br/>- `data-latency-tier="green\|yellow\|red\|unknown"`<br/>- `role="status"`<br/>- Descriptive `aria-label` |
 
 ---
 
@@ -210,18 +212,14 @@ export function CollaborativeRoomTopology({
   currentUserId: string;
   currentUserName: string;
 }) {
-  const {
-    peerLatencies,
-    peerTelemetry,
-    isConnected,
-    peerCount,
-  } = useMeshDataChannels({
-    roomId,
-    userId: currentUserId,
-    onData: (data, fromPeerId) => {
-      // Process incoming CRDT data payloads
-    },
-  });
+  const { peerLatencies, peerTelemetry, isConnected, peerCount } =
+    useMeshDataChannels({
+      roomId,
+      userId: currentUserId,
+      onData: (data, fromPeerId) => {
+        // Process incoming CRDT data payloads
+      },
+    });
 
   // Example active peer roster in the workspace
   const activePeers = [
@@ -254,7 +252,8 @@ export function CollaborativeRoomTopology({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-zinc-200">Mesh Telemetry</h2>
         <span className="text-xs text-zinc-400">
-          Status: {isConnected ? "Connected" : "Reconnecting"} ({peerCount} active)
+          Status: {isConnected ? "Connected" : "Reconnecting"} ({peerCount}{" "}
+          active)
         </span>
       </div>
 

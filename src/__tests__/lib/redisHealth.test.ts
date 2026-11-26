@@ -1,4 +1,4 @@
-﻿import { getRedis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 import { measureRedisLatencyMs } from "@/lib/redisHealth";
 
 jest.mock("@/lib/redis", () => ({

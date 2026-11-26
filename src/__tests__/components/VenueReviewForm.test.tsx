@@ -258,7 +258,9 @@ describe("VenueReviewForm Star Rating", () => {
       render(<VenueReviewForm venueId="venue-abc" initialRating={4} />);
 
       const textarea = screen.getByPlaceholderText(/share your experience/i);
-      fireEvent.change(textarea, { target: { value: "Quiet and productive." } });
+      fireEvent.change(textarea, {
+        target: { value: "Quiet and productive." },
+      });
 
       const saved = localStorage.getItem("worksphere:review-draft:venue-abc");
       expect(saved).not.toBeNull();
@@ -283,7 +285,9 @@ describe("VenueReviewForm Star Rating", () => {
         /share your experience/i,
       ) as HTMLTextAreaElement;
       expect(textarea.value).toBe("Saved draft content");
-      expect(screen.getByTestId("rating-preview-text")).toHaveTextContent("4.5");
+      expect(screen.getByTestId("rating-preview-text")).toHaveTextContent(
+        "4.5",
+      );
     });
 
     it("optimistically renders pending review with amber sync icon when offline", () => {
@@ -327,7 +331,7 @@ describe("VenueReviewForm Star Rating", () => {
         () =>
           new Promise((resolve) => {
             resolveSubmit = resolve;
-          })
+          }),
       );
 
       render(<VenueReviewForm initialRating={4.5} onSubmit={onSubmit} />);
@@ -350,7 +354,7 @@ describe("VenueReviewForm Star Rating", () => {
       expect(onSubmit).toHaveBeenCalledTimes(1);
       expect(onSubmit).toHaveBeenCalledWith(
         "Great workspace, very quiet!",
-        4.5
+        4.5,
       );
 
       // While pending, submit button is disabled and displays spinner
@@ -373,7 +377,9 @@ describe("VenueReviewForm Star Rating", () => {
       render(<VenueReviewForm initialRating={5} onSubmit={onSubmit} />);
 
       const textarea = screen.getByPlaceholderText(/share your experience/i);
-      fireEvent.change(textarea, { target: { value: "Fast internet and friendly staff" } });
+      fireEvent.change(textarea, {
+        target: { value: "Fast internet and friendly staff" },
+      });
 
       const submitButton = screen.getByTestId("submit-review-button");
       fireEvent.click(submitButton);
@@ -386,4 +392,3 @@ describe("VenueReviewForm Star Rating", () => {
     });
   });
 });
-

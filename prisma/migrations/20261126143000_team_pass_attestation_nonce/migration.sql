@@ -1,4 +1,4 @@
-﻿CREATE TABLE "TeamPassAttestationNonce" (
+CREATE TABLE "TeamPassAttestationNonce" (
     "id" TEXT NOT NULL,
     "nonce" TEXT NOT NULL,
     "venueId" TEXT NOT NULL,

@@ -301,4 +301,3 @@ if (typeof global.window !== "undefined") {
     return style;
   };
 }
-

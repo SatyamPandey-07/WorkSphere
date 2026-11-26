@@ -1,4 +1,4 @@
-﻿import {
+import {
   createTeamPassAttestationSignature,
   verifyTeamPassAttestationSignature,
   type TeamPassAttestationPayload,

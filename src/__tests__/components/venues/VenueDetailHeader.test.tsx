@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   VENUE_COORDINATES_COPIED_TOAST,

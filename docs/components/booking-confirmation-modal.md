@@ -7,13 +7,16 @@ The `BookingConfirmationModal` component provides an accessible, print-optimized
 ## 1. Component Purpose & Confirmation Flow
 
 ### Purpose
+
 The modal acts as the final confirmation surface within the booking journey:
+
 - Confirms successful reservation processing.
 - Summarizes booking metadata: Booking ID, venue name, room/desk details, reserved date/time window, attendee count, total paid amount, and payment status.
 - Integrates the digital boarding pass / access passcard with entry instructions or QR credentials.
 - Offers direct actions: **Print Receipt**, **Download Passcard**, and **Close / Return to Dashboard**.
 
 ### Booking Confirmation Lifecycle
+
 1. **Trigger**: After successful booking API settlement, the parent container mounts or toggles `isOpen={true}` on `BookingConfirmationModal`.
 2. **Mount & Initial Focus**: The modal establishes an accessible dialog overlay, disables body scrolling, caches the pre-dialog active element, and moves focus into the primary action or close button.
 3. **Review & Passcard Delivery**: The user reviews booking credentials and venue access codes or passcard QR markers.
@@ -27,6 +30,7 @@ The modal acts as the final confirmation surface within the booking journey:
 To comply with WCAG 2.1 Level AA requirements (SC 2.4.3 Focus Order & SC 2.1.2 No Keyboard Trap), `BookingConfirmationModal` strictly regulates focus:
 
 ### Focus Trapping
+
 - When open, focus is constrained within the modal container.
 - Key listener captures <kbd>Tab</kbd> and <kbd>Shift</kbd> + <kbd>Tab</kbd>:
   - If focus is on the last focusable element and the user presses <kbd>Tab</kbd>, focus wraps around to the first focusable element.
@@ -34,6 +38,7 @@ To comply with WCAG 2.1 Level AA requirements (SC 2.4.3 Focus Order & SC 2.1.2 N
 - Non-modal DOM siblings can be marked `inert` or `aria-hidden="true"` while the confirmation dialog is active.
 
 ### Focus Restoration
+
 - Upon mounting or opening, the component caches `document.activeElement` into a reference (`triggerRef` or `previousActiveElementRef`).
 - When the modal unmounts or `onClose` is triggered, focus is programmatically restored to `previousActiveElementRef.current.focus()`, ensuring non-visual and keyboard users do not lose their place in the parent page.
 
@@ -43,12 +48,12 @@ To comply with WCAG 2.1 Level AA requirements (SC 2.4.3 Focus Order & SC 2.1.2 N
 
 The modal listens for document-level keyboard events when open:
 
-| Key Interaction | Scope | Behavior |
-| :--- | :--- | :--- |
-| <kbd>Escape</kbd> | Document-wide | Closes the modal immediately and restores focus to previous element. |
-| <kbd>Tab</kbd> | Within modal | Advances focus forward through interactive controls (Close, Passcard actions, Print, Done). Wraps at the end. |
-| <kbd>Shift</kbd> + <kbd>Tab</kbd> | Within modal | Advances focus backwards through interactive controls. Wraps at the start. |
-| <kbd>Enter</kbd> / <kbd>Space</kbd> | On buttons / links | Activates the focused button (e.g. trigger Print, Download Passcard, or Dismiss). |
+| Key Interaction                     | Scope              | Behavior                                                                                                      |
+| :---------------------------------- | :----------------- | :------------------------------------------------------------------------------------------------------------ |
+| <kbd>Escape</kbd>                   | Document-wide      | Closes the modal immediately and restores focus to previous element.                                          |
+| <kbd>Tab</kbd>                      | Within modal       | Advances focus forward through interactive controls (Close, Passcard actions, Print, Done). Wraps at the end. |
+| <kbd>Shift</kbd> + <kbd>Tab</kbd>   | Within modal       | Advances focus backwards through interactive controls. Wraps at the start.                                    |
+| <kbd>Enter</kbd> / <kbd>Space</kbd> | On buttons / links | Activates the focused button (e.g. trigger Print, Download Passcard, or Dismiss).                             |
 
 ---
 
@@ -60,7 +65,7 @@ The modal listens for document-level keyboard events when open:
   - `role="dialog"` or `role="alertdialog"`
   - `aria-modal="true"` prevents assistive technologies from navigating into background content.
 - **Accessible Labelling**:
-  - `aria-labelledby="booking-confirmation-title"` points to the modal heading (e.g., *"Booking Confirmed!"*).
+  - `aria-labelledby="booking-confirmation-title"` points to the modal heading (e.g., _"Booking Confirmed!"_).
   - `aria-describedby="booking-confirmation-desc"` points to the summary section containing booking reference and venue details.
 - **Button Labels**:
   - Dismiss / icon buttons use explicit `aria-label="Close booking confirmation"` to give screen readers unambiguous context.
@@ -74,14 +79,18 @@ The modal listens for document-level keyboard events when open:
 ## 5. Passcard Integration & Receipt Generation
 
 ### Passcard Integration
+
 The confirmation view embeds the digital access passcard:
+
 - Displays reservation reference code and alphanumeric confirmation token.
 - Renders high-contrast QR/barcode for turnstile/desk check-in.
-- Presents venue access window (e.g., *Check-in: 09:00 AM &bull; Check-out: 06:00 PM*).
+- Presents venue access window (e.g., _Check-in: 09:00 AM &bull; Check-out: 06:00 PM_).
 - Allows saving passcard to Apple Wallet / Google Wallet or downloading as an image/PDF.
 
 ### Receipt Data Structuring
+
 The receipt section consolidates financial and operational records:
+
 - **Header**: Organization branding, tax registration number, and receipt issuance timestamp.
 - **Line Items**: Base reservation charge, add-ons (monitors, meeting room equipment, coffee service), taxes, and applied platform credits/discounts.
 - **Payment Method**: Masked card information (e.g. `•••• 4242`) or credit balance deduction with transaction ID.
@@ -93,6 +102,7 @@ The receipt section consolidates financial and operational records:
 The modal includes a dedicated **Print Receipt** button that triggers a styled browser print dialog.
 
 ### Workflow
+
 1. User clicks **Print Receipt** (or presses <kbd>Enter</kbd> while focused).
 2. The component ensures print stylesheets (`@media print`) are applied.
 3. `window.print()` is called.
@@ -106,13 +116,13 @@ The modal includes a dedicated **Print Receipt** button that triggers a styled b
 
 ## 7. Relevant User Interactions & Error / Edge Cases
 
-| Scenario / Edge Case | Behavior & Fallback |
-| :--- | :--- |
+| Scenario / Edge Case                      | Behavior & Fallback                                                                                                                                            |
+| :---------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Missing / Delayed Passcard Generation** | If QR generation fails or passcard service times out, an accessible fallback message displays with the plain-text reservation code and a manual reload button. |
-| **Print Cancelled / Blocked by Browser** | If `window.print()` throws or is blocked by browser policies, a secondary "Download Receipt PDF" fallback link is made available. |
-| **Rapid Double-Clicks on Print** | Print trigger is debounced and disabled while the native print dialog is queued to prevent duplicate print requests. |
-| **Backdrop Click Dismissal** | Optional backdrop click can dismiss the modal, but clicks inside the modal card are stopped (`e.stopPropagation()`). |
-| **Small Screens / Mobile Viewports** | Modal scrolls vertically (`overflow-y: auto`) without cutting off print actions; sticky footer provides quick access to dismissal and print buttons. |
+| **Print Cancelled / Blocked by Browser**  | If `window.print()` throws or is blocked by browser policies, a secondary "Download Receipt PDF" fallback link is made available.                              |
+| **Rapid Double-Clicks on Print**          | Print trigger is debounced and disabled while the native print dialog is queued to prevent duplicate print requests.                                           |
+| **Backdrop Click Dismissal**              | Optional backdrop click can dismiss the modal, but clicks inside the modal card are stopped (`e.stopPropagation()`).                                           |
+| **Small Screens / Mobile Viewports**      | Modal scrolls vertically (`overflow-y: auto`) without cutting off print actions; sticky footer provides quick access to dismissal and print buttons.           |
 
 ---
 
@@ -125,7 +135,8 @@ import type { BookingReceiptData } from "@/types/booking";
 
 export const BookingFlowContainer: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [confirmedBooking, setConfirmedBooking] = useState<BookingReceiptData | null>(null);
+  const [confirmedBooking, setConfirmedBooking] =
+    useState<BookingReceiptData | null>(null);
 
   const handleBookingSuccess = (receipt: BookingReceiptData) => {
     setConfirmedBooking(receipt);
@@ -176,13 +187,13 @@ export const BookingFlowContainer: React.FC = () => {
 
 ### 9.1 Exported ICS Helpers
 
-| Function | Signature | Purpose |
-| :--- | :--- | :--- |
-| `escapeIcsText` | `(str: string) => string` | Escapes RFC 5545 `TEXT` characters: `\` → `\\`, `;` → `\;`, `,` → `\,`, and `\r\n`/`\n` → `\n`. |
-| `formatIcsUtcDate` | `(date: Date) => string` | Formats a `Date` in basic RFC 5545 UTC format `YYYYMMDDTHHmmssZ` using `getUTC*()` accessors. |
+| Function               | Signature                                                                    | Purpose                                                                                                                                                                                                    |
+| :--------------------- | :--------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `escapeIcsText`        | `(str: string) => string`                                                    | Escapes RFC 5545 `TEXT` characters: `\` → `\\`, `;` → `\;`, `,` → `\,`, and `\r\n`/`\n` → `\n`.                                                                                                            |
+| `formatIcsUtcDate`     | `(date: Date) => string`                                                     | Formats a `Date` in basic RFC 5545 UTC format `YYYYMMDDTHHmmssZ` using `getUTC*()` accessors.                                                                                                              |
 | `parseBookingDateTime` | `(dateStr?: string, timeStr?: string, isoFallback?: string) => Date \| null` | Parses `isoFallback` first if valid; otherwise parses `dateStr` directly if it contains `"T"`, or combines `${dateStr}T${timePart}` (defaulting `timeStr` to `"09:00"` and appending `":00"` for `HH:mm`). |
-| `generateIcsCalendar` | `(booking: BookingReceiptData) => string \| null` | Builds the CRLF-delimited (`\r\n`) `VCALENDAR` payload, or returns `null` if `booking.id` or a valid start date is missing. |
-| `downloadBookingIcs` | `(booking: BookingReceiptData) => boolean` | Wraps `generateIcsCalendar` in a `Blob` (`text/calendar;charset=utf-8`), triggers an `<a download="booking-<sanitizedId>.ics">` click, and revokes the object URL. |
+| `generateIcsCalendar`  | `(booking: BookingReceiptData) => string \| null`                            | Builds the CRLF-delimited (`\r\n`) `VCALENDAR` payload, or returns `null` if `booking.id` or a valid start date is missing.                                                                                |
+| `downloadBookingIcs`   | `(booking: BookingReceiptData) => boolean`                                   | Wraps `generateIcsCalendar` in a `Blob` (`text/calendar;charset=utf-8`), triggers an `<a download="booking-<sanitizedId>.ics">` click, and revokes the object URL.                                         |
 
 ### 9.2 Emitted RFC 5545 Event Structure
 
@@ -227,4 +238,3 @@ WorkSphere intentionally emits **UTC `Z`-suffixed timestamps** (`YYYYMMDDTHHmmss
 
 - Unit tests in [`src/components/bookings/__tests__/BookingConfirmationModal.test.tsx`](../../src/components/bookings/__tests__/BookingConfirmationModal.test.tsx) verify RFC 5545 headers, escaped `SUMMARY` / `DESCRIPTION` / `LOCATION` fields, 1-hour fallback duration, CRLF line endings, and invalid-input handling.
 - Additional timezone and `VTIMEZONE` vs. UTC documentation is maintained in [`docs/calendar/ICS_SPECIFICATION.md`](../calendar/ICS_SPECIFICATION.md) and [`docs/api/BOOKING_CALENDAR_EXPORT.md`](../api/BOOKING_CALENDAR_EXPORT.md).
-

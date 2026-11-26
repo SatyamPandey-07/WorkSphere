@@ -1,9 +1,9 @@
 # Solana Durable Nonce Offline Transaction Signing Runbook
 
-> **Operational Engineering Runbook & Architectural Reference**  
-> **Status:** Operational Procedure / Architecture Guide  
-> **Target Subsystems:** Solana Payments & Escrows (`src/lib/payments/solanaPay.ts`, `src/lib/solana/solanaPayEscrow.ts`, `src/hooks/useSolanaSeatEscrow.ts`)  
-> **SDK Compatibility:** `@solana/web3.js` v1.99.x  
+> **Operational Engineering Runbook & Architectural Reference**
+> **Status:** Operational Procedure / Architecture Guide
+> **Target Subsystems:** Solana Payments & Escrows (`src/lib/payments/solanaPay.ts`, `src/lib/solana/solanaPayEscrow.ts`, `src/hooks/useSolanaSeatEscrow.ts`)
+> **SDK Compatibility:** `@solana/web3.js` v1.99.x
 > **Related Documentation:** [`docs/solana/ESCROW_SETTLEMENT_RUNBOOK.md`](./ESCROW_SETTLEMENT_RUNBOOK.md), [`docs/solana/DURABLE_NONCE_SPECIFICATION.md`](./DURABLE_NONCE_SPECIFICATION.md), and [`docs/solana/SOLANA_ESCROW_REFUND_CRON.md`](./SOLANA_ESCROW_REFUND_CRON.md)
 
 ---
@@ -13,18 +13,23 @@
 In standard Solana transaction processing, every transaction must reference a recent cluster blockhash in its `recentBlockhash` header field.
 
 ### Why Ordinary Blockhashes Fail in Intermittent or Offline Conditions
+
 - **Blockhash Lifespan:** A Solana block is produced every ~400 milliseconds. Recent blockhashes are tracked in a 300-slot commitment window, remaining valid on-chain for only ~150 slots—approximately **60 to 90 seconds** of real wall-clock time.
 - **The Nomad Disconnection Bottleneck:** Digital nomads working from trains, basements, remote coworking hubs, or long-haul flights experience prolonged connectivity dropouts. If a transaction is prepared and signed while connected, any network disruption exceeding 90 seconds renders the transaction permanently expired (`BlockhashNotFound`).
 - **Cold-Storage & Air-Gapped Delays:** Secure multi-signature operations, hardware wallet inspections (e.g., Ledger, Keystone), and multi-party escrow release approvals cannot be reliably reviewed, physically signed across air-gapped QR/USB transfers, and broadcast within a 60-second window.
 
 ### The Purpose of Durable Nonce Transactions
+
 A **Durable Nonce** replaces the ephemeral cluster blockhash with a persistent 32-byte value stored inside an on-chain **Nonce Account** owned by the Solana System Program.
+
 - **Long-Lived Validity:** The transaction remains valid indefinitely until the stored nonce value is explicitly advanced or the account is closed.
 - **Replay Protection via Nonce Advance:** The transaction must include `SystemProgram.nonceAdvance` as its very first instruction. When executed, validators update the stored nonce to a fresh blockhash in the same atomic block, preventing double-spend or replay attacks.
 - **Offline Signing Enabler:** An online preparation server can assemble an escrow settlement transaction, serialize the message, and hand it off to an air-gapped signing device. Once signed, the payload can be held for hours or days and broadcast whenever connectivity returns.
 
 ### WorkSphere Escrow Context
+
 In WorkSphere's desk booking ecosystem, durable nonces apply directly to:
+
 1. **Pre-Authorized Desk Escrow Deposits:** Locking SOL or USDC collateral before entering transit with no guaranteed internet.
 2. **Cold-Storage Venue Escrow Settlements:** Coworking venue owners authorizing large escrow disbursements via multi-sig cold storage.
 3. **Delayed Refund Claims:** Claiming balance refunds following a dispute even if the user is intermittently offline.
@@ -33,17 +38,17 @@ In WorkSphere's desk booking ecosystem, durable nonces apply directly to:
 
 ## B. Standard Blockhash vs Durable Nonce
 
-| Dimension | Standard Recent Blockhash | Durable Nonce Transaction |
-| :--- | :--- | :--- |
-| **Blockhash Source** | Cluster `getLatestBlockhash()` | Stored value in on-chain Nonce Account |
-| **Transaction Validity Period** | ~150 slots (~60–90 seconds) | **Indefinite** (until nonce is advanced or closed) |
-| **Offline Signing Suitability** | Unsuitable (expires during inspection) | **Ideal** (supports multi-hour / multi-day air-gaps) |
-| **Nonce Account Requirement** | None | Dedicated 80-byte System Program account |
-| **Account Rent Exemption** | N/A | Must hold minimum rent-exempt balance (~0.00144 SOL) |
-| **Transaction Composition** | Arbitrary instructions | **First instruction must be `SystemProgram.nonceAdvance`** |
-| **Concurrency Limit** | Unbounded parallel transactions | **Strictly 1 in-flight transaction per nonce account** |
-| **Replay & Ordering** | Blockhash expiration prevents replays | Nonce advancement updates stored hash atomically |
-| **Failure Recovery** | Re-fetch new blockhash and re-sign | Re-fetch advanced nonce, reconstruct, and re-sign |
+| Dimension                       | Standard Recent Blockhash              | Durable Nonce Transaction                                  |
+| :------------------------------ | :------------------------------------- | :--------------------------------------------------------- |
+| **Blockhash Source**            | Cluster `getLatestBlockhash()`         | Stored value in on-chain Nonce Account                     |
+| **Transaction Validity Period** | ~150 slots (~60–90 seconds)            | **Indefinite** (until nonce is advanced or closed)         |
+| **Offline Signing Suitability** | Unsuitable (expires during inspection) | **Ideal** (supports multi-hour / multi-day air-gaps)       |
+| **Nonce Account Requirement**   | None                                   | Dedicated 80-byte System Program account                   |
+| **Account Rent Exemption**      | N/A                                    | Must hold minimum rent-exempt balance (~0.00144 SOL)       |
+| **Transaction Composition**     | Arbitrary instructions                 | **First instruction must be `SystemProgram.nonceAdvance`** |
+| **Concurrency Limit**           | Unbounded parallel transactions        | **Strictly 1 in-flight transaction per nonce account**     |
+| **Replay & Ordering**           | Blockhash expiration prevents replays  | Nonce advancement updates stored hash atomically           |
+| **Failure Recovery**            | Re-fetch new blockhash and re-sign     | Re-fetch advanced nonce, reconstruct, and re-sign          |
 
 ---
 
@@ -74,6 +79,7 @@ A durable nonce account is an 80-byte account (`NONCE_ACCOUNT_LENGTH`) owned by 
    Fetch account info via `connection.getAccountInfo()` or `connection.getNonce()`. Ensure account state is `Initialized` and extract the 32-byte stored nonce blockhash.
 
 ### Role Responsibilities and Security Constraints
+
 - **Required Signers:** Both the funding account (payer) and the new `nonceKeypair` must sign the creation transaction.
 - **Account Ownership:** The account must be assigned to `SystemProgram.programId`.
 - **Authority Management:** The `authorizedPubkey` controls advancing and withdrawing. If the authority key is lost, funds in the nonce account cannot be recovered.
@@ -106,13 +112,13 @@ A valid durable nonce transaction must adhere strictly to instruction ordering a
 
 ### Roles and Signer Distinction
 
-| Role | Responsibility | Must Sign? | Can be Same Entity? |
-| :--- | :--- | :--- | :--- |
-| **Nonce Account** | Holds stored nonce state and rent balance | No (only at creation) | No (dedicated account) |
-| **Nonce Authority** | Authorizes advancing the nonce | **Yes** | Yes, can equal Fee Payer |
-| **Fee Payer** | Pays transaction network fees | **Yes** | Yes |
-| **Transfer / Escrow Authority** | Authorizes moving funds or changing escrow state | **Yes** | Yes, can equal Nonce Authority |
-| **Recipient / Venue** | Receives transfer or escrow settlement | No | Yes |
+| Role                            | Responsibility                                   | Must Sign?            | Can be Same Entity?            |
+| :------------------------------ | :----------------------------------------------- | :-------------------- | :----------------------------- |
+| **Nonce Account**               | Holds stored nonce state and rent balance        | No (only at creation) | No (dedicated account)         |
+| **Nonce Authority**             | Authorizes advancing the nonce                   | **Yes**               | Yes, can equal Fee Payer       |
+| **Fee Payer**                   | Pays transaction network fees                    | **Yes**               | Yes                            |
+| **Transfer / Escrow Authority** | Authorizes moving funds or changing escrow state | **Yes**               | Yes, can equal Nonce Authority |
+| **Recipient / Venue**           | Receives transfer or escrow settlement           | No                    | Yes                            |
 
 ### Illustrative Implementation (@solana/web3.js 1.99.x)
 
@@ -140,12 +146,22 @@ export interface BuildDurableNonceTxParams {
  * Compliant with @solana/web3.js v1.99.x specifications.
  */
 export async function buildDurableNonceTransferTx(
-  params: BuildDurableNonceTxParams
+  params: BuildDurableNonceTxParams,
 ): Promise<Transaction> {
-  const { connection, noncePubkey, nonceAuthority, feePayer, recipient, lamports } = params;
+  const {
+    connection,
+    noncePubkey,
+    nonceAuthority,
+    feePayer,
+    recipient,
+    lamports,
+  } = params;
 
   // 1. Fetch current on-chain nonce state
-  const nonceAccountInfo = await connection.getAccountInfo(noncePubkey, "confirmed");
+  const nonceAccountInfo = await connection.getAccountInfo(
+    noncePubkey,
+    "confirmed",
+  );
   if (!nonceAccountInfo) {
     throw new Error(`Nonce account ${noncePubkey.toBase58()} not found`);
   }
@@ -166,7 +182,7 @@ export async function buildDurableNonceTransferTx(
     SystemProgram.nonceAdvance({
       noncePubkey,
       authorizedPubkey: nonceAuthority,
-    })
+    }),
   );
 
   // 4. Instruction 1..n: Business instructions (e.g. transfer or escrow release)
@@ -175,7 +191,7 @@ export async function buildDurableNonceTransferTx(
       fromPubkey: feePayer,
       toPubkey: recipient,
       lamports,
-    })
+    }),
   );
 
   // 5. Assign durable nonce hash as recentBlockhash and designate fee payer
@@ -232,6 +248,7 @@ The offline signing procedure establishes an air-gapped security boundary betwee
 ```
 
 ### Stage 1: Online Preparation
+
 1. Query the on-chain nonce account and extract the stored nonce hash.
 2. Assemble the transaction: instruction 0 is `SystemProgram.nonceAdvance`, instruction 1 is the transfer or escrow action.
 3. Serialize the partially signed or unsigned transaction message:
@@ -245,6 +262,7 @@ The offline signing procedure establishes an air-gapped security boundary betwee
 4. Transfer `base64WirePayload` via secure QR-code scanning or an encrypted air-gapped drive.
 
 ### Stage 2: Offline Signing
+
 1. The air-gapped host deserializes the wire payload:
    ```typescript
    const tx = Transaction.from(Buffer.from(base64Payload, "base64"));
@@ -261,9 +279,12 @@ The offline signing procedure establishes an air-gapped security boundary betwee
 4. Export the fully signed binary payload as base64.
 
 ### Stage 3: Online Submission
+
 1. The online machine receives the signed base64 payload and recreates the transaction:
    ```typescript
-   const signedTx = Transaction.from(Buffer.from(signedBase64Payload, "base64"));
+   const signedTx = Transaction.from(
+     Buffer.from(signedBase64Payload, "base64"),
+   );
    ```
 2. Validate that all signatures are present and valid:
    ```typescript
@@ -281,7 +302,9 @@ The offline signing procedure establishes an air-gapped security boundary betwee
 Solana transactions utilize a compact binary format defined by the Solana runtime.
 
 ### Binary Wire Format
+
 A serialized Solana transaction consists of:
+
 1. **Compact-Array of Signatures:** A length-prefixed vector of 64-byte Ed25519 signatures corresponding to the signers listed in the transaction message header.
 2. **Message Payload:**
    - **Header:** 3 bytes designating `numRequiredSignatures`, `numReadonlySignedAccounts`, and `numReadonlyUnsignedAccounts`.
@@ -290,28 +313,31 @@ A serialized Solana transaction consists of:
    - **Instructions:** Compact-u16 array of compiled instructions containing `programIdIndex`, account indices, and byte data length.
 
 ### Legacy vs. Versioned Transactions
+
 - **Legacy Transactions (`Transaction`):** Capped at 1,232 bytes (IPv6 MTU buffer size). Suitable for basic durable nonce transfers and single-escrow settlements.
 - **Versioned Transactions (`VersionedTransaction` / `MessageV0`):** Support Address Lookup Tables (ALTs) to compress complex multi-account escrows. When using versioned transactions with durable nonces, `SystemProgram.nonceAdvance` remains instruction 0, and the durable nonce is provided to `compileToV0Message({ recentBlockhash: nonceAccount.nonce })`.
 
 ### Safe Wire Transport Encoding
+
 The standard transport encoding for moving serialized byte buffers across machines or air-gapped QR codes is **Base64** or **Hexadecimal**. Base64 is strictly a transport representation; the underlying transaction bytes must never be modified or re-encoded during transit.
 
 ---
 
 ## G. Error Handling and Recovery
 
-| Symptom / Error Code | Root Cause | Recommended Recovery Action |
-| :--- | :--- | :--- |
-| **`BlockhashNotFound` or `Transaction simulation failed: Blockhash not found`** | The durable nonce account was already advanced or closed before this transaction reached validators. | **Do not resubmit.** Re-query the nonce account to inspect its current nonce. Reconstruct the transaction with the new nonce, re-sign, and broadcast. |
-| **`InstructionError(0, InvalidAccountData)`** | Account at `noncePubkey` is uninitialized or not owned by System Program. | Check account balance and call `SystemProgram.nonceInitialize`. Verify `noncePubkey` matches deployment records. |
-| **`InstructionError(0, Custom(0))` / Missing Signature** | Nonce authority did not sign the transaction. | Ensure the keypair matching `nonceAccount.authorizedPubkey` signs the transaction. |
-| **`AccountNotFound` on Fee Payer** | The designated fee payer has 0 lamports or is unfunded on-chain. | Fund the fee payer with sufficient SOL to cover base network fees (~5,000 lamports). |
-| **`InsufficientFundsForFee`** | Fee payer has lamports, but balance is less than required fee. | Add funds to fee payer wallet before broadcasting. |
-| **`InstructionError(1, Custom(x))` (Business Failure)** | Escrow conditions changed (e.g. seat already booked or expired). | The nonce will be consumed if simulation passed and tx landed. Re-evaluate application business logic before rebuilding. |
-| **RPC 429 / Rate Limited** | Active RPC node is shedding load. | Fail over to secondary RPC endpoint using `SolanaRpcConnectionPool` exponential backoff with jitter. |
-| **Network Timeout During `sendRawTransaction`** | HTTP connection dropped during POST. | Query `connection.getSignatureStatuses([signature])`. If found/confirmed, do not resubmit. If unconfirmed and nonce remains unadvanced, safely resend the same raw bytes. |
+| Symptom / Error Code                                                            | Root Cause                                                                                           | Recommended Recovery Action                                                                                                                                               |
+| :------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`BlockhashNotFound` or `Transaction simulation failed: Blockhash not found`** | The durable nonce account was already advanced or closed before this transaction reached validators. | **Do not resubmit.** Re-query the nonce account to inspect its current nonce. Reconstruct the transaction with the new nonce, re-sign, and broadcast.                     |
+| **`InstructionError(0, InvalidAccountData)`**                                   | Account at `noncePubkey` is uninitialized or not owned by System Program.                            | Check account balance and call `SystemProgram.nonceInitialize`. Verify `noncePubkey` matches deployment records.                                                          |
+| **`InstructionError(0, Custom(0))` / Missing Signature**                        | Nonce authority did not sign the transaction.                                                        | Ensure the keypair matching `nonceAccount.authorizedPubkey` signs the transaction.                                                                                        |
+| **`AccountNotFound` on Fee Payer**                                              | The designated fee payer has 0 lamports or is unfunded on-chain.                                     | Fund the fee payer with sufficient SOL to cover base network fees (~5,000 lamports).                                                                                      |
+| **`InsufficientFundsForFee`**                                                   | Fee payer has lamports, but balance is less than required fee.                                       | Add funds to fee payer wallet before broadcasting.                                                                                                                        |
+| **`InstructionError(1, Custom(x))` (Business Failure)**                         | Escrow conditions changed (e.g. seat already booked or expired).                                     | The nonce will be consumed if simulation passed and tx landed. Re-evaluate application business logic before rebuilding.                                                  |
+| **RPC 429 / Rate Limited**                                                      | Active RPC node is shedding load.                                                                    | Fail over to secondary RPC endpoint using `SolanaRpcConnectionPool` exponential backoff with jitter.                                                                      |
+| **Network Timeout During `sendRawTransaction`**                                 | HTTP connection dropped during POST.                                                                 | Query `connection.getSignatureStatuses([signature])`. If found/confirmed, do not resubmit. If unconfirmed and nonce remains unadvanced, safely resend the same raw bytes. |
 
 ### Crucial Recovery Principle: Re-submitting vs. Re-building
+
 - **Same Raw Bytes Retry:** If submission timed out due to network congestion but `connection.getNonce()` proves the nonce has **not** advanced, the exact same signed wire transaction can be safely rebroadcast.
 - **Rebuilding Required:** Once the nonce account advances on-chain, the old transaction signature is permanently invalidated. A new transaction must be constructed with the fresh nonce and signed from scratch.
 
@@ -334,6 +360,7 @@ The standard transport encoding for moving serialized byte buffers across machin
 ## I. WorkSphere Integration and Limitations
 
 ### Current Repository Status
+
 - **Implemented Components:**
   - `src/lib/payments/solanaPay.ts`: Solana Pay link/QR generation, fee limit validation (`validateRelayFeeLamports`), and RPC connection failover pool (`SolanaRpcConnectionPool`).
   - `src/lib/solana/solanaPayEscrow.ts`: Desk seat escrow lifecycle (reserve, deposit, release, dispute, and refund).
@@ -348,12 +375,14 @@ The standard transport encoding for moving serialized byte buffers across machin
 ## J. Operational Checklist
 
 ### Nonce Account Setup Checklist
+
 - [ ] Nonce account keypair generated securely offline.
 - [ ] Rent-exempt balance queried via `getMinimumBalanceForRentExemption(80)`.
 - [ ] `createAccount` and `nonceInitialize` combined in initialization transaction.
 - [ ] Transaction confirmed on-chain and verified via `getNonce()`.
 
 ### Online Preparation Checklist
+
 - [ ] Fresh nonce value retrieved from on-chain nonce account.
 - [ ] `SystemProgram.nonceAdvance` placed at instruction index 0.
 - [ ] Escrow/payment instruction placed at instruction index 1.
@@ -362,6 +391,7 @@ The standard transport encoding for moving serialized byte buffers across machin
 - [ ] Unsigned wire payload exported as Base64.
 
 ### Offline Signing Checklist
+
 - [ ] Base64 payload transferred to air-gapped machine.
 - [ ] Transaction deserialized via `Transaction.from()`.
 - [ ] Recipient address and transfer lamports verified against invoice.
@@ -370,6 +400,7 @@ The standard transport encoding for moving serialized byte buffers across machin
 - [ ] Signed wire payload exported as Base64.
 
 ### Submission & Monitoring Checklist
+
 - [ ] Signed payload imported on online machine.
 - [ ] Signatures verified via `verifySignatures()`.
 - [ ] Transaction broadcast via `sendRawTransaction()`.
@@ -380,11 +411,11 @@ The standard transport encoding for moving serialized byte buffers across machin
 
 ## K. References
 
-1. **Solana Official Documentation — Durable Nonces:**  
+1. **Solana Official Documentation — Durable Nonces:**
    [https://solana.com/docs/core/transactions/durable-nonces](https://solana.com/docs/core/transactions/durable-nonces)
-2. **Solana System Program Nonce Instructions:**  
+2. **Solana System Program Nonce Instructions:**
    [https://docs.rs/solana-program/latest/solana_program/system_instruction/enum.SystemInstruction.html](https://docs.rs/solana-program/latest/solana_program/system_instruction/enum.SystemInstruction.html)
-3. **Solana Web3.js SDK Reference (`@solana/web3.js` v1.99.0):**  
+3. **Solana Web3.js SDK Reference (`@solana/web3.js` v1.99.0):**
    `NonceAccount`, `SystemProgram.nonceAdvance`, `SystemProgram.nonceInitialize`, `SystemProgram.nonceWithdraw`.
-4. **Solana CLI Offline Transaction Signing Guide:**  
+4. **Solana CLI Offline Transaction Signing Guide:**
    [https://solana.com/docs/core/transactions/offline-signing](https://solana.com/docs/core/transactions/offline-signing)

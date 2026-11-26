@@ -122,17 +122,17 @@ The outbox pipeline progresses through four explicit lifecycle states:
 
 ### Worker Execution Flow (`/api/webhooks/worker`)
 
-1. **Claiming Due Events (`claimDueWebhookEvents`):**  
+1. **Claiming Due Events (`claimDueWebhookEvents`):**
    The worker polls up to 100 candidate events that are either:
    - `state: "PENDING"` with `nextAttemptAt <= now()`; or
-   - `state: "PROCESSING"` with expired lease `lockedUntil <= now()` (stale worker recovery).  
+   - `state: "PROCESSING"` with expired lease `lockedUntil <= now()` (stale worker recovery).
      Each candidate is claimed using an atomic compare-and-set update (`updateMany` where `state` and `nextAttemptAt`/`lockedUntil` match). If two workers race, exactly one worker acquires the 90-second lease (`lockedUntil`).
 
-2. **Deduplicated Endpoint Dispatch:**  
-   The worker invokes `deliverWebhookEvent(userId, eventType, data, { eventId, excludeEndpointIds: completedEndpointIds })`.  
+2. **Deduplicated Endpoint Dispatch:**
+   The worker invokes `deliverWebhookEvent(userId, eventType, data, { eventId, excludeEndpointIds: completedEndpointIds })`.
    Any endpoint that already succeeded on a prior attempt is excluded, preventing duplicate deliveries to healthy endpoints during retries.
 
-3. **Result Classification:**  
+3. **Result Classification:**
    Outcomes from each endpoint are evaluated:
    - Successful endpoints (`SUCCESS`) and terminal failures are appended to `completedEndpointIds`.
    - Terminal failures are also recorded in `permanentFailureEndpointIds`.
@@ -173,7 +173,7 @@ $$\text{delay} = \max\left(1000\text{ms},\; \lfloor \text{random}() \times \text
 | Exceeded  | $\ge 5$ attempts                      | Moved to `DEAD_LETTER`                    |
 
 > [!NOTE]
-> **Why Full Jitter?**  
+> **Why Full Jitter?**
 > If an external endpoint suffers an outage and returns HTTP 503, hundreds of queued events accumulate. When the endpoint recovers, deterministic or fixed-interval retries would trigger all requests simultaneously (the "thundering herd" problem), crashing the target server again. Full jitter spreads retries uniformly across the entire backoff window, ensuring a flat request rate.
 
 ---

@@ -53,8 +53,10 @@ export const StudentDiscountVerification: React.FC<
   const [indicatorVariant, setIndicatorVariant] =
     useState<ProgressIndicatorVariant>(defaultIndicatorVariant);
   const workerRef = useRef<ZkpWorkerLike | null>(null);
+  const generationIdRef = useRef(0);
   const resetProgressOnFailure = useCallback(
     (nextStatus: "cancelled" | "error", message: string | null) => {
+      generationIdRef.current += 1;
       if (workerRef.current) {
         workerRef.current.onmessage = null;
         workerRef.current.onerror = null;
@@ -67,6 +69,39 @@ export const StudentDiscountVerification: React.FC<
     },
     [],
   );
+  const attachAndStartWorker = useCallback(
+    (worker: ZkpWorkerLike) => {
+      workerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<ZkpWorkerProgressMessage>) => {
+        const data = event.data ?? {};
+        if (data.type === "error" || typeof data.error === "string") {
+          resetProgressOnFailure(
+            "error",
+            data.error ?? "ZKP proof generation failed.",
+          );
+          return;
+        }
+        if (data.type === "complete" || data.proof !== undefined) {
+          setProgress(100);
+          setStatus("verified");
+          worker.terminate();
+          workerRef.current = null;
+          onVerified?.(data.proof);
+          return;
+        }
+        if (typeof data.progress === "number")
+          setProgress(clampProgressPercent(data.progress));
+      };
+      worker.onerror = (event: ErrorEvent) => {
+        resetProgressOnFailure(
+          "error",
+          event.message || "ZKP worker encountered an unexpected error.",
+        );
+      };
+      worker.postMessage({ action: "generate_student_proof", studentId });
+    },
+    [onVerified, resetProgressOnFailure, studentId],
+  );
   const startGeneration = useCallback(() => {
     if (workerRef.current) {
       workerRef.current.onmessage = null;
@@ -74,48 +109,45 @@ export const StudentDiscountVerification: React.FC<
       workerRef.current.terminate();
       workerRef.current = null;
     }
+    const currentGenId = ++generationIdRef.current;
     setErrorMessage(null);
     setProgress(0);
     setStatus("generating");
-    const worker = createWorker
-      ? createWorker()
-      : (new Worker(new URL("@/workers/zkpWorker", import.meta.url), {
-          type: "module",
-        }) as unknown as ZkpWorkerLike);
-    workerRef.current = worker;
-    worker.onmessage = (event: MessageEvent<ZkpWorkerProgressMessage>) => {
-      const data = event.data ?? {};
-      if (data.type === "error" || typeof data.error === "string") {
+    if (createWorker) {
+      attachAndStartWorker(createWorker());
+      return;
+    }
+    void import("./createZkpWorker")
+      .then(({ createZkpWorker }) => {
+        if (generationIdRef.current !== currentGenId) return;
+        attachAndStartWorker(createZkpWorker() as unknown as ZkpWorkerLike);
+      })
+      .catch((err: unknown) => {
+        if (generationIdRef.current !== currentGenId) return;
         resetProgressOnFailure(
           "error",
-          data.error ?? "ZKP proof generation failed.",
+          err instanceof Error ? err.message : "Failed to initialize ZKP worker.",
         );
-        return;
-      }
-      if (data.type === "complete" || data.proof !== undefined) {
-        setProgress(100);
-        setStatus("verified");
-        worker.terminate();
-        workerRef.current = null;
-        onVerified?.(data.proof);
-        return;
-      }
-      if (typeof data.progress === "number")
-        setProgress(clampProgressPercent(data.progress));
-    };
-    worker.onerror = (event: ErrorEvent) => {
-      resetProgressOnFailure(
-        "error",
-        event.message || "ZKP worker encountered an unexpected error.",
-      );
-    };
-    worker.postMessage({ action: "generate_student_proof", studentId });
-  }, [createWorker, onVerified, resetProgressOnFailure, studentId]);
+      });
+  }, [attachAndStartWorker, createWorker, resetProgressOnFailure]);
   const cancelGeneration = useCallback(() => {
     resetProgressOnFailure("cancelled", null);
   }, [resetProgressOnFailure]);
+  useEffect(() => {
+    if (status !== "generating") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        cancelGeneration();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [status, cancelGeneration]);
   useEffect(
     () => () => {
+      generationIdRef.current += 1;
       if (workerRef.current) {
         workerRef.current.onmessage = null;
         workerRef.current.onerror = null;

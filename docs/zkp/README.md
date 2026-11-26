@@ -4,7 +4,7 @@
 
 * [Groth16 Circuit Architecture for Student Discounts](./GROTH16_CIRCUIT_ARCHITECTURE.md) — Circom R1CS constraints, BN254 (`alt_bn128`) pairing & trusted setup phases, Web Worker SnarkJS proof generation, public signal validation (`merkleRoot`, `domainHash`, `expirationTimestamp`), performance benchmarks, and threat analysis.
 * [Groth16 Circuit Proving Key Verification Benchmark Runbook](./GROTH16_BENCHMARK_RUNBOOK.md) — Comprehensive technical runbook covering Circom compilation, Groth16 trusted setup and ceremony artifacts, `.zkey`/`.vkey` management, SnarkJS proof lifecycle, browser WASM vs Node.js performance benchmarks, mobile memory limits, and IndexedDB proof verification caching.
-* [`zkpWorker` Linear Memory Boundary Limits & WASM Page Allocation](./ZKP_WORKER_MEMORY_BOUNDARIES.md) — `MAX_WITNESS_BYTES` (16 MiB) and `WASM_PAGE_BYTES` (64 KiB) budgets, witness byte estimation, WASM page allocation formulas, `ZkpMemoryBoundaryError` codes, and per-job state reset guarantees.
+* [RLN Epoch Key Rotation Window & Double-Spend Slashing Invariants](./RLN_EPOCH_ROTATION_AND_SLASHING.md) — zero-downtime UTC midnight overlap window, linear Shamir share recovery math over BN254 $\mathbb{F}_p$, and double-spend slashing invariants.
 
 ## Circuit Verification Test Cases
 

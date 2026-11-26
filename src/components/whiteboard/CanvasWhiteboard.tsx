@@ -17,10 +17,143 @@ import type { ConstructType } from "@/lib/whiteboard/constructGenerator";
 
 interface CanvasWhiteboardProps {
   canvasId: string;
+  readOnlyGuestSession?: {
+    expiresAtMs?: number | null;
+  } | null;
 }
 
-export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
-  const { user } = useUser();
+interface GuestSessionCountdown {
+  expiresAtMs: number;
+  label: string;
+  expired: boolean;
+}
+
+function formatRemainingTime(totalSeconds: number): string {
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const unit = (value: number, name: string) =>
+    `${value} ${name}${value === 1 ? "" : "s"}`;
+
+  if (days > 0) {
+    return `${unit(days, "day")}, ${unit(hours, "hour")}`;
+  }
+  if (hours > 0) {
+    return `${unit(hours, "hour")}, ${unit(minutes, "minute")}`;
+  }
+  if (minutes > 0) {
+    return `${unit(minutes, "minute")}, ${unit(seconds, "second")}`;
+  }
+  return unit(seconds, "second");
+}
+
+function GuestSessionExpirationBanner({
+  expiresAtMs,
+}: {
+  expiresAtMs?: number | null;
+}) {
+  const validExpiresAtMs =
+    typeof expiresAtMs === "number" &&
+    Number.isFinite(expiresAtMs) &&
+    Number.isFinite(new Date(expiresAtMs).getTime())
+      ? expiresAtMs
+      : null;
+  const [countdown, setCountdown] = useState<GuestSessionCountdown | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (validExpiresAtMs === null) {
+      setCountdown(null);
+      return;
+    }
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const updateCountdown = () => {
+      const secondsRemaining = Math.max(
+        0,
+        Math.ceil((validExpiresAtMs - Date.now()) / 1000),
+      );
+      const expired = secondsRemaining === 0;
+      const nextCountdown = {
+        expiresAtMs: validExpiresAtMs,
+        label: expired
+          ? "Guest session expired"
+          : formatRemainingTime(secondsRemaining),
+        expired,
+      };
+
+      setCountdown((current) =>
+        current?.expiresAtMs === nextCountdown.expiresAtMs &&
+        current.label === nextCountdown.label &&
+        current.expired === nextCountdown.expired
+          ? current
+          : nextCountdown,
+      );
+
+      if (expired && interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    updateCountdown();
+    if (validExpiresAtMs > Date.now()) {
+      interval = setInterval(updateCountdown, 1000);
+    }
+
+    return () => {
+      if (interval !== null) {
+        clearInterval(interval);
+      }
+    };
+  }, [validExpiresAtMs]);
+
+  if (validExpiresAtMs === null) {
+    return null;
+  }
+
+  const currentCountdown =
+    countdown?.expiresAtMs === validExpiresAtMs ? countdown : null;
+  const displayText = currentCountdown?.label ?? "Checking remaining time";
+  const expiresAt = new Date(validExpiresAtMs).toISOString();
+
+  return (
+    <aside
+      aria-label="Read-only guest session expiration"
+      className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400"
+    >
+      <span className="font-medium text-zinc-700 dark:text-zinc-300">
+        Guest preview
+      </span>
+      {currentCountdown?.expired ? (
+        <p
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="mt-0.5"
+        >
+          {displayText}
+        </p>
+      ) : (
+        <time
+          className="ml-2"
+          dateTime={expiresAt}
+          aria-label={`Read-only guest session expires in ${displayText}`}
+        >
+          {displayText}
+        </time>
+      )}
+    </aside>
+  );
+}
+
+export function CanvasWhiteboard({
+  canvasId,
+  readOnlyGuestSession,
+}: CanvasWhiteboardProps) {
+  const { user, isLoaded, isSignedIn } = useUser();
   const userName = user?.fullName ?? user?.username ?? "Anonymous";
   const userId = user?.id ?? "anonymous";
   const userColor = user?.id
@@ -191,6 +324,12 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
 
   return (
     <div className="relative flex flex-col gap-3">
+      {isLoaded && isSignedIn === false && readOnlyGuestSession && (
+        <GuestSessionExpirationBanner
+          expiresAtMs={readOnlyGuestSession.expiresAtMs}
+        />
+      )}
+
       <div className="flex justify-center">
         <CanvasToolbar
           tool={tool}

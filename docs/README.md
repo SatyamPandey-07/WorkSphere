@@ -78,6 +78,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
 - [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.
 - [Solana Durable Nonce Offline Signing Runbook](./solana/DURABLE_NONCE_OFFLINE_SIGNING.md) — persistent nonce account initialization, instruction ordering, offline transaction serialization, air-gapped signing workflows, and RPC recovery.
+- [Solana Cluster RPC Pool Failover, Health Scoring & Cooldown Windows](./architecture/SOLANA_CLUSTER_RPC_POOL.md) — endpoint health snapshots, consecutive failure thresholds, circuit-breaker cooldown recovery windows, and `Promise.allSettled` failover routing.
 
 ## Features & Product Documentation
 

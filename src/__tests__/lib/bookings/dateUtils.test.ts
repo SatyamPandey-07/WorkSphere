@@ -1,5 +1,6 @@
 import {
   calculatePassExpiration,
+  isValidBookingDate,
   getNextMonday,
 } from "@/lib/bookings/dateUtils";
 import { formatLocalDate } from "@/lib/validations/dateFilter";
@@ -173,4 +174,24 @@ describe("getNextMonday (#9885)", () => {
 
     expect(original.getTime()).toBe(originalTime);
   });
+});
+
+describe("isValidBookingDate", () => {
+  it.each([
+    "2026-02-31",
+    "2026-13-45",
+    "2026-00-10",
+    "invalid-date",
+    "2026-2-05",
+    "",
+  ])("rejects invalid date: %s", (value) => {
+    expect(isValidBookingDate(value)).toBe(false);
+  });
+
+  it.each(["2026-02-28", "2024-02-29", "2026-12-31"])(
+    "accepts valid date: %s",
+    (value) => {
+      expect(isValidBookingDate(value)).toBe(true);
+    },
+  );
 });

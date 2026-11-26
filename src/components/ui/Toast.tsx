@@ -501,7 +501,7 @@ function ToastItem({
     countdown !== undefined
       ? toast.message
           .replace("{countdown}", String(countdown))
-          // Singular only for exactly 1 Ã¢â‚¬â€ "11 seconds" must stay plural.
+          // Singular only for exactly 1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "11 seconds" must stay plural.
           .replace(/(^|\D)1 seconds\b/, (_, before) => `${before}1 second`)
       : toast.message;
 
@@ -532,32 +532,32 @@ function ToastItem({
         }
       }}
     >
-      {/* Tactical corner brackets for HUD appearance (Ã¢Å’Å“ Ã¢Å’Â Ã¢Å’Å¾ Ã¢Å’Å¸) */}
+      {/* Tactical corner brackets for HUD appearance (ÃƒÂ¢Ã…â€™Ã…â€œ ÃƒÂ¢Ã…â€™Ã‚Â ÃƒÂ¢Ã…â€™Ã…Â¾ ÃƒÂ¢Ã…â€™Ã…Â¸) */}
       {isHud && (
         <>
           <span
             className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            Ã¢Å’Å“
+            ÃƒÂ¢Ã…â€™Ã…â€œ
           </span>
           <span
             className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            Ã¢Å’Â
+            ÃƒÂ¢Ã…â€™Ã‚Â
           </span>
           <span
             className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            Ã¢Å’Å¾
+            ÃƒÂ¢Ã…â€™Ã…Â¾
           </span>
           <span
             className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            Ã¢Å’Å¸
+            ÃƒÂ¢Ã…â€™Ã…Â¸
           </span>
         </>
       )}
@@ -643,7 +643,7 @@ export interface TacticalHUDToastProps {
 
 /**
  * TacticalHUDToast: Dedicated collimated fighter jet HUD advisory notification component
- * with tactical corner brackets (Ã¢Å’Å“ Ã¢Å’Â Ã¢Å’Å¾ Ã¢Å’Å¸), glowing emerald power dot, and telemetry timestamp.
+ * with tactical corner brackets (ÃƒÂ¢Ã…â€™Ã…â€œ ÃƒÂ¢Ã…â€™Ã‚Â ÃƒÂ¢Ã…â€™Ã…Â¾ ÃƒÂ¢Ã…â€™Ã…Â¸), glowing emerald power dot, and telemetry timestamp.
  */
 export function TacticalHUDToast({
   message,
@@ -680,25 +680,25 @@ export function TacticalHUDToast({
         className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        Ã¢Å’Å“
+        âŒœ
       </span>
       <span
         className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        Ã¢Å’Â
+        âŒ
       </span>
       <span
         className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        Ã¢Å’Å¾
+        âŒž
       </span>
       <span
         className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        Ã¢Å’Å¸
+        âŒŸ
       </span>
 
       {/* Emerald status dot */}
@@ -795,7 +795,7 @@ export const Toast: React.FC<ToastProps> = ({
         aria-label="Dismiss notification"
         className="ml-1 rounded-md px-1.5 py-0.5 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white"
       >
-        Ã¢Å“â€¢
+        ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢
       </button>
     </div>
   );

@@ -24,15 +24,17 @@ describe('NFCDeskCheckinController - ISO 14443 NFC & Smart Presence State Machin
     dId: string = deskId,
     tagUid: string = '04A1B2C3D4E5F6',
     timestamp: number = Date.now(),
-    nonce: string = Math.random().toString(36).substring(2)
+    nonce: string = Math.random().toString(36).substring(2),
+    operation: import('../../core/iot/NFCDeskCheckinController').TapOperation = 'checkin'
   ): NFCTapPayload {
-    const signature = controller.computeTapSignature(deskKey, tagUid, userId, dId, timestamp, nonce);
+    const signature = controller.computeTapSignature(deskKey, tagUid, userId, dId, operation, timestamp, nonce);
     return {
       tagUid,
       userId,
       deskId: dId,
       timestamp,
       nonce,
+      operation,
       signature,
     };
   }
@@ -98,7 +100,7 @@ describe('NFCDeskCheckinController - ISO 14443 NFC & Smart Presence State Machin
       controller.checkIn(checkInPayload, t0);
 
       const t1 = t0 + 7200000; // 2 hours later
-      const checkOutPayload = createValidPayload('user-alice', deskId, '04A1B2C3D4E5F6', t1, 'nonce-out');
+      const checkOutPayload = createValidPayload('user-alice', deskId, '04A1B2C3D4E5F6', t1, 'nonce-out', 'checkout');
       const res = controller.checkOut(checkOutPayload, t1);
 
       expect(res.success).toBe(true);

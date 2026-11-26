@@ -3,11 +3,18 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiResponse";
 import { normalizeRequiredText } from "@/lib/amenityVoteInput";
+import { AmenityConsensusEvaluation } from "@/lib/amenityVotes/consensusEngine";
+import { trackAccurateContributions } from "@/lib/amenityVotes/settlementService";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
 
-function buildResponse(amenity: string, upvotes: number, downvotes: number) {
+function buildResponse(
+  amenity: string,
+  upvotes: number,
+  downvotes: number,
+  consensus?: AmenityConsensusEvaluation,
+) {
   const totalVotes = upvotes + downvotes;
   const confidenceScore =
     totalVotes > 0 ? Math.round((upvotes / totalVotes) * 100) : 100;
@@ -21,13 +28,21 @@ function buildResponse(amenity: string, upvotes: number, downvotes: number) {
     downvotes,
     confidenceScore,
     hidden,
+    ...(consensus
+      ? {
+          consensusState: consensus.state,
+          settlementEligible: consensus.settlementEligible,
+          disputeEscalated: consensus.disputeEscalated ?? false,
+          settlementDeadline: consensus.settlementDeadline ?? null,
+        }
+      : {}),
   };
 }
 
 // GET /api/venues/[venueId]/amenity-votes
 export async function GET(
   _req: NextRequest,
-  context: { params: Promise<{ venueId: string }> }
+  context: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { venueId } = await context.params;
@@ -68,7 +83,7 @@ export async function GET(
       const myVote = userId
         ? v.votes.find(
             (vote: { userId: string; isUpvote: boolean }) =>
-              vote.userId === userId
+              vote.userId === userId,
           )
         : undefined;
 
@@ -95,7 +110,7 @@ export async function GET(
 // POST /api/venues/[venueId]/amenity-votes
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ venueId: string }> }
+  context: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { venueId } = await context.params;
@@ -124,53 +139,82 @@ export async function POST(
       return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
-    const validation = await prisma.amenityValidation.upsert({
-      where: { venueId_amenity: { venueId, amenity } },
-      update: {},
-      create: { venueId, amenity, upvotes: 0, downvotes: 0 },
-    });
+    const updatedValidation = await prisma.$transaction(async (tx) => {
+      const validation = await tx.amenityValidation.upsert({
+        where: { venueId_amenity: { venueId, amenity } },
+        update: {},
+        create: { venueId, amenity, upvotes: 0, downvotes: 0 },
+      });
 
-    const existingVote = await prisma.amenityVote.findUnique({
-      where: { userId_validationId: { userId, validationId: validation.id } },
-    });
+      const existingVote = await tx.amenityVote.findUnique({
+        where: { userId_validationId: { userId, validationId: validation.id } },
+      });
 
-    if (existingVote) {
-      if (existingVote.isUpvote === isUpvote) {
-        return NextResponse.json(
-          buildResponse(amenity, validation.upvotes, validation.downvotes)
-        );
+      if (existingVote) {
+        if (existingVote.isUpvote === isUpvote) {
+          return validation;
+        }
+
+        await tx.amenityVote.update({
+          where: { id: existingVote.id },
+          data: { isUpvote },
+        });
+
+        return await tx.amenityValidation.update({
+          where: { id: validation.id },
+          data: isUpvote
+            ? { upvotes: { increment: 1 }, downvotes: { decrement: 1 } }
+            : { upvotes: { decrement: 1 }, downvotes: { increment: 1 } },
+        });
       }
 
-      await prisma.amenityVote.update({
-        where: { id: existingVote.id },
-        data: { isUpvote },
-      });
+      try {
+        await tx.amenityVote.create({
+          data: { validationId: validation.id, userId, isUpvote },
+        });
 
-      const updated = await prisma.amenityValidation.update({
-        where: { id: validation.id },
-        data: isUpvote
-          ? { upvotes: { increment: 1 }, downvotes: { decrement: 1 } }
-          : { upvotes: { decrement: 1 }, downvotes: { increment: 1 } },
-      });
-
-      return NextResponse.json(
-        buildResponse(amenity, updated.upvotes, updated.downvotes)
-      );
-    }
-
-    await prisma.amenityVote.create({
-      data: { validationId: validation.id, userId, isUpvote },
+        return await tx.amenityValidation.update({
+          where: { id: validation.id },
+          data: isUpvote
+            ? { upvotes: { increment: 1 } }
+            : { downvotes: { increment: 1 } },
+        });
+      } catch (err: any) {
+        // Handle concurrent insert unique constraint gracefully
+        if (err?.code === "P2002") {
+          const concurrentVote = await tx.amenityVote.findUnique({
+            where: {
+              userId_validationId: { userId, validationId: validation.id },
+            },
+          });
+          if (concurrentVote && concurrentVote.isUpvote !== isUpvote) {
+            await tx.amenityVote.update({
+              where: { id: concurrentVote.id },
+              data: { isUpvote },
+            });
+            return await tx.amenityValidation.update({
+              where: { id: validation.id },
+              data: isUpvote
+                ? { upvotes: { increment: 1 }, downvotes: { decrement: 1 } }
+                : { upvotes: { decrement: 1 }, downvotes: { increment: 1 } },
+            });
+          }
+          return await tx.amenityValidation.findUniqueOrThrow({
+            where: { id: validation.id },
+          });
+        }
+        throw err;
+      }
     });
 
-    const updated = await prisma.amenityValidation.update({
-      where: { id: validation.id },
-      data: isUpvote
-        ? { upvotes: { increment: 1 } }
-        : { downvotes: { increment: 1 } },
-    });
-
+    const consensus = await trackAccurateContributions(updatedValidation.id);
     return NextResponse.json(
-      buildResponse(amenity, updated.upvotes, updated.downvotes)
+      buildResponse(
+        amenity,
+        updatedValidation.upvotes,
+        updatedValidation.downvotes,
+        consensus,
+      ),
     );
   } catch (error: any) {
     console.error("POST /api/venues/[venueId]/amenity-votes error:", error);

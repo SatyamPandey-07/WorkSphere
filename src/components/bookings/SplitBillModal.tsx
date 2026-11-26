@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   X,
   CreditCard,
@@ -13,7 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { BookingSummary } from "./BookingList";
-import type { SplitBillSummary, GuestShare } from "@/lib/billing/splitPayment";
+import type { SplitBillSummary } from "@/lib/billing/splitPayment";
 
 export interface SplitBillModalProps {
   booking: BookingSummary;
@@ -96,12 +96,16 @@ export function SplitBillModal({
           throw new Error(json.error || "Failed to load split bill");
         }
         setSplitData(json.split);
-        if (typeof json.split?.totalAmount === "number" && !isNaN(json.split.totalAmount)) {
+        if (
+          typeof json.split?.totalAmount === "number" &&
+          !isNaN(json.split.totalAmount)
+        ) {
           setTotalAmount(json.split.totalAmount);
         }
       } catch (err: unknown) {
         if (!isSubscribed || abortController.signal.aborted) return;
-        const message = err instanceof Error ? err.message : "Could not calculate split bill";
+        const message =
+          err instanceof Error ? err.message : "Could not calculate split bill";
         setError(message);
       } finally {
         if (isSubscribed) {
@@ -161,7 +165,9 @@ export function SplitBillModal({
 
   if (!isOpen) return null;
 
-  const guestShares = Array.isArray(splitData?.guestShares) ? splitData.guestShares : [];
+  const guestShares = Array.isArray(splitData?.guestShares)
+    ? splitData.guestShares
+    : [];
 
   return (
     <div
@@ -244,14 +250,14 @@ export function SplitBillModal({
                       }}
                       className="w-24 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-right text-sm font-bold text-white focus:outline-none focus:ring-1 focus:ring-violet-500 font-mono"
                     />
-                    <span className="text-xs text-zinc-500 font-medium">USD</span>
+                    <span className="text-xs text-zinc-500 font-medium">
+                      USD
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between border-t border-zinc-800/80 pt-3 text-xs">
-                  <span className="text-zinc-400">
-                    Your Share (Host):
-                  </span>
+                  <span className="text-zinc-400">Your Share (Host):</span>
                   <span
                     data-testid="split-bill-host-share"
                     className="font-bold text-emerald-400 font-mono"
@@ -284,7 +290,8 @@ export function SplitBillModal({
                       No guests added to this booking yet
                     </p>
                     <p className="text-[11px]">
-                      Add guest email addresses during reservation to auto-generate split payment links.
+                      Add guest email addresses during reservation to
+                      auto-generate split payment links.
                     </p>
                   </div>
                 ) : (
@@ -314,18 +321,42 @@ export function SplitBillModal({
                               </div>
                               <span
                                 className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                  guest.paid
+                                  guest.paid ||
+                                  guest.paymentStatus === "COMPLETED"
                                     ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                    : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                    : guest.paymentStatus === "FAILED"
+                                      ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                                      : guest.paymentStatus === "CANCELLED"
+                                        ? "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                                        : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                                 }`}
                               >
-                                {guest.paid ? "Paid & Confirmed" : "Pending Payment"}
+                                {guest.paid ||
+                                guest.paymentStatus === "COMPLETED"
+                                  ? "Paid & Confirmed"
+                                  : guest.paymentStatus === "FAILED"
+                                    ? "Payment Failed"
+                                    : guest.paymentStatus === "CANCELLED"
+                                      ? "Checkout Cancelled"
+                                      : "Pending Payment"}
                               </span>
                             </div>
                           </div>
 
-                          {/* 1-Tap Share Actions */}
+                          {/* 1-Tap Share & Checkout Actions */}
                           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-zinc-800/60">
+                            {!guest.paid && guest.paymentUrl && (
+                              <a
+                                href={guest.paymentUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-testid={`checkout-btn-${guest.guestId}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-400 text-xs font-semibold transition-colors"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                Checkout
+                              </a>
+                            )}
                             {guest.shareLinks?.whatsapp && (
                               <a
                                 href={guest.shareLinks.whatsapp}
@@ -352,14 +383,21 @@ export function SplitBillModal({
 
                             <button
                               type="button"
-                              onClick={() => handleCopy(guest.paymentUrl || "", guest.guestId)}
+                              onClick={() =>
+                                handleCopy(
+                                  guest.paymentUrl || "",
+                                  guest.guestId,
+                                )
+                              }
                               data-testid={`copy-btn-${guest.guestId}`}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors ml-auto"
                             >
                               {isCopied ? (
                                 <>
                                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span className="text-emerald-400">Copied!</span>
+                                  <span className="text-emerald-400">
+                                    Copied!
+                                  </span>
                                 </>
                               ) : (
                                 <>

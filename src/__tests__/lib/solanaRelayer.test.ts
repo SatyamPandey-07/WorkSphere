@@ -5,6 +5,7 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import {
   calculatePriorityFeePercentile,
@@ -170,6 +171,108 @@ describe("solanaRelayer priority fee dynamic adjustment (#5774)", () => {
       });
 
       expect(fee).toBe(2_500);
+    });
+  });
+
+  describe("escrow relay isolation", () => {
+    it.each(["escrow_deposit", "escrow_deposit_usdc"])(
+      "rejects %s transactions before relaying",
+      async (type) => {
+        const relayerKeypair = Keypair.generate();
+        const userKeypair = Keypair.generate();
+
+        process.env.SOLANA_RELAYER_PRIVATE_KEY = JSON.stringify(
+          Array.from(relayerKeypair.secretKey),
+        );
+        process.env.SOLANA_RPC_URL = "https://api.devnet.solana.com";
+
+        const transaction = new Transaction();
+        transaction.feePayer = relayerKeypair.publicKey;
+        transaction.instructions = [
+          new TransactionInstruction({
+            keys: [
+              {
+                pubkey: userKeypair.publicKey,
+                isSigner: true,
+                isWritable: false,
+              },
+            ],
+            programId: SystemProgram.programId,
+            data: Buffer.from(JSON.stringify({ bookingId: "booking-1", type })),
+          }),
+        ];
+        transaction.signatures = [
+          { publicKey: userKeypair.publicKey, signature: Buffer.alloc(64) },
+        ];
+        const transactionFrom = jest
+          .spyOn(Transaction, "from")
+          .mockReturnValue(transaction);
+        const getRecentPrioritizationFees = jest.spyOn(
+          Connection.prototype,
+          "getRecentPrioritizationFees",
+        );
+        const sendRawTransaction = jest.spyOn(
+          Connection.prototype,
+          "sendRawTransaction",
+        );
+
+        try {
+          await expect(
+            relayGaslessUsdcTransaction(Buffer.from([1]).toString("base64")),
+          ).rejects.toThrow(
+            "Escrow deposits must use /api/pay/solana so wallet balances are checked before transaction creation",
+          );
+          expect(transactionFrom).toHaveBeenCalled();
+          expect(getRecentPrioritizationFees).not.toHaveBeenCalled();
+          expect(sendRawTransaction).not.toHaveBeenCalled();
+        } finally {
+          transactionFrom.mockRestore();
+          getRecentPrioritizationFees.mockRestore();
+          sendRawTransaction.mockRestore();
+        }
+      },
+    );
+
+    it("does not classify a non-escrow transaction as an escrow deposit", async () => {
+      const relayerKeypair = Keypair.generate();
+      const userKeypair = Keypair.generate();
+
+      process.env.SOLANA_RELAYER_PRIVATE_KEY = JSON.stringify(
+        Array.from(relayerKeypair.secretKey),
+      );
+      delete process.env.SOLANA_RPC_URL;
+
+      const transaction = new Transaction();
+      transaction.feePayer = relayerKeypair.publicKey;
+      transaction.instructions = [
+        new TransactionInstruction({
+          keys: [
+            {
+              pubkey: userKeypair.publicKey,
+              isSigner: true,
+              isWritable: false,
+            },
+          ],
+          programId: SystemProgram.programId,
+          data: Buffer.from(
+            JSON.stringify({ bookingId: "booking-1", type: "other_payment" }),
+          ),
+        }),
+      ];
+      transaction.signatures = [
+        { publicKey: userKeypair.publicKey, signature: Buffer.alloc(64) },
+      ];
+      const transactionFrom = jest
+        .spyOn(Transaction, "from")
+        .mockReturnValue(transaction);
+
+      try {
+        await expect(
+          relayGaslessUsdcTransaction(Buffer.from([1]).toString("base64")),
+        ).rejects.toThrow("SOLANA_RPC_URL is not configured");
+      } finally {
+        transactionFrom.mockRestore();
+      }
     });
   });
 

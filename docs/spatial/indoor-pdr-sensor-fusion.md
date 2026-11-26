@@ -1,6 +1,6 @@
 # Indoor Pedestrian Dead Reckoning (PDR) & Sensor Fusion Engine
 
-This technical manual documents the mathematical foundations, kinematic models, signal processing pipelines, and state estimation algorithms powering WorkSphere's **Indoor Pedestrian Dead Reckoning (PDR)** and **Extended Kalman Filter (EKF) Sensor Fusion Engine** ([`src/lib/spatial/indoorPdrEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/spatial/indoorPdrEngine.ts)).
+This technical manual documents the mathematical foundations, kinematic models, signal processing pipelines, and state estimation algorithms powering WorkSphere's **Indoor Pedestrian Dead Reckoning (PDR)** and **Extended Kalman Filter (EKF) Sensor Fusion Engine** ([`src/lib/spatial/indoorPdrEngine.ts`](../../src/lib/spatial/indoorPdrEngine.ts)).
 
 ---
 

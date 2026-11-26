@@ -76,6 +76,38 @@ function decodeTransaction(serializedTransaction: string): Transaction {
   return Transaction.from(bytes);
 }
 
+function containsEscrowDepositInstruction(transaction: Transaction): boolean {
+  const configuredEscrowProgramId = process.env.NEXT_PUBLIC_ESCROW_PROGRAM_ID;
+
+  return transaction.instructions.some((instruction) => {
+    if (
+      configuredEscrowProgramId &&
+      !instruction.programId.equals(SystemProgram.programId) &&
+      instruction.programId.toBase58() === configuredEscrowProgramId
+    ) {
+      return true;
+    }
+
+    try {
+      const marker: unknown = JSON.parse(instruction.data.toString("utf8"));
+      if (typeof marker !== "object" || marker === null) return false;
+
+      const { bookingId, type } = marker as {
+        bookingId?: unknown;
+        type?: unknown;
+      };
+
+      return (
+        typeof bookingId === "string" &&
+        bookingId.length > 0 &&
+        (type === "escrow_deposit" || type === "escrow_deposit_usdc")
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 /**
  * Async FIFO Mutex for single-flight serialization of relayer signing and submissions (#5741).
  */
@@ -326,6 +358,12 @@ export async function relayGaslessUsdcTransaction(
     );
     if (!hasUserSignature) {
       throw new Error("Transaction must include a user signature");
+    }
+
+    if (containsEscrowDepositInstruction(transaction)) {
+      throw new Error(
+        "Escrow deposits must use /api/pay/solana so wallet balances are checked before transaction creation",
+      );
     }
 
     const connection = new Connection(

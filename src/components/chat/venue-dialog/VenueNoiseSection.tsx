@@ -11,6 +11,7 @@ import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
 import type { HourlyForecast } from "@/components/noise/NoiseTimelineChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 import { HourlyCrowdForecast } from "@/components/venues/HourlyCrowdForecast";
+import { NoiseSpectrogram } from "@/components/audio/NoiseSpectrogram";
 
 const VenueNoiseChart = dynamic(
   () =>
@@ -86,7 +87,8 @@ export function VenueNoiseSection({
 
   const safeOutletLocations = Array.isArray(safeVenue.outletLocations)
     ? safeVenue.outletLocations.filter(
-        (loc): loc is string => typeof loc === "string" && loc.trim().length > 0,
+        (loc): loc is string =>
+          typeof loc === "string" && loc.trim().length > 0,
       )
     : [];
 
@@ -213,6 +215,11 @@ export function VenueNoiseSection({
         />
       </div>
 
+      {/* Live three-band frequency breakdown */}
+      <div className="mb-6" data-testid="noise-spectrogram-container">
+        <NoiseSpectrogram />
+      </div>
+
       {/* Noise Reporting Widget */}
       <div className="mb-6" data-testid="noise-reporting-container">
         <NoiseReportingWidget
@@ -226,6 +233,24 @@ export function VenueNoiseSection({
         wifiPredictions={safeWifiPredictions}
         occupancyData={safeOccupancyData}
       />
+
+      {/* Insufficient Wi-Fi Telemetry State */}
+      {activeDistribution === "wifi" && safeWifiPredictions.length === 0 && (
+        <div
+          data-testid="wifi-insufficient-data-notice"
+          className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm text-center mb-6"
+        >
+          <Wifi className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
+          <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-1">
+            No Historical Wi-Fi Telemetry
+          </h4>
+          <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+            {safeVenue.wifiSpeed
+              ? `Profile speed is ${safeVenue.wifiSpeed} Mbps. Hourly speed benchmarks will display once member telemetry is recorded.`
+              : "Hourly speed benchmarks will appear here once member telemetry is recorded."}
+          </p>
+        </div>
+      )}
 
       {/* 24-Hour Forecast Graphs */}
       {safeNoiseForecast.length > 0 && (
@@ -261,8 +286,8 @@ export function VenueNoiseSection({
             {safeVenue.category === "cafe"
               ? "collaborative sessions"
               : "high-focus work"}
-            . Noise floor is {safeVenue.noiseLevel || "ambient"} and connectivity is
-            verified as {safeVenue.wifi ? "stable" : "pending"}.
+            . Noise floor is {safeVenue.noiseLevel || "ambient"} and
+            connectivity is verified as {safeVenue.wifi ? "stable" : "pending"}.
             {safeVenue.hasErgonomic &&
               " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
           </p>

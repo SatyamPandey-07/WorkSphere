@@ -1,6 +1,6 @@
 ﻿# IndexedDB Offline Storage Architecture, Quota Management & Eviction Policies
 
-This technical architecture manual documents WorkSphere's client-side offline persistence layer, detailed across [`src/lib/offline/storageStats.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/offline/storageStats.ts), [`src/lib/offline/db.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/offline/db.ts), and [`src/lib/offline/venueCache.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/offline/venueCache.ts). It details IndexedDB schema stores, StorageManager browser quota estimation, and multi-tier LRU cache eviction strategies.
+This technical architecture manual documents WorkSphere's client-side offline persistence layer, detailed across [`src/lib/offline/storageStats.ts`](../../src/lib/offline/storageStats.ts), [`src/lib/offline/db.ts`](../../src/lib/offline/db.ts), and [`src/lib/offline/venueCache.ts`](../../src/lib/offline/venueCache.ts). It details IndexedDB schema stores, StorageManager browser quota estimation, and multi-tier LRU cache eviction strategies.
 
 ---
 
@@ -36,7 +36,7 @@ flowchart TD
 
 ## 2. IndexedDB Schema & Object Stores (`worksphere-offline`)
 
-The central offline database is initialized via [`initOfflineDB()`](file:///c:/Users/admin/Desktop/workfere/src/lib/offline/db.ts) under database name `worksphere-offline` (current schema version: `8`).
+The central offline database is initialized via [`initOfflineDB()`](../../src/lib/offline/db.ts) under database name `worksphere-offline` (current schema version: `8`).
 
 ### 2.1 Core Object Stores Overview
 
@@ -152,5 +152,5 @@ if (navigator.storage && navigator.storage.persist) {
 ## 5. Error Handling & Privacy Mode Fallbacks
 
 - **Safari Private Browsing:** IndexedDB operations block or time out after $3\text{ seconds}$. The subsystem detects `SecurityError` or open timeouts, alerts the user, and gracefully falls back to session memory.
-- **Corrupted Storage Stats Recovery:** [`parseOfflineStorageStats()`](file:///c:/Users/admin/Desktop/workfere/src/lib/offline/storageStats.ts) catches `SyntaxError` on malformed or partially written JSON, logging diagnostics and restoring default zeroed metrics.
+- **Corrupted Storage Stats Recovery:** [`parseOfflineStorageStats()`](../../src/lib/offline/storageStats.ts) catches `SyntaxError` on malformed or partially written JSON, logging diagnostics and restoring default zeroed metrics.
 - **Cross-Tab Database Version Changes:** Listens to `onversionchange` and gracefully calls `db.close()` to prevent blocking database upgrades initiated by active background Service Workers or adjacent tabs.

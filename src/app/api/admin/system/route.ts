@@ -4,6 +4,7 @@ import {
   getAdminSystemMetrics,
   parseSystemRange,
 } from "@/lib/adminSystemMetrics";
+import { measureRedisLatencyMs } from "@/lib/redisHealth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +20,23 @@ export async function GET(request: NextRequest) {
     }
 
     const range = parseSystemRange(request.nextUrl.searchParams.get("range"));
-    const metrics = await getAdminSystemMetrics(range);
 
-    return NextResponse.json(metrics, {
-      headers: {
-        "Cache-Control": "private, no-store, max-age=0",
+    const [metrics, redisHealth] = await Promise.all([
+      getAdminSystemMetrics(range),
+      measureRedisLatencyMs(),
+    ]);
+
+    return NextResponse.json(
+      {
+        ...metrics,
+        redisHealth,
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "private, no-store, max-age=0",
+        },
+      },
+    );
   } catch (error) {
     console.error("[Admin System API]", error);
 

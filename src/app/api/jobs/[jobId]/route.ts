@@ -4,7 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 
 export async function GET(
   req: NextRequest,
-  context: { params: Promise<{ jobId: string }> }
+  context: { params: Promise<{ jobId: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -13,7 +13,7 @@ export async function GET(
     }
 
     const { jobId } = await context.params;
-    
+
     if (!jobId) {
       return NextResponse.json({ error: "Job ID required" }, { status: 400 });
     }
@@ -24,12 +24,18 @@ export async function GET(
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    // Fail closed: enforce that the job has an owner and matches the authenticated user.
+    // Return 404 to avoid leaking the existence of another user's job or metadata.
+    if (!status.userId || status.userId !== userId) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
     return NextResponse.json(status, { status: 200 });
   } catch (error: any) {
     console.error("[Job Status Error]:", error);
     return NextResponse.json(
       { error: "Failed to retrieve job status" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

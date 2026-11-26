@@ -1,10 +1,19 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { getSseReconnectDelay } from "@/lib/sseReconnect";
 import {
   CalendarDays,
   Check,
   Clock3,
+  Loader2,
   Monitor,
   RefreshCw,
   Sparkles,
@@ -126,6 +135,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [amenities, setAmenities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
+  // Synchronous re-entry guard. `booking` is React state and only becomes
+  // visible after a re-render, so two submit events dispatched in the same tick
+  // both observe `false`; the ref closes that window.
+  const submittingRef = useRef(false);
   const [message, setMessage] = useState("");
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
@@ -141,7 +154,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const {
     activeHolds,
     myHeldSeatId,
-    remainingSeconds,
+    remainingSeconds: _remainingSeconds,
     acquireHold,
     releaseHold,
     confirmCheckout,
@@ -155,6 +168,11 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           "Your 5-minute checkout hold expired. The seat has been released.",
         );
       }
+    },
+    onHoldExtended: (seatId) => {
+      // One-click recovery from the expiry toast: restore the selection.
+      setSelectedSeat(seatId);
+      setMessage("");
     },
     onHoldRejected: (_seatId, _reason, _heldBy, heldByName) => {
       setMessage(
@@ -211,27 +229,71 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
 
   useEffect(() => {
     let events: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let disposed = false;
+
+    const scheduleReconnect = (source?: EventSource) => {
+      if (disposed || (source && events !== source)) return;
+
+      if (source) {
+        source.close();
+        events = null;
+      }
+
+      if (retryTimer !== null) return;
+
+      const delay = getSseReconnectDelay(retryAttempt);
+      retryAttempt += 1;
+
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect();
+      }, delay);
+    };
 
     const connect = () => {
+      if (disposed) return;
+
       if (events) {
         events.close();
+        events = null;
       }
-      events = new EventSource(
-        `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
-      );
 
-      events.addEventListener("availability", () => {
-        loadAvailability();
-      });
+      try {
+        const source = new EventSource(
+          `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
+        );
 
-      events.onerror = () => {
-        // EventSource reconnects automatically.
-      };
+        events = source;
+
+        source.onopen = () => {
+          if (disposed || events !== source) return;
+          retryAttempt = 0;
+        };
+
+        source.addEventListener("availability", () => {
+          loadAvailability();
+        });
+
+        source.onerror = () => {
+          scheduleReconnect(source);
+        };
+      } catch {
+        scheduleReconnect();
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         console.log("[Reservation] Tab visible, resetting connection");
+
+        if (retryTimer !== null) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+
+        retryAttempt = 0;
         connect();
       }
     };
@@ -240,9 +302,18 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     connect();
 
     return () => {
+      disposed = true;
+
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+
       if (events) {
         events.close();
+        events = null;
       }
+
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [venue.id, loadAvailability]);
@@ -285,6 +356,8 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   async function reserve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (submittingRef.current) return;
+
     if (!isDurationValid) {
       setMessage("Duration must be between 1 and 1440 minutes.");
       return;
@@ -300,6 +373,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       return;
     }
 
+    submittingRef.current = true;
     setBooking(true);
     setMessage("");
     setConfirmationId(null);
@@ -328,48 +402,54 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       body.occurrences = occurrences || null;
     }
 
-    const response = await apiFetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    try {
+      const response = await apiFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    const payload = await response.json();
+      const payload = await response.json();
 
-    if (!response.ok) {
-      setMessage(payload.error ?? "Reservation failed");
-      setBooking(false);
+      if (!response.ok) {
+        setMessage(payload.error ?? "Reservation failed");
+        await loadAvailability();
+        return;
+      }
+
+      if (recurringEnabled && payload.booked) {
+        const guestMsg =
+          guests.length > 0
+            ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+            : "";
+        setMessage(
+          `${payload.booked} recurring booking(s) confirmed for ${selected.seatNumber}.${payload.skipped > 0 ? ` ${payload.skipped} date(s) skipped (unavailable).` : ""}${guestMsg}`,
+        );
+      } else {
+        const guestMsg =
+          guests.length > 0
+            ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+            : "";
+        setMessage(
+          `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
+        );
+        setConfirmationId(payload.confirmationId);
+      }
+
+      if (selectedSeat) {
+        await confirmCheckout(selectedSeat);
+      }
+      setSelectedSeat(null);
+      setGuests([]);
+      setRecurringEnabled(false);
       await loadAvailability();
-      return;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Reservation failed");
+      await loadAvailability();
+    } finally {
+      submittingRef.current = false;
+      setBooking(false);
     }
-
-    if (recurringEnabled && payload.booked) {
-      const guestMsg =
-        guests.length > 0
-          ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
-          : "";
-      setMessage(
-        `${payload.booked} recurring booking(s) confirmed for ${selected.seatNumber}.${payload.skipped > 0 ? ` ${payload.skipped} date(s) skipped (unavailable).` : ""}${guestMsg}`,
-      );
-    } else {
-      const guestMsg =
-        guests.length > 0
-          ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
-          : "";
-      setMessage(
-        `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
-      );
-      setConfirmationId(payload.confirmationId);
-    }
-
-    if (selectedSeat) {
-      await confirmCheckout(selectedSeat);
-    }
-    setSelectedSeat(null);
-    setBooking(false);
-    setGuests([]);
-    setRecurringEnabled(false);
-    await loadAvailability();
   }
 
   return (
@@ -576,7 +656,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   className="mt-4"
                   venueId={venue.id}
                   deskId={selectedSeat}
-                  deskName={seats.find((s) => s.id === selectedSeat)?.seatNumber}
+                  deskName={
+                    seats.find((s) => s.id === selectedSeat)?.seatNumber
+                  }
                   initialExpiresAt={activeHolds[selectedSeat]?.expiresAt}
                   totalDurationSeconds={300}
                   onExpire={(seatId) => {
@@ -968,6 +1050,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
               )}
 
               <button
+                type="submit"
                 disabled={
                   !selected ||
                   booking ||
@@ -975,9 +1058,23 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   availableCapacity === 0 ||
                   !isDurationValid
                 }
+                aria-busy={booking}
+                onClick={(e) => {
+                  if (submittingRef.current || booking) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
                 className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
                 data-testid="confirm-booking-btn"
               >
+                {booking && (
+                  <Loader2
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                    data-testid="confirm-booking-spinner"
+                  />
+                )}
                 {availableCapacity === 0
                   ? "No seats available"
                   : booking

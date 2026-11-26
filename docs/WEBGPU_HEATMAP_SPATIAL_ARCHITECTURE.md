@@ -10,8 +10,8 @@ This document provides a comprehensive, repository-verified technical analysis o
 
 WorkSphere employs a dual GPU acceleration model across two distinct graphics sub-systems:
 
-1. **Native WebGPU 3D Floor Plan Rendering Engine**: Implemented in [`src/lib/webgpu/floorPlanRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts) and [`src/lib/webgpu/shaders.wgsl.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/shaders.wgsl.ts). It provides zero-copy, hardware-accelerated 3D venue floor plan visualization and seat occupancy rendering using modern WebGPU render pipelines and WGSL shaders.
-2. **WebGL 2.0 / 1.0 Spatial Density Heatmap Engine**: Implemented in [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/webglHeatmapRenderer.ts), [`src/shaders/heatmapShaders.ts`](file:///c:/Codes/WorkSphere/src/shaders/heatmapShaders.ts), [`src/components/WebGLHeatmapLayer.tsx`](file:///c:/Codes/WorkSphere/src/components/WebGLHeatmapLayer.tsx), and [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts). It projects up to 100,000 workspace telemetry points using hardware vertex buffer objects (VBOs) and GLSL point-based spatial density shaders.
+1. **Native WebGPU 3D Floor Plan Rendering Engine**: Implemented in [`src/lib/webgpu/floorPlanRenderer.ts`](../src/lib/webgpu/floorPlanRenderer.ts) and [`src/lib/webgpu/shaders.wgsl.ts`](../src/lib/webgpu/shaders.wgsl.ts). It provides zero-copy, hardware-accelerated 3D venue floor plan visualization and seat occupancy rendering using modern WebGPU render pipelines and WGSL shaders.
+2. **WebGL 2.0 / 1.0 Spatial Density Heatmap Engine**: Implemented in [`src/lib/webgl/webglHeatmapRenderer.ts`](../src/lib/webgl/WebGLHeatmapRenderer.ts), [`src/shaders/heatmapShaders.ts`](../src/shaders/heatmapShaders.ts), [`src/components/WebGLHeatmapLayer.tsx`](../src/components/WebGLHeatmapLayer.tsx), and [`src/lib/webgl/contextManager.ts`](../src/lib/webgl/contextManager.ts). It projects up to 100,000 workspace telemetry points using hardware vertex buffer objects (VBOs) and GLSL point-based spatial density shaders.
 
 > [!IMPORTANT]
 > **Audit Finding**: No WebGPU compute pipelines (`GPUComputePipeline`), compute shader dispatches (`dispatchWorkgroups`), or 2D heat diffusion Partial Differential Equation (PDE) grid solvers (such as Jacobi iteration or finite difference algorithms) exist in the repository. All heatmap spatial clustering is executed via rasterization-based vertex point rendering in WebGL.
@@ -48,7 +48,7 @@ flowchart TD
 
 ## WebGPU Initialization & Device Selection
 
-WebGPU pipeline initialization is handled in [`WebGPUFloorPlanRenderer.initialize()`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts#L531-L607).
+WebGPU pipeline initialization is handled in [`WebGPUFloorPlanRenderer.initialize()`](../src/lib/webgpu/floorPlanRenderer.ts#L531-L607).
 
 ### Capability Detection & Adapter Selection Flow
 
@@ -130,13 +130,13 @@ A detailed repository-wide scan confirms that **no compute pipelines** exist in 
 - `@compute` shader entry points: 0 references across repository.
 - Storage Buffer binding layouts (`GPUBufferUsage.STORAGE`): 0 compute storage bindings used for spatial algorithms.
 
-All parallel compute tasks for spatial telemetry processing are handled either on the CPU via Javascript transformations in [`src/components/WebGLHeatmapLayer.tsx`](file:///c:/Codes/WorkSphere/src/components/WebGLHeatmapLayer.tsx#L86-L109) or during rasterization inside WebGL fragment shaders.
+All parallel compute tasks for spatial telemetry processing are handled either on the CPU via Javascript transformations in [`src/components/WebGLHeatmapLayer.tsx`](../src/components/WebGLHeatmapLayer.tsx#L86-L109) or during rasterization inside WebGL fragment shaders.
 
 ---
 
 ## WGSL Shader Architecture
 
-WGSL shaders are defined in [`src/lib/webgpu/shaders.wgsl.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/shaders.wgsl.ts) for 3D floor plan mesh rendering.
+WGSL shaders are defined in [`src/lib/webgpu/shaders.wgsl.ts`](../src/lib/webgpu/shaders.wgsl.ts) for 3D floor plan mesh rendering.
 
 ### 1. Vertex Shader (`vs_main`)
 
@@ -225,7 +225,7 @@ fn fs_main(input: FragmentInput) -> @location(0) vec4<f32> {
 > [!WARNING]
 > **2D Heat Diffusion Status**: **NOT FOUND** (No iterative heat equation / Laplacian diffusion matrix solver exists).
 
-Instead of iterative heat diffusion, spatial clustering and density rendering are performed via **GLSL hardware fragment rasterization** in [`src/shaders/heatmapShaders.ts`](file:///c:/Codes/WorkSphere/src/shaders/heatmapShaders.ts) and [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/webglHeatmapRenderer.ts).
+Instead of iterative heat diffusion, spatial clustering and density rendering are performed via **GLSL hardware fragment rasterization** in [`src/shaders/heatmapShaders.ts`](../src/shaders/heatmapShaders.ts) and [`src/lib/webgl/webglHeatmapRenderer.ts`](../src/lib/webgl/WebGLHeatmapRenderer.ts).
 
 ### Mathematical Model: Gaussian Spatial Density Decay
 
@@ -299,7 +299,7 @@ void main() {
 
 ### 1. WebGPU 3D Floor Plan Vertex Buffer Layout
 
-The vertex buffer in [`src/lib/webgpu/floorPlanRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts#L565-L572) has a stride of **40 bytes** (10 x `float32` attributes):
+The vertex buffer in [`src/lib/webgpu/floorPlanRenderer.ts`](../src/lib/webgpu/floorPlanRenderer.ts#L565-L572) has a stride of **40 bytes** (10 x `float32` attributes):
 
 ```
 +-------------------+-------------------+-------------------+-------------------+
@@ -325,7 +325,7 @@ Allocated as 128 bytes (`GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST`):
 
 ### 3. WebGL Heatmap VBO Memory Layout
 
-Allocated in [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/webglHeatmapRenderer.ts#L187-L199) with a stride of **16 bytes** (4 x `float32` attributes):
+Allocated in [`src/lib/webgl/webglHeatmapRenderer.ts`](../src/lib/webgl/WebGLHeatmapRenderer.ts#L187-L199) with a stride of **16 bytes** (4 x `float32` attributes):
 
 ```
 +-------------------+-------------------+-------------------+
@@ -384,11 +384,11 @@ stateDiagram-v2
 1. **WebGPU Resource Allocation**:
    - Vertex & Index buffers allocated via `device.createBuffer({ size, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST })`.
    - Data uploaded via `device.queue.writeBuffer(buffer, 0, data)`.
-   - Depth texture (`depth24plus`) generated per frame and explicitly freed via `depthTexture.destroy()` in [`src/lib/webgpu/floorPlanRenderer.ts#L721`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts#L721).
+   - Depth texture (`depth24plus`) generated per frame and explicitly freed via `depthTexture.destroy()` in [`src/lib/webgpu/floorPlanRenderer.ts#L721`](../src/lib/webgpu/floorPlanRenderer.ts#L721).
    - Complete engine teardown calls `vertexBuffer.destroy()`, `indexBuffer.destroy()`, `uniformBuffer.destroy()`, and `device.destroy()`.
 
 2. **WebGL Context Lost Recovery**:
-   - Implemented in [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts).
+   - Implemented in [`src/lib/webgl/contextManager.ts`](../src/lib/webgl/contextManager.ts).
    - Prevents default context lost behavior: `e.preventDefault()`.
    - Automatically re-initializes VBO buffers upon receiving `webglcontextrestored`.
 
@@ -426,7 +426,7 @@ flowchart TD
 
 ## Performance Benchmarks
 
-Below is the verified performance comparison from [`docs/WEBGPU_3D_FLOOR_PLAN_MANUAL.md`](file:///c:/Codes/WorkSphere/docs/WEBGPU_3D_FLOOR_PLAN_MANUAL.md#L218-L228) for 3D room model workloads (150,000 polygons, 50 dynamic seats, real-time lighting):
+Below is the verified performance comparison from [`docs/WEBGPU_3D_FLOOR_PLAN_MANUAL.md`](WEBGPU_3D_FLOOR_PLAN_MANUAL.md#L218-L228) for 3D room model workloads (150,000 polygons, 50 dynamic seats, real-time lighting):
 
 | Metric                   | WebGPU Pipeline | WebGL 2.0 Fallback | Improvement |
 | :----------------------- | :-------------- | :----------------- | :---------- |
@@ -456,11 +456,11 @@ Below is the verified performance comparison from [`docs/WEBGPU_3D_FLOOR_PLAN_MA
 
 | Feature                           | Status          | Evidence                                                                                                     | Missing / Remediations                      |
 | :-------------------------------- | :-------------- | :----------------------------------------------------------------------------------------------------------- | :------------------------------------------ |
-| **WebGPU 3D Floor Plan Renderer** | **Implemented** | [`src/lib/webgpu/floorPlanRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts)     | Fully implemented for 3D geometry           |
-| **WGSL Render Shaders**           | **Implemented** | [`src/lib/webgpu/shaders.wgsl.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/shaders.wgsl.ts)               | Vertex & fragment shaders implemented       |
-| **WebGL Point Heatmap Renderer**  | **Implemented** | [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/webglHeatmapRenderer.ts) | Renders 100k points via `gl.POINTS`         |
-| **GLSL Heatmap Density Shaders**  | **Implemented** | [`src/shaders/heatmapShaders.ts`](file:///c:/Codes/WorkSphere/src/shaders/heatmapShaders.ts)                 | Gaussian decay & multi-stop color ramp      |
-| **WebGL Context Lost Recovery**   | **Implemented** | [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts)             | Handles tab switching context loss          |
+| **WebGPU 3D Floor Plan Renderer** | **Implemented** | [`src/lib/webgpu/floorPlanRenderer.ts`](../src/lib/webgpu/floorPlanRenderer.ts)     | Fully implemented for 3D geometry           |
+| **WGSL Render Shaders**           | **Implemented** | [`src/lib/webgpu/shaders.wgsl.ts`](../src/lib/webgpu/shaders.wgsl.ts)               | Vertex & fragment shaders implemented       |
+| **WebGL Point Heatmap Renderer**  | **Implemented** | [`src/lib/webgl/webglHeatmapRenderer.ts`](../src/lib/webgl/WebGLHeatmapRenderer.ts) | Renders 100k points via `gl.POINTS`         |
+| **GLSL Heatmap Density Shaders**  | **Implemented** | [`src/shaders/heatmapShaders.ts`](../src/shaders/heatmapShaders.ts)                 | Gaussian decay & multi-stop color ramp      |
+| **WebGL Context Lost Recovery**   | **Implemented** | [`src/lib/webgl/contextManager.ts`](../src/lib/webgl/contextManager.ts)             | Handles tab switching context loss          |
 | **WebGPU Compute Pipeline**       | **Not Found**   | Entire repository scan                                                                                       | No `GPUComputePipeline` created             |
 | **WGSL Compute Shaders**          | **Not Found**   | Entire repository scan                                                                                       | No `@compute` entry points                  |
 | **2D Heat Diffusion Solver**      | **Not Found**   | Entire repository scan                                                                                       | No Jacobi / finite difference PDE solver    |

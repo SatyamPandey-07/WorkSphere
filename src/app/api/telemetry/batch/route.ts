@@ -39,36 +39,59 @@ export const MAX_TIMESTAMP_MS = 4102444800000; // 2100-01-01 UTC
  * - ISO-8601 or parseable date string that produces a valid finite time
  * - Date object with finite time
  */
-export function isValidTimestampValue(val: unknown): { valid: boolean; date?: Date; error?: string } {
+export function isValidTimestampValue(val: unknown): {
+  valid: boolean;
+  date?: Date;
+  error?: string;
+} {
   if (val === undefined || val === null) {
     return { valid: true }; // optional field
   }
 
   // Reject boolean, symbol, function, or plain non-date objects
-  if (typeof val === "boolean" || typeof val === "symbol" || typeof val === "function") {
-    return { valid: false, error: "Timestamp cannot be a boolean, symbol, or function" };
+  if (
+    typeof val === "boolean" ||
+    typeof val === "symbol" ||
+    typeof val === "function"
+  ) {
+    return {
+      valid: false,
+      error: "Timestamp cannot be a boolean, symbol, or function",
+    };
   }
 
   let epochMs: number;
 
   if (typeof val === "number") {
     if (!Number.isFinite(val) || Number.isNaN(val)) {
-      return { valid: false, error: "Numeric timestamp must be a finite number" };
+      return {
+        valid: false,
+        error: "Numeric timestamp must be a finite number",
+      };
     }
     // Handle seconds vs milliseconds epoch (seconds if < 1e11)
     epochMs = val < 100000000000 ? val * 1000 : val;
   } else if (typeof val === "string") {
     const trimmed = val.trim();
     if (!trimmed) {
-      return { valid: false, error: "Timestamp string cannot be empty or whitespace" };
+      return {
+        valid: false,
+        error: "Timestamp string cannot be empty or whitespace",
+      };
     }
     // Reject strings that are just "NaN", "Infinity", etc.
-    if (trimmed.toLowerCase() === "nan" || trimmed.toLowerCase().includes("infinity")) {
+    if (
+      trimmed.toLowerCase() === "nan" ||
+      trimmed.toLowerCase().includes("infinity")
+    ) {
       return { valid: false, error: "Timestamp string is not a valid date" };
     }
     const parsed = Date.parse(trimmed);
     if (!Number.isFinite(parsed) || Number.isNaN(parsed)) {
-      return { valid: false, error: "Timestamp string is not parseable as a valid date" };
+      return {
+        valid: false,
+        error: "Timestamp string is not parseable as a valid date",
+      };
     }
     epochMs = parsed;
   } else if (val instanceof Date) {
@@ -78,7 +101,10 @@ export function isValidTimestampValue(val: unknown): { valid: boolean; date?: Da
     }
     epochMs = t;
   } else {
-    return { valid: false, error: "Timestamp must be a number, string, or Date" };
+    return {
+      valid: false,
+      error: "Timestamp must be a number, string, or Date",
+    };
   }
 
   if (epochMs < MIN_TIMESTAMP_MS || epochMs > MAX_TIMESTAMP_MS) {
@@ -102,31 +128,56 @@ export const telemetryReadingSchema = z
     roomId: z.string().min(1).optional(),
     sensorId: z.string().min(1).optional(),
     type: z.string().min(1).optional(),
-    value: z.number().refine((n) => Number.isFinite(n), "value must be a finite number").optional(),
-    decibels: z.number().refine((n) => Number.isFinite(n) && n >= 0, "decibels must be a non-negative finite number").optional(),
-    peakDecibels: z.number().refine((n) => Number.isFinite(n) && n >= 0, "peakDecibels must be a non-negative finite number").optional(),
+    value: z
+      .number()
+      .refine((n) => Number.isFinite(n), "value must be a finite number")
+      .optional(),
+    decibels: z
+      .number()
+      .refine(
+        (n) => Number.isFinite(n) && n >= 0,
+        "decibels must be a non-negative finite number",
+      )
+      .optional(),
+    peakDecibels: z
+      .number()
+      .refine(
+        (n) => Number.isFinite(n) && n >= 0,
+        "peakDecibels must be a non-negative finite number",
+      )
+      .optional(),
     timestamp: z
       .union([
-        z.number().refine((n) => Number.isFinite(n), "timestamp must be a finite number"),
+        z
+          .number()
+          .refine(
+            (n) => Number.isFinite(n),
+            "timestamp must be a finite number",
+          ),
         z.string().min(1, "timestamp string cannot be empty"),
         z.date(),
       ])
       .refine(timestampValidationRefinement, {
-        message: "timestamp must be a valid, finite date within supported range (2000-2100)",
+        message:
+          "timestamp must be a valid, finite date within supported range (2000-2100)",
       })
       .optional(),
     recordedAt: z
       .union([
-        z.number().refine((n) => Number.isFinite(n), "recordedAt must be a finite number"),
+        z
+          .number()
+          .refine(
+            (n) => Number.isFinite(n),
+            "recordedAt must be a finite number",
+          ),
         z.string().min(1, "recordedAt string cannot be empty"),
         z.date(),
       ])
       .refine(timestampValidationRefinement, {
-        message: "recordedAt must be a valid, finite date within supported range (2000-2100)",
+        message:
+          "recordedAt must be a valid, finite date within supported range (2000-2100)",
       })
       .optional(),
-    timestamp: telemetryTimestampSchema.optional(),
-    recordedAt: telemetryTimestampSchema.optional(),
   })
   .refine((data) => data.value !== undefined || data.decibels !== undefined, {
     message: "Either value or decibels must be specified",
@@ -336,11 +387,12 @@ export async function POST(req: NextRequest) {
       } else {
         const d = result.data;
         const val = d.value !== undefined ? d.value : d.decibels!;
-        const dateResult = d.recordedAt !== undefined
-          ? isValidTimestampValue(d.recordedAt)
-          : d.timestamp !== undefined
-            ? isValidTimestampValue(d.timestamp)
-            : { valid: true, date: new Date() };
+        const dateResult =
+          d.recordedAt !== undefined
+            ? isValidTimestampValue(d.recordedAt)
+            : d.timestamp !== undefined
+              ? isValidTimestampValue(d.timestamp)
+              : { valid: true, date: new Date() };
 
         const recAt = dateResult.date || new Date();
         const sensor =

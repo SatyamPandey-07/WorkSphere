@@ -425,7 +425,9 @@ model AmenityValidation {
   amenity   String // e.g., "wifi", "outlets", "ergonomic"
   upvotes   Int           @default(0)
   downvotes Int           @default(0)
-  votes     AmenityVote[]
+  disputeEscalatedAt DateTime?
+  settlementDeadline DateTime?
+  votes              AmenityVote[]
 
   @@unique([venueId, amenity])
   @@index([venueId])
@@ -1409,4 +1411,18 @@ enum AmenityIncidentSeverity {
   low
   medium
   critical
+}
+
+// Persistent replay protection for corporate team-pass attestations (#10241).
+model TeamPassAttestationNonce {
+  id           String   @id @default(cuid())
+  nonce        String   @unique
+  venueId      String
+  attestationId String
+  memberId     String
+  consumedAt   DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([venueId, consumedAt])
+  @@index([expiresAt])
 }

@@ -2,6 +2,14 @@
 
 Welcome to the WorkSphere documentation hub. Use the topic-based sections below to find setup instructions, API contracts, architecture references, feature guides, and operational documentation.
 
+- [API documentation index](./api/README.md)
+- [Anonymous ZKP check-in OpenAPI 3.1 specification](./api/zkp-checkin.openapi.yaml)
+- [Venue amenity voting OpenAPI 3.1 specification](./api/amenity-votes.openapi.yaml)
+
+## System & Infrastructure Diagnostics
+
+- [Admin Redis ping latency diagnostic metric and status thresholds](./admin/REDIS_PING_LATENCY_DIAGNOSTICS.md)
+- [Redis HMR Singleton and Connection Reuse](./REDIS_HMR_SINGLETON.md) — `globalThis` lifecycle during Next.js HMR, development and production client reuse, Upstash configuration, and connection-pooling guidance.
 - [Clerk Webhook Integration Runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md) — signature verification, event handling, secret rotation, local testing, and troubleshooting.
 
 ## Getting Started & Contributor Guides
@@ -73,10 +81,12 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.
 - [Circom Witness Generation Worker Pool Architecture](./zkp/CIRCOM_WITNESS_WORKER_POOL.md) — Web Worker thread offloading, BN254 elliptic curve constraints, watchdog timeouts, and WASM memory lifecycle.
+- [RLN Epoch Key Rotation Window & Double-Spend Slashing Invariants](./zkp/RLN_EPOCH_ROTATION_AND_SLASHING.md) — zero-downtime UTC midnight rollover overlap window, linear share secret recovery math, and double-spend slashing invariants.
 - [Merchant Solana Escrow Settlement & Automated Refund Dispute Guide](./payments/solana-escrow.md) — non-custodial Solana escrow state machine, PDA derivation, deposit and settlement transactions, 2-of-3 multi-sig disputes, automated expiry refunds, and Devnet testing.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
 - [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.
 - [Solana Durable Nonce Offline Signing Runbook](./solana/DURABLE_NONCE_OFFLINE_SIGNING.md) — persistent nonce account initialization, instruction ordering, offline transaction serialization, air-gapped signing workflows, and RPC recovery.
+- [Solana Cluster RPC Pool Failover, Health Scoring & Cooldown Windows](./architecture/SOLANA_CLUSTER_RPC_POOL.md) — endpoint health snapshots, consecutive failure thresholds, circuit-breaker cooldown recovery windows, and `Promise.allSettled` failover routing.
 
 ## Features & Product Documentation
 

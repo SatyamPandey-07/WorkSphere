@@ -8,9 +8,18 @@ export const MIN_NOISE_ALERT_THRESHOLD_DB = 40;
 export const MAX_NOISE_ALERT_THRESHOLD_DB = 85;
 export const NOISE_ALERT_PREFS_STORAGE_KEY = 'worksphere-noise-alert-preferences';
 
+export const NOISE_ALERT_SNOOZE_DURATIONS_MS = {
+  5: 5 * 60 * 1000,
+  15: 15 * 60 * 1000,
+  30: 30 * 60 * 1000,
+} as const;
+
+export type NoiseAlertSnoozeMinutes = keyof typeof NOISE_ALERT_SNOOZE_DURATIONS_MS;
+
 export interface NoiseAlertPreferences {
   thresholdDb: number;
   muted: boolean;
+  snoozedUntil?: number;
 }
 
 function clampAlertThreshold(value: number): number {
@@ -33,6 +42,12 @@ function loadNoiseAlertPreferences(): Partial<NoiseAlertPreferences> {
           ? clampAlertThreshold(parsed.thresholdDb)
           : undefined,
       muted: typeof parsed.muted === 'boolean' ? parsed.muted : undefined,
+      snoozedUntil:
+        typeof parsed.snoozedUntil === 'number' &&
+        Number.isFinite(parsed.snoozedUntil) &&
+        parsed.snoozedUntil > Date.now()
+          ? parsed.snoozedUntil
+          : undefined,
     };
   } catch {
     return {};
@@ -42,7 +57,14 @@ function loadNoiseAlertPreferences(): Partial<NoiseAlertPreferences> {
 function saveNoiseAlertPreferences(prefs: NoiseAlertPreferences): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(NOISE_ALERT_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+    const payload: NoiseAlertPreferences = {
+      thresholdDb: prefs.thresholdDb,
+      muted: prefs.muted,
+      ...(typeof prefs.snoozedUntil === 'number' && prefs.snoozedUntil > Date.now()
+        ? { snoozedUntil: prefs.snoozedUntil }
+        : {}),
+    };
+    window.localStorage.setItem(NOISE_ALERT_PREFS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     // Ignore storage quota or restricted-mode errors
   }
@@ -90,6 +112,12 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
   const [isAlertMuted, setIsAlertMuted] = useState<boolean>(() => {
     if (typeof initialMuted === 'boolean') return initialMuted;
     return loadNoiseAlertPreferences().muted ?? false;
+  });
+  const [selectedSnoozeMinutes, setSelectedSnoozeMinutes] =
+    useState<NoiseAlertSnoozeMinutes>(5);
+  const [snoozedUntil, setSnoozedUntil] = useState<number | null>(() => {
+    const loaded = loadNoiseAlertPreferences().snoozedUntil;
+    return typeof loaded === 'number' && loaded > Date.now() ? loaded : null;
   });
   const [isPeakToastVisible, setIsPeakToastVisible] = useState(false);
   const [isDismissedForEpisode, setIsDismissedForEpisode] = useState(false);
@@ -167,9 +195,29 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
     };
   }, [audioContext, contextState, handleResumeContext]);
 
+  useEffect(() => {
+    if (snoozedUntil === null) return;
+    const remainingMs = snoozedUntil - Date.now();
+    if (remainingMs <= 0) {
+      setSnoozedUntil(null);
+      saveNoiseAlertPreferences({ thresholdDb, muted: isAlertMuted });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setSnoozedUntil(null);
+      saveNoiseAlertPreferences({ thresholdDb, muted: isAlertMuted });
+    }, remainingMs);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [snoozedUntil, thresholdDb, isAlertMuted]);
+
   const needsGesture = contextState === 'suspended';
   const active = !needsGesture && (isListening ?? true);
-  const isExceedingThreshold = active && !isAlertMuted && decibels > thresholdDb;
+  const isSnoozed = snoozedUntil !== null && snoozedUntil > Date.now();
+  const isExceedingThreshold = active && !isAlertMuted && !isSnoozed && decibels > thresholdDb;
 
   // Monitor sustained noise above threshold (> 3 consecutive seconds by default)
   useEffect(() => {
@@ -199,6 +247,7 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
   }, [isExceedingThreshold, isDismissedForEpisode, sustainedDurationMs, thresholdDb]);
 
   const handleToggleAlertMute = useCallback(() => {
+    setSnoozedUntil(null);
     setIsAlertMuted((prev) => {
       const next = !prev;
       saveNoiseAlertPreferences({ thresholdDb, muted: next });
@@ -209,14 +258,39 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
     });
   }, [thresholdDb]);
 
+  const handleSnoozeAlerts = useCallback(
+    (minutes: NoiseAlertSnoozeMinutes) => {
+      const durationMs = NOISE_ALERT_SNOOZE_DURATIONS_MS[minutes];
+      const until = Date.now() + durationMs;
+      setSnoozedUntil(until);
+      setIsPeakToastVisible(false);
+      setIsDismissedForEpisode(false);
+      saveNoiseAlertPreferences({
+        thresholdDb,
+        muted: isAlertMuted,
+        snoozedUntil: until,
+      });
+    },
+    [thresholdDb, isAlertMuted]
+  );
+
+  const handleClearSnooze = useCallback(() => {
+    setSnoozedUntil(null);
+    saveNoiseAlertPreferences({ thresholdDb, muted: isAlertMuted });
+  }, [thresholdDb, isAlertMuted]);
+
   const handleThresholdChange = useCallback(
     (rawValue: number) => {
       const clamped = clampAlertThreshold(rawValue);
       setThresholdDb(clamped);
       setIsDismissedForEpisode(false);
-      saveNoiseAlertPreferences({ thresholdDb: clamped, muted: isAlertMuted });
+      saveNoiseAlertPreferences({
+        thresholdDb: clamped,
+        muted: isAlertMuted,
+        snoozedUntil: snoozedUntil ?? undefined,
+      });
     },
-    [isAlertMuted]
+    [isAlertMuted, snoozedUntil]
   );
 
   const handleDismissToast = useCallback(() => {
@@ -272,19 +346,32 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
           <span className="text-slate-400">dBA</span>
         </label>
 
-        <button
-          type="button"
-          data-testid="mute-noise-alerts-btn"
-          aria-pressed={isAlertMuted}
-          onClick={handleToggleAlertMute}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
-            isAlertMuted
-              ? 'border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800'
-              : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-          }`}
-        >
-          {isAlertMuted ? 'Alerts Muted' : 'Alerts Active'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {isSnoozed && !isAlertMuted && (
+            <button
+              type="button"
+              data-testid="noise-alert-snoozed-badge"
+              onClick={handleClearSnooze}
+              title="Click to resume peak alerts early"
+              className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-[11px] font-medium text-sky-300 hover:bg-sky-500/20"
+            >
+              Snoozed ({selectedSnoozeMinutes}m)
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="mute-noise-alerts-btn"
+            aria-pressed={isAlertMuted}
+            onClick={handleToggleAlertMute}
+            className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+              isAlertMuted
+                ? 'border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800'
+                : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+            }`}
+          >
+            {isAlertMuted ? 'Alerts Muted' : 'Alerts Active'}
+          </button>
+        </div>
       </div>
 
       {isPeakToastVisible && (
@@ -292,7 +379,7 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
           role="status"
           aria-live="polite"
           data-testid="noise-peak-alert-toast"
-          className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-950/50 px-3 py-2 text-xs text-amber-100"
+          className="mt-3 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-950/50 px-3 py-2 text-xs text-amber-100"
         >
           <div>
             <p className="font-semibold text-amber-300">
@@ -303,7 +390,28 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
               {Math.round(sustainedDurationMs / 1000)}s. Consider muting your mic or moving to a quieter zone.
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            <select
+              data-testid="noise-alert-snooze-select"
+              aria-label="Snooze peak alerts duration"
+              value={selectedSnoozeMinutes}
+              onChange={(e) =>
+                setSelectedSnoozeMinutes(Number(e.target.value) as NoiseAlertSnoozeMinutes)
+              }
+              className="rounded-md border border-amber-500/40 bg-amber-950 px-1.5 py-1 text-[11px] font-medium text-amber-100"
+            >
+              <option value={5}>5m</option>
+              <option value={15}>15m</option>
+              <option value={30}>30m</option>
+            </select>
+            <button
+              type="button"
+              data-testid="snooze-noise-alerts-btn"
+              onClick={() => handleSnoozeAlerts(selectedSnoozeMinutes)}
+              className="rounded-md border border-amber-500/40 bg-amber-900/40 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-900/70"
+            >
+              Snooze
+            </button>
             <button
               type="button"
               data-testid="dismiss-noise-toast-btn"

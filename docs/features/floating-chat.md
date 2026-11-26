@@ -255,8 +255,8 @@ _(Note: System notice objects with `isSystem: true` are filtered out before seri
 ### Draft Text vs. Component State
 
 > [!IMPORTANT]
-> **Draft text in floating chat is NOT persisted to `localStorage`.**  
-> The unsent text in the chat input is managed solely in React component state (`ChatInput`'s `safeInput` / `input` prop). If the user refreshes the page or navigates away before sending, any uncommitted draft text in the composer is discarded.  
+> **Draft text in floating chat is NOT persisted to `localStorage`.**
+> The unsent text in the chat input is managed solely in React component state (`ChatInput`'s `safeInput` / `input` prop). If the user refreshes the page or navigates away before sending, any uncommitted draft text in the composer is discarded.
 > Do not confuse chat input draft text with WorkSphere's offline **booking draft** system (`DraftStore.ts` and `SyncQueue.ts`), which uses IndexedDB for offline reservation forms.
 
 ---

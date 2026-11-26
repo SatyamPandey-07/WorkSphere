@@ -6,6 +6,7 @@
  */
 
 import type * as Party from 'partykit/server';
+import { LamportTimestampResolver } from '../core/sync/LamportTimestampResolver';
 
 export interface HLCTimestamp {
     logicalTime: number; // Maximum physical wall-clock component seen
@@ -152,12 +153,16 @@ export default class LocalMeshRoom implements Party.Server {
     private connectedPeers: Set<string>;
     private updateLog: LoggedCrdtUpdate[] = [];
     private serverHlc: HybridLogicalClock;
+    private readonly clockSkewObserver: LamportTimestampResolver;
     private lwwDocumentState: Map<string, { value: string | number[]; hlc: HLCTimestamp }> = new Map();
     private readonly MAX_LOG_SIZE = 1000;
 
     constructor(readonly room: Party.Room) {
         this.connectedPeers = new Set();
         this.serverHlc = new HybridLogicalClock(room.id || 'server-root');
+        this.clockSkewObserver = new LamportTimestampResolver({
+            nodeId: room.id || 'server-root',
+        });
     }
 
     async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -208,6 +213,12 @@ export default class LocalMeshRoom implements Party.Server {
                     counter: 0,
                     nodeId: sender.id,
                 };
+
+                this.clockSkewObserver.observeRemoteClockSkew({
+                    wallMs: incomingHlc.logicalTime,
+                    logical: incomingHlc.counter,
+                    nodeId: incomingHlc.nodeId,
+                });
 
                 // Advance server HLC with incoming HLC
                 const updatedHlc = this.serverHlc.update(incomingHlc);

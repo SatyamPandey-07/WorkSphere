@@ -1,12 +1,23 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { isPublicRoute, isAdminRoute, isAdminSession } from "../routes";
 import type { MiddlewareHandler } from "../types";
 
 export const authMiddleware: MiddlewareHandler = async (req, ctx, next) => {
   if (!isPublicRoute(req)) {
-    if (ctx.protect) {
-      await ctx.protect();
+    if (!ctx.protect) {
+      return NextResponse.json(
+        { error: "Authentication middleware unavailable" },
+        { status: 500 },
+      );
     }
+
+    const authState = await ctx.protect();
+    if (!authState?.userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    ctx.userId = authState.userId;
+    ctx.sessionClaims = authState.sessionClaims ?? ctx.sessionClaims ?? null;
   }
 
   if (isAdminRoute(req)) {

@@ -1,9 +1,9 @@
-﻿import { evaluateWorkspaceComfort } from '@/lib/venues/workspaceComfortScorer';
+import { evaluateWorkspaceComfort } from "@/lib/venues/workspaceComfortScorer";
 
-describe('Workspace Comfort & Ergonomics Scorer', () => {
-  it('weights pillars differently across deep_work, client_calls, and balanced modes', () => {
+describe("Workspace Comfort & Ergonomics Scorer", () => {
+  it("weights pillars differently across deep_work, client_calls, and balanced modes", () => {
     const baseInput = {
-      venueId: 'hub-1',
+      venueId: "hub-1",
       noiseDb: 42,
       outletsPerSeat: 1.5,
       hasBackupPower: true,
@@ -15,20 +15,20 @@ describe('Workspace Comfort & Ergonomics Scorer', () => {
 
     const deepWork = evaluateWorkspaceComfort({
       ...baseInput,
-      mode: 'deep_work',
+      mode: "deep_work",
     });
     const clientCalls = evaluateWorkspaceComfort({
       ...baseInput,
-      mode: 'client_calls',
+      mode: "client_calls",
     });
 
     expect(deepWork.overallScore).toBeGreaterThan(clientCalls.overallScore);
     expect(deepWork.strengths.length).toBeGreaterThan(0);
   });
 
-  it('handles missing, negative, or non-finite values safely without NaN and clamps to [0, 100]', () => {
+  it("handles missing, negative, or non-finite values safely without NaN and clamps to [0, 100]", () => {
     const missingResult = evaluateWorkspaceComfort({
-      venueId: 'hub-missing',
+      venueId: "hub-missing",
       noiseDb: Number.NaN,
       outletsPerSeat: undefined,
       hasBackupPower: null,
@@ -43,7 +43,7 @@ describe('Workspace Comfort & Ergonomics Scorer', () => {
     expect(missingResult.overallScore).toBeLessThanOrEqual(100);
 
     const loudNoisy = evaluateWorkspaceComfort({
-      venueId: 'hub-noisy',
+      venueId: "hub-noisy",
       noiseDb: 140,
       outletsPerSeat: 0,
       hasBackupPower: false,
@@ -51,7 +51,7 @@ describe('Workspace Comfort & Ergonomics Scorer', () => {
       lightingRating: 0,
       downloadMbps: 0,
       latencyMs: 500,
-      mode: 'deep_work',
+      mode: "deep_work",
     });
 
     expect(loudNoisy.overallScore).toBeGreaterThanOrEqual(0);
@@ -59,9 +59,9 @@ describe('Workspace Comfort & Ergonomics Scorer', () => {
     expect(loudNoisy.caveats.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('produces deterministic score breakdowns for identical inputs', () => {
+  it("produces deterministic score breakdowns for identical inputs", () => {
     const input = {
-      venueId: 'hub-det',
+      venueId: "hub-det",
       noiseDb: 48,
       outletsPerSeat: 1.2,
       hasBackupPower: true,
@@ -69,11 +69,11 @@ describe('Workspace Comfort & Ergonomics Scorer', () => {
       lightingRating: 4,
       downloadMbps: 140,
       latencyMs: 18,
-      mode: 'balanced' as const,
+      mode: "balanced" as const,
     };
 
     expect(evaluateWorkspaceComfort(input)).toEqual(
-      evaluateWorkspaceComfort(input)
+      evaluateWorkspaceComfort(input),
     );
   });
 });

@@ -1,5 +1,5 @@
 import React from "react";
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import {
   PeerTopologyVisualizer,
@@ -63,7 +63,7 @@ class MockRtcDataChannel {
   }
 }
 
-describe("PeerTopologyVisualizer & WebRTC Ping/Pong Heartbeats (#9758)", () => {
+describe("PeerTopologyVisualizer & WebRTC Ping/Pong Heartbeats (#9758, #10536)", () => {
   describe("Binary 0x5049 ('PI') heartbeat framing", () => {
     it("encodes and decodes PING and PONG frames with 0x5049 magic", () => {
       const ping = encodeHeartbeatFrame(MeshHeartbeatType.PING, 123456);
@@ -132,6 +132,133 @@ describe("PeerTopologyVisualizer & WebRTC Ping/Pong Heartbeats (#9758)", () => {
       const pendingBadge = screen.getByTestId("peer-latency-badge-peer-pending");
       expect(pendingBadge).toHaveAttribute("data-latency-tier", "unknown");
       expect(pendingBadge).toHaveTextContent("-- ms");
+    });
+
+    describe("Copy Diagnostics Button (#10536)", () => {
+      const originalClipboard = navigator.clipboard;
+
+      afterEach(() => {
+        Object.defineProperty(navigator, "clipboard", {
+          value: originalClipboard,
+          configurable: true,
+          writable: true,
+        });
+        jest.useRealTimers();
+      });
+
+      it("renders the Copy Diagnostics button with accessible name", () => {
+        render(
+          <PeerTopologyVisualizer
+            localPeerId="user-loc-1"
+            peers={[{ peerId: "p1", displayName: "Peer 1" }]}
+          />,
+        );
+
+        const btn = screen.getByTestId("copy-diagnostics-btn");
+        expect(btn).toBeInTheDocument();
+        expect(btn).toHaveAttribute("aria-label", "Copy Diagnostics");
+        expect(btn).toHaveTextContent("Copy Diagnostics");
+      });
+
+      it("copies readable, valid JSON summary to clipboard and displays confirmation state", async () => {
+        const writeTextMock = jest.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: writeTextMock },
+          configurable: true,
+          writable: true,
+        });
+
+        render(
+          <PeerTopologyVisualizer
+            localPeerId="local-client-123"
+            localDisplayName="Local User"
+            peers={[
+              { peerId: "peer-1", displayName: "Alice", rttMs: 28 },
+              { peerId: "peer-2", displayName: "Bob" },
+            ]}
+            peerLatencies={{
+              "peer-2": 85,
+            }}
+          />,
+        );
+
+        const btn = screen.getByTestId("copy-diagnostics-btn");
+        fireEvent.click(btn);
+
+        await waitFor(() => {
+          expect(writeTextMock).toHaveBeenCalledTimes(1);
+        });
+
+        const copiedPayload = JSON.parse(writeTextMock.mock.calls[0][0]);
+        expect(copiedPayload.localPeerId).toBe("local-client-123");
+        expect(copiedPayload.timestamp).toBeDefined();
+        expect(copiedPayload.peers).toEqual([
+          { peerId: "peer-1", displayName: "Alice", rttMs: 28 },
+          { peerId: "peer-2", displayName: "Bob", rttMs: 85 },
+        ]);
+
+        expect(btn).toHaveTextContent("Diagnostics copied");
+        const status = screen.getByTestId("copy-diagnostics-status");
+        expect(status).toHaveTextContent("Diagnostics copied to clipboard");
+      });
+
+      it("handles clipboard failure gracefully and displays accessible error state", async () => {
+        const writeTextMock = jest
+          .fn()
+          .mockRejectedValue(new Error("Permission denied"));
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: writeTextMock },
+          configurable: true,
+          writable: true,
+        });
+
+        render(
+          <PeerTopologyVisualizer
+            localPeerId="local-client-123"
+            peers={[{ peerId: "peer-1", displayName: "Alice" }]}
+          />,
+        );
+
+        const btn = screen.getByTestId("copy-diagnostics-btn");
+        fireEvent.click(btn);
+
+        await waitFor(() => {
+          expect(btn).toHaveTextContent("Failed to copy");
+        });
+
+        const status = screen.getByTestId("copy-diagnostics-status");
+        expect(status).toHaveTextContent("Failed to copy diagnostics to clipboard");
+      });
+
+      it("resets confirmation state back to idle after timeout", async () => {
+        jest.useFakeTimers();
+        const writeTextMock = jest.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: writeTextMock },
+          configurable: true,
+          writable: true,
+        });
+
+        render(
+          <PeerTopologyVisualizer
+            localPeerId="local-client-123"
+            peers={[{ peerId: "peer-1", displayName: "Alice", rttMs: 40 }]}
+          />,
+        );
+
+        const btn = screen.getByTestId("copy-diagnostics-btn");
+        await act(async () => {
+          fireEvent.click(btn);
+        });
+
+        expect(btn).toHaveTextContent("Diagnostics copied");
+
+        act(() => {
+          jest.advanceTimersByTime(2100);
+        });
+
+        expect(btn).toHaveTextContent("Copy Diagnostics");
+      });
     });
   });
 

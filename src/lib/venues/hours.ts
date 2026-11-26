@@ -148,7 +148,8 @@ export function formatCountdown(
   const hours = Math.floor(clamped / 60);
   const mins = clamped % 60;
   if (hours === 0) {
-    return `${prefix} ${mins}m`;
+    if (mins === 0) return `${prefix} 0m`;
+    return `${prefix} ${mins} min${mins === 1 ? "" : "s"}`;
   }
   if (mins === 0) {
     return `${prefix} ${hours}h`;

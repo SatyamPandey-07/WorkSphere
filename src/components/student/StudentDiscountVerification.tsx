@@ -1,1 +1,291 @@
-﻿'use client'; import React, { useCallback, useEffect, useRef, useState } from 'react'; export type ProofGenerationStatus = 'idle' | 'generating' | 'cancelled' | 'error' | 'verified'; export type ProgressIndicatorVariant = 'bar' | 'ring'; export interface ZkpWorkerProgressMessage { type?: 'progress' | 'complete' | 'error'; progress?: number; proof?: unknown; error?: string; } export interface ZkpWorkerLike { postMessage: (message: unknown) => void; terminate: () => void; onmessage: ((event: MessageEvent<ZkpWorkerProgressMessage>) => void) | null; onerror: ((event: ErrorEvent) => void) | null; } export interface StudentDiscountVerificationProps { studentId?: string; createWorker?: () => ZkpWorkerLike; onVerified?: (proof: unknown) => void; defaultIndicatorVariant?: ProgressIndicatorVariant; } export const ZKP_RING_RADIUS = 18; export const ZKP_RING_CIRCUMFERENCE = Number((2 * Math.PI * ZKP_RING_RADIUS).toFixed(4)); export function clampProgressPercent(rawProgress: unknown): number { if (typeof rawProgress !== 'number' || !Number.isFinite(rawProgress)) return 0; const normalized = rawProgress > 0 && rawProgress <= 1 ? rawProgress * 100 : rawProgress; return Math.max(0, Math.min(100, Math.round(normalized))); } export function computeRingDashOffset(progressPercent: number, circumference: number = ZKP_RING_CIRCUMFERENCE): number { const clamped = clampProgressPercent(progressPercent); return Number((circumference * (1 - clamped / 100)).toFixed(4)); } export const StudentDiscountVerification: React.FC<StudentDiscountVerificationProps> = ({ studentId = 'student-default', createWorker, onVerified, defaultIndicatorVariant = 'bar' }) => { const [status, setStatus] = useState<ProofGenerationStatus>('idle'); const [progress, setProgress] = useState<number>(0); const [errorMessage, setErrorMessage] = useState<string | null>(null); const [indicatorVariant, setIndicatorVariant] = useState<ProgressIndicatorVariant>(defaultIndicatorVariant); const workerRef = useRef<ZkpWorkerLike | null>(null); const resetProgressOnFailure = useCallback((nextStatus: 'cancelled' | 'error', message: string | null) => { if (workerRef.current) { workerRef.current.onmessage = null; workerRef.current.onerror = null; workerRef.current.terminate(); workerRef.current = null; } setProgress(0); setStatus(nextStatus); setErrorMessage(message); }, []); const startGeneration = useCallback(() => { if (workerRef.current) { workerRef.current.onmessage = null; workerRef.current.onerror = null; workerRef.current.terminate(); workerRef.current = null; } setErrorMessage(null); setProgress(0); setStatus('generating'); const worker = createWorker ? createWorker() : (new Worker(new URL('@/worker/zkpWorker', import.meta.url), { type: 'module' }) as unknown as ZkpWorkerLike); workerRef.current = worker; worker.onmessage = (event: MessageEvent<ZkpWorkerProgressMessage>) => { const data = event.data ?? {}; if (data.type === 'error' || typeof data.error === 'string') { resetProgressOnFailure('error', data.error ?? 'ZKP proof generation failed.'); return; } if (data.type === 'complete' || data.proof !== undefined) { setProgress(100); setStatus('verified'); worker.terminate(); workerRef.current = null; onVerified?.(data.proof); return; } if (typeof data.progress === 'number') setProgress(clampProgressPercent(data.progress)); }; worker.onerror = (event: ErrorEvent) => { resetProgressOnFailure('error', event.message || 'ZKP worker encountered an unexpected error.'); }; worker.postMessage({ action: 'generate_student_proof', studentId }); }, [createWorker, onVerified, resetProgressOnFailure, studentId]); const cancelGeneration = useCallback(() => { resetProgressOnFailure('cancelled', null); }, [resetProgressOnFailure]); useEffect(() => () => { if (workerRef.current) { workerRef.current.onmessage = null; workerRef.current.onerror = null; workerRef.current.terminate(); workerRef.current = null; } }, []); const strokeDashoffset = computeRingDashOffset(progress); return (<section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Student Discount ZKP Verification</h2><div className="flex items-center gap-2"><button type="button" onClick={() => setIndicatorVariant((prev) => (prev === 'bar' ? 'ring' : 'bar'))} aria-label="Toggle progress indicator style" className="rounded border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:border-slate-700 dark:text-slate-300">{indicatorVariant === 'ring' ? 'Ring View' : 'Bar View'}</button><span data-testid="zkp-progress-label" className="text-xs font-medium text-slate-700 dark:text-slate-300">{progress}%</span></div></div>{indicatorVariant === 'ring' ? (<div className="mt-3 flex items-center gap-3"><svg width={44} height={44} viewBox="0 0 44 44" role="progressbar" aria-label="ZKP witness progress ring" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} data-testid="zkp-progress-ring" className="-rotate-90"><circle cx={22} cy={22} r={ZKP_RING_RADIUS} fill="none" stroke="currentColor" strokeWidth={4} className="text-slate-200 dark:text-slate-800" /><circle cx={22} cy={22} r={ZKP_RING_RADIUS} fill="none" stroke="currentColor" strokeWidth={4} strokeLinecap="round" strokeDasharray={ZKP_RING_CIRCUMFERENCE} strokeDashoffset={strokeDashoffset} data-testid="zkp-progress-ring-arc" className="text-indigo-600 transition-[stroke-dashoffset] duration-200 ease-out" /></svg><span className="text-xs text-slate-600 dark:text-slate-400">Witness progress: {progress}%</span></div>) : (<div role="progressbar" aria-label="ZKP proof generation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} data-testid="zkp-progress-bar" className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div className="h-full bg-indigo-600 transition-all duration-150" style={{ width: `${progress}%` }} /></div>)}<div className="mt-3 flex items-center gap-2"><button type="button" onClick={startGeneration} disabled={status === 'generating'} className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{status === 'generating' ? 'Generating Proof...' : 'Verify Student Pass'}</button>{status === 'generating' && (<button type="button" onClick={cancelGeneration} className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:text-slate-200">Cancel</button>)}</div>{status === 'cancelled' && (<p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">Proof generation cancelled. Progress reset to 0%.</p>)}{status === 'error' && errorMessage && (<p role="alert" className="mt-2 text-xs text-rose-700 dark:text-rose-400">{errorMessage}</p>)}{status === 'verified' && (<p role="status" className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">Student discount proof verified.</p>)}</section>); }; export default StudentDiscountVerification;
+"use client";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+export type ProofGenerationStatus =
+  "idle" | "generating" | "cancelled" | "error" | "verified";
+export type ProgressIndicatorVariant = "bar" | "ring";
+export interface ZkpWorkerProgressMessage {
+  type?: "progress" | "complete" | "error";
+  progress?: number;
+  proof?: unknown;
+  error?: string;
+}
+export interface ZkpWorkerLike {
+  postMessage: (message: unknown) => void;
+  terminate: () => void;
+  onmessage: ((event: MessageEvent<ZkpWorkerProgressMessage>) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
+}
+export interface StudentDiscountVerificationProps {
+  studentId?: string;
+  createWorker?: () => ZkpWorkerLike;
+  onVerified?: (proof: unknown) => void;
+  defaultIndicatorVariant?: ProgressIndicatorVariant;
+}
+export const ZKP_RING_RADIUS = 18;
+export const ZKP_RING_CIRCUMFERENCE = Number(
+  (2 * Math.PI * ZKP_RING_RADIUS).toFixed(4),
+);
+export function clampProgressPercent(rawProgress: unknown): number {
+  if (typeof rawProgress !== "number" || !Number.isFinite(rawProgress))
+    return 0;
+  const normalized =
+    rawProgress > 0 && rawProgress <= 1 ? rawProgress * 100 : rawProgress;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
+}
+export function computeRingDashOffset(
+  progressPercent: number,
+  circumference: number = ZKP_RING_CIRCUMFERENCE,
+): number {
+  const clamped = clampProgressPercent(progressPercent);
+  return Number((circumference * (1 - clamped / 100)).toFixed(4));
+}
+export const StudentDiscountVerification: React.FC<
+  StudentDiscountVerificationProps
+> = ({
+  studentId = "student-default",
+  createWorker,
+  onVerified,
+  defaultIndicatorVariant = "bar",
+}) => {
+  const [status, setStatus] = useState<ProofGenerationStatus>("idle");
+  const [progress, setProgress] = useState<number>(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [indicatorVariant, setIndicatorVariant] =
+    useState<ProgressIndicatorVariant>(defaultIndicatorVariant);
+  const workerRef = useRef<ZkpWorkerLike | null>(null);
+  const generationIdRef = useRef(0);
+  const resetProgressOnFailure = useCallback(
+    (nextStatus: "cancelled" | "error", message: string | null) => {
+      generationIdRef.current += 1;
+      if (workerRef.current) {
+        workerRef.current.onmessage = null;
+        workerRef.current.onerror = null;
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+      setProgress(0);
+      setStatus(nextStatus);
+      setErrorMessage(message);
+    },
+    [],
+  );
+  const attachAndStartWorker = useCallback(
+    (worker: ZkpWorkerLike) => {
+      workerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<ZkpWorkerProgressMessage>) => {
+        const data = event.data ?? {};
+        if (data.type === "error" || typeof data.error === "string") {
+          resetProgressOnFailure(
+            "error",
+            data.error ?? "ZKP proof generation failed.",
+          );
+          return;
+        }
+        if (data.type === "complete" || data.proof !== undefined) {
+          setProgress(100);
+          setStatus("verified");
+          worker.terminate();
+          workerRef.current = null;
+          onVerified?.(data.proof);
+          return;
+        }
+        if (typeof data.progress === "number")
+          setProgress(clampProgressPercent(data.progress));
+      };
+      worker.onerror = (event: ErrorEvent) => {
+        resetProgressOnFailure(
+          "error",
+          event.message || "ZKP worker encountered an unexpected error.",
+        );
+      };
+      worker.postMessage({ action: "generate_student_proof", studentId });
+    },
+    [onVerified, resetProgressOnFailure, studentId],
+  );
+  const startGeneration = useCallback(() => {
+    if (workerRef.current) {
+      workerRef.current.onmessage = null;
+      workerRef.current.onerror = null;
+      workerRef.current.terminate();
+      workerRef.current = null;
+    }
+    const currentGenId = ++generationIdRef.current;
+    setErrorMessage(null);
+    setProgress(0);
+    setStatus("generating");
+    if (createWorker) {
+      attachAndStartWorker(createWorker());
+      return;
+    }
+    void import("./createZkpWorker")
+      .then(({ createZkpWorker }) => {
+        if (generationIdRef.current !== currentGenId) return;
+        attachAndStartWorker(createZkpWorker() as unknown as ZkpWorkerLike);
+      })
+      .catch((err: unknown) => {
+        if (generationIdRef.current !== currentGenId) return;
+        resetProgressOnFailure(
+          "error",
+          err instanceof Error ? err.message : "Failed to initialize ZKP worker.",
+        );
+      });
+  }, [attachAndStartWorker, createWorker, resetProgressOnFailure]);
+  const cancelGeneration = useCallback(() => {
+    resetProgressOnFailure("cancelled", null);
+  }, [resetProgressOnFailure]);
+  useEffect(() => {
+    if (status !== "generating") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        cancelGeneration();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [status, cancelGeneration]);
+  useEffect(
+    () => () => {
+      generationIdRef.current += 1;
+      if (workerRef.current) {
+        workerRef.current.onmessage = null;
+        workerRef.current.onerror = null;
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    },
+    [],
+  );
+  const strokeDashoffset = computeRingDashOffset(progress);
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          Student Discount ZKP Verification
+        </h2>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setIndicatorVariant((prev) => (prev === "bar" ? "ring" : "bar"))
+            }
+            aria-label="Toggle progress indicator style"
+            className="rounded border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:border-slate-700 dark:text-slate-300"
+          >
+            {indicatorVariant === "ring" ? "Ring View" : "Bar View"}
+          </button>
+          <span
+            data-testid="zkp-progress-label"
+            className="text-xs font-medium text-slate-700 dark:text-slate-300"
+          >
+            {progress}%
+          </span>
+        </div>
+      </div>
+      {indicatorVariant === "ring" ? (
+        <div className="mt-3 flex items-center gap-3">
+          <svg
+            width={44}
+            height={44}
+            viewBox="0 0 44 44"
+            role="progressbar"
+            aria-label="ZKP witness progress ring"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            data-testid="zkp-progress-ring"
+            className="-rotate-90"
+          >
+            <circle
+              cx={22}
+              cy={22}
+              r={ZKP_RING_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={4}
+              className="text-slate-200 dark:text-slate-800"
+            />
+            <circle
+              cx={22}
+              cy={22}
+              r={ZKP_RING_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeDasharray={ZKP_RING_CIRCUMFERENCE}
+              strokeDashoffset={strokeDashoffset}
+              data-testid="zkp-progress-ring-arc"
+              className="text-indigo-600 transition-[stroke-dashoffset] duration-200 ease-out"
+            />
+          </svg>
+          <span className="text-xs text-slate-600 dark:text-slate-400">
+            Witness progress: {progress}%
+          </span>
+        </div>
+      ) : (
+        <div
+          role="progressbar"
+          aria-label="ZKP proof generation progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+          data-testid="zkp-progress-bar"
+          className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+        >
+          <div
+            className="h-full bg-indigo-600 transition-all duration-150"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={startGeneration}
+          disabled={status === "generating"}
+          className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+        >
+          {status === "generating"
+            ? "Generating Proof..."
+            : "Verify Student Pass"}
+        </button>
+        {status === "generating" && (
+          <button
+            type="button"
+            onClick={cancelGeneration}
+            className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:text-slate-200"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+      {status === "cancelled" && (
+        <p
+          role="status"
+          className="mt-2 text-xs text-amber-700 dark:text-amber-400"
+        >
+          Proof generation cancelled. Progress reset to 0%.
+        </p>
+      )}
+      {status === "error" && errorMessage && (
+        <p
+          role="alert"
+          className="mt-2 text-xs text-rose-700 dark:text-rose-400"
+        >
+          {errorMessage}
+        </p>
+      )}
+      {status === "verified" && (
+        <p
+          role="status"
+          className="mt-2 text-xs text-emerald-700 dark:text-emerald-400"
+        >
+          Student discount proof verified.
+        </p>
+      )}
+    </section>
+  );
+};
+export default StudentDiscountVerification;

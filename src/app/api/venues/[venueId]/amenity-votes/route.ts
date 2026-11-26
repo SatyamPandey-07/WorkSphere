@@ -3,11 +3,18 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiResponse";
 import { normalizeRequiredText } from "@/lib/amenityVoteInput";
+import { AmenityConsensusEvaluation } from "@/lib/amenityVotes/consensusEngine";
+import { trackAccurateContributions } from "@/lib/amenityVotes/settlementService";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
 
-function buildResponse(amenity: string, upvotes: number, downvotes: number) {
+function buildResponse(
+  amenity: string,
+  upvotes: number,
+  downvotes: number,
+  consensus?: AmenityConsensusEvaluation,
+) {
   const totalVotes = upvotes + downvotes;
   const confidenceScore =
     totalVotes > 0 ? Math.round((upvotes / totalVotes) * 100) : 100;
@@ -21,6 +28,14 @@ function buildResponse(amenity: string, upvotes: number, downvotes: number) {
     downvotes,
     confidenceScore,
     hidden,
+    ...(consensus
+      ? {
+          consensusState: consensus.state,
+          settlementEligible: consensus.settlementEligible,
+          disputeEscalated: consensus.disputeEscalated ?? false,
+          settlementDeadline: consensus.settlementDeadline ?? null,
+        }
+      : {}),
   };
 }
 
@@ -192,11 +207,13 @@ export async function POST(
       }
     });
 
+    const consensus = await trackAccurateContributions(updatedValidation.id);
     return NextResponse.json(
       buildResponse(
         amenity,
         updatedValidation.upvotes,
         updatedValidation.downvotes,
+        consensus,
       ),
     );
   } catch (error: any) {

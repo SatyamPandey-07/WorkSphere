@@ -112,8 +112,16 @@ describe("ssrfValidation", () => {
     test("detects IPv4-mapped IPv6 addresses (RFC 4291)", () => {
       expect(isPrivateIPv6("::ffff:127.0.0.1")).toBe(true);
       expect(isPrivateIPv6("::ffff:7f00:1")).toBe(true);
+      expect(isPrivateIPv6("0:0:0:0:0:ffff:127.0.0.1")).toBe(true);
       expect(isPrivateIPv6("::ffff:192.168.1.1")).toBe(true);
       expect(isPrivateIPv6("::ffff:8.8.8.8")).toBe(false);
+    });
+
+    test("validates IPv4-translated IPv6 addresses through IPv4 rules", () => {
+      expect(isPrivateIPv6("::ffff:0:127.0.0.1")).toBe(true);
+      expect(isPrivateIPv6("0:0:0:0:ffff:0:7f00:1")).toBe(true);
+      expect(isPrivateIPv6("::ffff:0:169.254.169.254")).toBe(true);
+      expect(isPrivateIPv6("::ffff:0:8.8.8.8")).toBe(false);
     });
 
     test("detects link-local, unique-local, and site-local (RFC 3879)", () => {
@@ -169,6 +177,11 @@ describe("ssrfValidation", () => {
 
       const res2 = await isSafeWebhookUrl("http://[::ffff:169.254.169.254]/meta");
       expect(res2.isSafe).toBe(false);
+
+      const translated = await isSafeWebhookUrl(
+        "http://[::ffff:0:169.254.169.254]/meta",
+      );
+      expect(translated.isSafe).toBe(false);
 
       const res3 = await isSafeWebhookUrl("http://[fec0::1]:9000/hook");
       expect(res3.isSafe).toBe(false);

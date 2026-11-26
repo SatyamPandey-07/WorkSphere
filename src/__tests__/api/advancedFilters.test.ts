@@ -208,10 +208,13 @@ describe("Advanced Workspace Filters validations", () => {
       const validSpeeds = allRatings
         .filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0)
         .map((r) => r.wifiSpeed as number);
-      
-      const avgSpeed = validSpeeds.length > 0
-        ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length)
-        : null;
+
+      const avgSpeed =
+        validSpeeds.length > 0
+          ? Math.round(
+              validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length,
+            )
+          : null;
 
       expect(avgSpeed).toBe(100); // (80 + 120) / 2 = 100
 
@@ -219,17 +222,23 @@ describe("Advanced Workspace Filters validations", () => {
       const densityCounts: Record<string, number> = {};
       allRatings.forEach((r) => {
         if (r.outletDensity) {
-          densityCounts[r.outletDensity] = (densityCounts[r.outletDensity] || 0) + 1;
+          densityCounts[r.outletDensity] =
+            (densityCounts[r.outletDensity] || 0) + 1;
         }
       });
-      const dominantDensity = Object.keys(densityCounts).length > 0
-        ? Object.entries(densityCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
-        : "none";
+      const dominantDensity =
+        Object.keys(densityCounts).length > 0
+          ? Object.entries(densityCounts).reduce((a, b) =>
+              b[1] > a[1] ? b : a,
+            )[0]
+          : "none";
 
       expect(dominantDensity).toBe("every_table"); // 3 votes for every_table vs 1 for some_tables
 
       // Ergonomic percentage (> 50%)
-      const ergonomicPct = (allRatings.filter((r) => r.hasErgonomic).length / allRatings.length) * 100;
+      const ergonomicPct =
+        (allRatings.filter((r) => r.hasErgonomic).length / allRatings.length) *
+        100;
       expect(ergonomicPct).toBe(75); // 3 of 4 is 75%
       expect(ergonomicPct > 50).toBe(true);
 
@@ -246,18 +255,48 @@ describe("Advanced Workspace Filters validations", () => {
           musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
         }
       });
-      const dominantMusic = Object.keys(musicCounts).length > 0
-        ? Object.entries(musicCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
-        : null;
+      const dominantMusic =
+        Object.keys(musicCounts).length > 0
+          ? Object.entries(musicCounts).reduce((a, b) =>
+              b[1] > a[1] ? b : a,
+            )[0]
+          : null;
       expect(dominantMusic).toBe("lofi");
     });
   });
 
   describe("Post-Enrichment Filtering Logic Simulation", () => {
     const sampleEnrichedVenues = [
-      { id: "1", name: "Cafe A", wifiSpeed: 80, outletDensity: "every_table", hasErgonomic: true, wifi: true, hasOutlets: true, noiseLevel: "quiet" },
-      { id: "2", name: "Cafe B", wifiSpeed: 30, outletDensity: "some_tables", hasErgonomic: false, wifi: true, hasOutlets: true, noiseLevel: "moderate" },
-      { id: "3", name: "Cafe C", wifiSpeed: null, outletDensity: "none", hasErgonomic: false, wifi: false, hasOutlets: false, noiseLevel: "loud" },
+      {
+        id: "1",
+        name: "Cafe A",
+        wifiSpeed: 80,
+        outletDensity: "every_table",
+        hasErgonomic: true,
+        wifi: true,
+        hasOutlets: true,
+        noiseLevel: "quiet",
+      },
+      {
+        id: "2",
+        name: "Cafe B",
+        wifiSpeed: 30,
+        outletDensity: "some_tables",
+        hasErgonomic: false,
+        wifi: true,
+        hasOutlets: true,
+        noiseLevel: "moderate",
+      },
+      {
+        id: "3",
+        name: "Cafe C",
+        wifiSpeed: null,
+        outletDensity: "none",
+        hasErgonomic: false,
+        wifi: false,
+        hasOutlets: false,
+        noiseLevel: "loud",
+      },
     ];
 
     it("should filter venues correctly by ergonomic status", () => {
@@ -269,13 +308,17 @@ describe("Advanced Workspace Filters validations", () => {
     it("should filter venues correctly by outlet density threshold", () => {
       // filters: { outletDensity: "some_tables" } -> should match "some_tables" and "every_table"
       const matchingDensity = ["every_table", "some_tables"];
-      const filtered = sampleEnrichedVenues.filter((v) => matchingDensity.includes(v.outletDensity));
+      const filtered = sampleEnrichedVenues.filter((v) =>
+        matchingDensity.includes(v.outletDensity),
+      );
       expect(filtered.length).toBe(2);
     });
 
     it("should filter venues correctly by wifi speed band", () => {
       // filters: { wifiSpeedBand: "fast" } -> speed >= 50
-      const filtered = sampleEnrichedVenues.filter((v) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
+      const filtered = sampleEnrichedVenues.filter(
+        (v) => v.wifiSpeed !== null && v.wifiSpeed >= 50,
+      );
       expect(filtered.length).toBe(1);
       expect(filtered[0].name).toBe("Cafe A");
     });
@@ -287,12 +330,16 @@ describe("Advanced Workspace Filters validations", () => {
         { name: "Cafe C", musicStyle: "no_music", hasNoMusic: true },
       ];
       // Filter for classical_jazz
-      const filteredJazz = venues.filter((v) => v.musicStyle === "classical_jazz");
+      const filteredJazz = venues.filter(
+        (v) => v.musicStyle === "classical_jazz",
+      );
       expect(filteredJazz.length).toBe(1);
       expect(filteredJazz[0].name).toBe("Cafe B");
 
       // Filter for no_music
-      const filteredNoMusic = venues.filter((v) => v.musicStyle === "no_music" || v.hasNoMusic);
+      const filteredNoMusic = venues.filter(
+        (v) => v.musicStyle === "no_music" || v.hasNoMusic,
+      );
       expect(filteredNoMusic.length).toBe(1);
       expect(filteredNoMusic[0].name).toBe("Cafe C");
     });

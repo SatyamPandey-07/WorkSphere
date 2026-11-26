@@ -1,10 +1,10 @@
-﻿import {
+import {
   createStudentDiscountVerifier,
   ZKP_TIMEOUT_USER_ALERT,
   ZKP_WATCHDOG_TIMEOUT_MS,
   type ZkpWorkerLike,
-} from '@/features/zkp/studentDiscountVerifier';
-import type { ZkpWorkerOutgoingMessage } from '@/workers/zkpWorker';
+} from "@/features/zkp/studentDiscountVerifier";
+import type { ZkpWorkerOutgoingMessage } from "@/workers/zkpWorker";
 
 interface MockZkpWorker extends ZkpWorkerLike {
   emitMessage: (msg: ZkpWorkerOutgoingMessage) => void;
@@ -20,13 +20,15 @@ function createMockWorker(): MockZkpWorker {
     onmessage: null,
     onerror: null,
     emitMessage(msg: ZkpWorkerOutgoingMessage) {
-      mockWorker.onmessage?.({ data: msg } as MessageEvent<ZkpWorkerOutgoingMessage>);
+      mockWorker.onmessage?.({
+        data: msg,
+      } as MessageEvent<ZkpWorkerOutgoingMessage>);
     },
   };
   return mockWorker;
 }
 
-describe('studentDiscountVerifier 30s watchdog & worker stall handling', () => {
+describe("studentDiscountVerifier 30s watchdog & worker stall handling", () => {
   beforeEach(() => {
     jest.useFakeTimers();
   });
@@ -35,15 +37,15 @@ describe('studentDiscountVerifier 30s watchdog & worker stall handling', () => {
     jest.useRealTimers();
   });
 
-  it('terminates stalled worker after 30s without progress and surfaces friendly retry alert', async () => {
+  it("terminates stalled worker after 30s without progress and surfaces friendly retry alert", async () => {
     const worker = createMockWorker();
     const verifier = createStudentDiscountVerifier({
       workerFactory: () => worker,
     });
 
     const promise = verifier.generateStudentDiscountProof({
-      studentId: 'stu-101',
-      institutionDomain: 'rizvi.edu.in',
+      studentId: "stu-101",
+      institutionDomain: "rizvi.edu.in",
     });
 
     const assertion = expect(promise).rejects.toMatchObject({
@@ -57,7 +59,7 @@ describe('studentDiscountVerifier 30s watchdog & worker stall handling', () => {
     await assertion;
   });
 
-  it('resets watchdog timer on PROOF_PROGRESS messages and completes once proof finishes', async () => {
+  it("resets watchdog timer on PROOF_PROGRESS messages and completes once proof finishes", async () => {
     const worker = createMockWorker();
     const onProgress = jest.fn();
     const verifier = createStudentDiscountVerifier({
@@ -66,28 +68,28 @@ describe('studentDiscountVerifier 30s watchdog & worker stall handling', () => {
     });
 
     const promise = verifier.generateStudentDiscountProof({
-      studentId: 'stu-102',
-      institutionDomain: 'mu.ac.in',
+      studentId: "stu-102",
+      institutionDomain: "mu.ac.in",
     });
 
     await jest.advanceTimersByTimeAsync(20_000);
     worker.emitMessage({
-      type: 'PROOF_PROGRESS',
-      stage: 'witness',
+      type: "PROOF_PROGRESS",
+      stage: "witness",
       progress: 50,
     });
-    expect(onProgress).toHaveBeenCalledWith(50, 'witness');
+    expect(onProgress).toHaveBeenCalledWith(50, "witness");
 
     await jest.advanceTimersByTimeAsync(20_000);
     expect(worker.terminateMock).not.toHaveBeenCalled();
 
     worker.emitMessage({
-      type: 'PROOF_COMPLETE',
+      type: "PROOF_COMPLETE",
       proof: {
-        pi_a: ['0x1', '0x1', '0x1'],
-        pi_b: [['0x1'], ['0x1'], ['0x1']],
-        pi_c: ['0x1', '0x1', '0x1'],
-        publicSignals: ['1'],
+        pi_a: ["0x1", "0x1", "0x1"],
+        pi_b: [["0x1"], ["0x1"], ["0x1"]],
+        pi_c: ["0x1", "0x1", "0x1"],
+        publicSignals: ["1"],
       },
     });
 

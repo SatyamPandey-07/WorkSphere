@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Info,
 } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 export type ToastType = "success" | "error" | "warning" | "info";
@@ -29,6 +30,7 @@ export interface ToastOptions {
   action?: { label: string; onClick: () => void };
   variant?: ToastVariant;
   timestamp?: string;
+  persistAcrossRoutes?: boolean;
 }
 
 export interface Toast {
@@ -45,6 +47,7 @@ export interface Toast {
   countdown?: number;
   duration?: number;
   updatedAt?: number;
+  persistAcrossRoutes?: boolean;
 }
 
 export interface ToastContextValue {
@@ -73,6 +76,16 @@ export function useToast(): ToastContextValue {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const previousPathnameRef = useRef(pathname);
+
+  useEffect(() => {
+    if (previousPathnameRef.current === pathname) return;
+
+    previousPathnameRef.current = pathname;
+    setToasts((prev) => prev.filter((toast) => toast.persistAcrossRoutes));
+  }, [pathname]);
   const recentMessagesRef = useRef<Map<string, number>>(new Map());
 
   const addToast = useCallback(
@@ -89,6 +102,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       let toastKey: string | undefined = idOrKey;
       let variant: ToastVariant = "default";
       let timestamp: string | undefined;
+      let persistAcrossRoutes = false;
 
       if (actionOrOptions) {
         if ("onClick" in actionOrOptions && "label" in actionOrOptions) {
@@ -100,6 +114,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           if (opts.duration !== undefined) effectiveDuration = opts.duration;
           if (opts.variant) variant = opts.variant;
           if (opts.timestamp) timestamp = opts.timestamp;
+          if (opts.persistAcrossRoutes !== undefined) {
+            persistAcrossRoutes = opts.persistAcrossRoutes;
+          }
           if (opts.id) toastKey = opts.id;
           else if (opts.key) toastKey = opts.key;
         }
@@ -143,6 +160,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   : updated[existingIndex].duration,
               key: toastKey,
               updatedAt: now,
+              persistAcrossRoutes:
+                persistAcrossRoutes ||
+                updated[existingIndex].persistAcrossRoutes,
             };
             return updated;
           }
@@ -159,6 +179,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               countdown: effectiveCountdown,
               duration: effectiveDuration,
               updatedAt: now,
+              persistAcrossRoutes,
             },
           ];
         });
@@ -223,6 +244,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             countdown: effectiveCountdown,
             duration: effectiveDuration,
             updatedAt: now,
+            persistAcrossRoutes,
           },
         ];
       });
@@ -281,8 +303,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 }),
               );
               if (detail.venueId) {
-                // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-                window.location.assign(
+                router.push(
                   `/venues/${encodeURIComponent(detail.venueId)}?reviewDraft=${encodeURIComponent(reviewId)}`,
                 );
               }
@@ -321,7 +342,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       );
       reviewSyncChannel?.close();
     };
-  }, [addToast]);
+  }, [addToast, router]);
 
   const contextValue = useMemo(() => ({ toast: addToast }), [addToast]);
 
@@ -480,7 +501,7 @@ function ToastItem({
     countdown !== undefined
       ? toast.message
           .replace("{countdown}", String(countdown))
-          // Singular only for exactly 1 — "11 seconds" must stay plural.
+          // Singular only for exactly 1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "11 seconds" must stay plural.
           .replace(/(^|\D)1 seconds\b/, (_, before) => `${before}1 second`)
       : toast.message;
 
@@ -511,32 +532,32 @@ function ToastItem({
         }
       }}
     >
-      {/* Tactical corner brackets for HUD appearance (⌜ ⌝ ⌞ ⌟) */}
+      {/* Tactical corner brackets for HUD appearance (ÃƒÂ¢Ã…â€™Ã…â€œ ÃƒÂ¢Ã…â€™Ã‚Â ÃƒÂ¢Ã…â€™Ã…Â¾ ÃƒÂ¢Ã…â€™Ã…Â¸) */}
       {isHud && (
         <>
           <span
             className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌜
+            ÃƒÂ¢Ã…â€™Ã…â€œ
           </span>
           <span
             className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌝
+            ÃƒÂ¢Ã…â€™Ã‚Â
           </span>
           <span
             className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌞
+            ÃƒÂ¢Ã…â€™Ã…Â¾
           </span>
           <span
             className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌟
+            ÃƒÂ¢Ã…â€™Ã…Â¸
           </span>
         </>
       )}
@@ -622,7 +643,7 @@ export interface TacticalHUDToastProps {
 
 /**
  * TacticalHUDToast: Dedicated collimated fighter jet HUD advisory notification component
- * with tactical corner brackets (⌜ ⌝ ⌞ ⌟), glowing emerald power dot, and telemetry timestamp.
+ * with tactical corner brackets (ÃƒÂ¢Ã…â€™Ã…â€œ ÃƒÂ¢Ã…â€™Ã‚Â ÃƒÂ¢Ã…â€™Ã…Â¾ ÃƒÂ¢Ã…â€™Ã…Â¸), glowing emerald power dot, and telemetry timestamp.
  */
 export function TacticalHUDToast({
   message,
@@ -659,25 +680,25 @@ export function TacticalHUDToast({
         className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌜
+        âŒœ
       </span>
       <span
         className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌝
+        âŒ
       </span>
       <span
         className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌞
+        âŒž
       </span>
       <span
         className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌟
+        âŒŸ
       </span>
 
       {/* Emerald status dot */}
@@ -774,7 +795,7 @@ export const Toast: React.FC<ToastProps> = ({
         aria-label="Dismiss notification"
         className="ml-1 rounded-md px-1.5 py-0.5 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white"
       >
-        ✕
+        ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢
       </button>
     </div>
   );

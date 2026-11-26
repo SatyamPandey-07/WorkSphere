@@ -23,18 +23,18 @@ The administrative audit export endpoint allows venue operators and platform adm
 
 ### Path Parameters
 
-| Parameter | Type | Required | Description | Example |
-| :--- | :--- | :---: | :--- | :--- |
-| `venueId` | `string` | **Yes** | The unique database ID (`id`) or Google Place ID (`placeId`) of the venue. | `clx123abc456` or `ChIJN1t_tDeuEmsRUsoyG83frY4` |
+| Parameter | Type     | Required | Description                                                                | Example                                         |
+| :-------- | :------- | :------: | :------------------------------------------------------------------------- | :---------------------------------------------- |
+| `venueId` | `string` | **Yes**  | The unique database ID (`id`) or Google Place ID (`placeId`) of the venue. | `clx123abc456` or `ChIJN1t_tDeuEmsRUsoyG83frY4` |
 
 ### Request Headers
 
-| Header | Type | Required | Description |
-| :--- | :--- | :---: | :--- |
-| `Cookie` | `string` | Optional* | Clerk authentication session cookies (when invoked from browsers). |
-| `Authorization` | `string` | Optional* | Bearer session token (e.g. `Bearer <clerk_session_token>`). |
+| Header          | Type     | Required  | Description                                                        |
+| :-------------- | :------- | :-------: | :----------------------------------------------------------------- |
+| `Cookie`        | `string` | Optional* | Clerk authentication session cookies (when invoked from browsers). |
+| `Authorization` | `string` | Optional* | Bearer session token (e.g. `Bearer <clerk_session_token>`).        |
 
-*\*At least one valid Clerk session authentication mechanism is required.*
+_\*At least one valid Clerk session authentication mechanism is required._
 
 ### Response Content Types and Headers
 
@@ -65,14 +65,14 @@ Cache-Control: private, no-store, max-age=0
 
 The table below documents the query parameters recognized and evaluated by the route handler (`src/app/api/admin/venues/[venueId]/export/route.ts`) and the underlying exporter (`src/lib/export/auditExporter.ts`):
 
-| Parameter | Type | Required | Default | Accepted Values / Format | Description |
-| :--- | :--- | :---: | :--- | :--- | :--- |
-| `format` | `string` | No | `csv` | `csv`, `pdf` (case-insensitive) | Output format for the audit export. If set to any value other than `csv` or `pdf`, returns HTTP `400 Bad Request`. |
-| `month` | `string` | No | `undefined` | `YYYY-MM` or `YYYY-MM-DD` (e.g. `2026-11`) | Filters audit records to the specified UTC calendar month (from 1st of the month 00:00:00 UTC up to the 1st of the next month 00:00:00 UTC). Overridden if `startDate` or `endDate` is provided. |
-| `startDate` | `string` | No | `undefined` | ISO 8601 string or valid date string (e.g. `2026-11-01T00:00:00Z` or `2026-11-01`) | Lower bound filter for audit record creation (`createdAt >= startDate`). Takes precedence over `month`. |
-| `endDate` | `string` | No | `undefined` | ISO 8601 string or valid date string (e.g. `2026-11-30T23:59:59Z` or `2026-11-30`) | Upper bound filter for audit record creation (`createdAt < endDate`). Takes precedence over `month`. |
-| `severity` | `string` | No | *N/A (Ignored)* | *Not supported in route* | **Discrepancy Note:** Audit records in this endpoint track physical check-ins, seat bookings, and noise telemetry rather than system error logs. `severity` is not supported or parsed by the endpoint. |
-| `limit` | `number` | No | `5000` *(internal)* | Integer (internal exporter default) | **Discrepancy Note:** The internal `fetchVenueAuditRows` helper accepts `options.limit` (defaulting to `5000` records per table query), but the route handler does not extract `limit` from URL query parameters. |
+| Parameter   | Type     | Required | Default             | Accepted Values / Format                                                           | Description                                                                                                                                                                                                       |
+| :---------- | :------- | :------: | :------------------ | :--------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`    | `string` |    No    | `csv`               | `csv`, `pdf` (case-insensitive)                                                    | Output format for the audit export. If set to any value other than `csv` or `pdf`, returns HTTP `400 Bad Request`.                                                                                                |
+| `month`     | `string` |    No    | `undefined`         | `YYYY-MM` or `YYYY-MM-DD` (e.g. `2026-11`)                                         | Filters audit records to the specified UTC calendar month (from 1st of the month 00:00:00 UTC up to the 1st of the next month 00:00:00 UTC). Overridden if `startDate` or `endDate` is provided.                  |
+| `startDate` | `string` |    No    | `undefined`         | ISO 8601 string or valid date string (e.g. `2026-11-01T00:00:00Z` or `2026-11-01`) | Lower bound filter for audit record creation (`createdAt >= startDate`). Takes precedence over `month`.                                                                                                           |
+| `endDate`   | `string` |    No    | `undefined`         | ISO 8601 string or valid date string (e.g. `2026-11-30T23:59:59Z` or `2026-11-30`) | Upper bound filter for audit record creation (`createdAt < endDate`). Takes precedence over `month`.                                                                                                              |
+| `severity`  | `string` |    No    | _N/A (Ignored)_     | _Not supported in route_                                                           | **Discrepancy Note:** Audit records in this endpoint track physical check-ins, seat bookings, and noise telemetry rather than system error logs. `severity` is not supported or parsed by the endpoint.           |
+| `limit`     | `number` |    No    | `5000` _(internal)_ | Integer (internal exporter default)                                                | **Discrepancy Note:** The internal `fetchVenueAuditRows` helper accepts `options.limit` (defaulting to `5000` records per table query), but the route handler does not extract `limit` from URL query parameters. |
 
 ---
 
@@ -87,7 +87,7 @@ flowchart TD
     AuthCheck -- Yes --> VenueLookup{Lookup Venue by id or placeId}
     VenueLookup -- Not Found --> Res404[Return 404 Venue not found]
     VenueLookup -- Found --> RoleEval{Evaluate User Role & Ownership}
-    
+
     RoleEval --> AdminCheck{Is Admin? getAdminUser OR role in admin, super_admin, superadmin}
     AdminCheck -- Yes --> Allow[Authorized: Fetch Audit Data]
     AdminCheck -- No --> OwnerRoleCheck{Role is venue_owner OR owner OR creatorId/ownerId matches?}
@@ -98,14 +98,19 @@ flowchart TD
 ```
 
 ### 1. Authentication Check
+
 The endpoint resolves the authenticated user via Clerk (`await currentUser()`). If no active session exists, the endpoint immediately halts and returns:
+
 ```json
 { "error": "Unauthorized" }
 ```
-*(HTTP 401 Unauthorized)*
+
+_(HTTP 401 Unauthorized)_
 
 ### 2. Role Resolution
+
 User roles are extracted from Clerk metadata, prioritizing private metadata over public metadata:
+
 ```typescript
 const publicRole = user.publicMetadata?.role;
 const privateRole = user.privateMetadata?.role;
@@ -115,17 +120,22 @@ const role = (privateRole || publicRole)?.toLowerCase();
 Additionally, `getAdminUser()` checks environment-configured administrator email addresses (`ADMIN_EMAILS` or `ADMIN_EMAIL`) against verified Clerk email addresses (`verification.status === "verified"`).
 
 ### 3. Permissions Evaluation
+
 Access is granted if any of the following conditions are met:
+
 - **Global Administrator:** `getAdminUser()` returns truthy, or `role` is one of `admin`, `super_admin`, or `superadmin`.
 - **Venue Owner Role:** `role` is `venue_owner`, `owner`, or `venue-owner`.
 - **Venue Resource Ownership:** The user's ID matches `venue.ownerId` or `venue.creatorId`.
 
 ### 4. Cross-Tenant Protection
+
 If a user has a venue owner role but is neither a platform admin nor the registered owner/creator of the specific venue (`venue.ownerId && venue.ownerId !== user.id && venue.creatorId !== user.id`), the request is rejected with:
+
 ```json
 { "error": "Forbidden: Not authorized for this venue" }
 ```
-*(HTTP 403 Forbidden)*
+
+_(HTTP 403 Forbidden)_
 
 ---
 
@@ -140,7 +150,7 @@ sequenceDiagram
     participant Route as Next.js API Route (/export)
     participant Exporter as auditExporter
     participant DB as Prisma (PostgreSQL)
-    
+
     Client->>Route: GET /api/admin/venues/:venueId/export?format=csv
     Route->>Route: Authenticate (Clerk) & Authorize (RBAC)
     Route->>Exporter: fetchVenueAuditRows(venueId, { month, startDate, endDate })
@@ -149,7 +159,7 @@ sequenceDiagram
     Exporter->>DB: findFirst NoiseTelemetryRelease
     DB-->>Exporter: Records
     Exporter-->>Route: Array of VenueAuditExportRow[]
-    
+
     alt format == "csv"
         Route->>Exporter: createVenueAuditCsvStream(rows)
         Exporter-->>Route: ReadableStream<Uint8Array>
@@ -168,13 +178,15 @@ sequenceDiagram
 ### Detailed Mechanics
 
 #### CSV Streaming (`createVenueAuditCsvStream`)
+
 - **Web ReadableStream:** The CSV output uses standard Web Streams (`ReadableStream<Uint8Array>`).
 - **Chunking Behavior:** The `pull(controller)` function emits an initial chunk containing the CSV header line (`AUDIT_EXPORT_COLUMNS.join(",") + "\r\n"`), followed by incremental row-by-row chunks encoded with `TextEncoder`.
 - **Transfer Encoding:** Handled dynamically by the runtime / reverse proxy via HTTP Chunked Transfer Encoding (`Transfer-Encoding: chunked`). The `Content-Length` header is omitted for CSV responses.
 - **Cancellation & Backpressure:** The stream constructor implements a `cancel()` hook that invokes `iterator.return()`. Standard Web Stream backpressure is honored through controller queueing.
 
 #### Data Ingestion & Memory Bounds
-- **Initial Query Buffering:** Before streaming begins, `fetchVenueAuditRows()` loads up to 5,000 `CheckIn` records, 5,000 `Booking` records, and the latest `NoiseTelemetryRelease` into memory from Prisma. 
+
+- **Initial Query Buffering:** Before streaming begins, `fetchVenueAuditRows()` loads up to 5,000 `CheckIn` records, 5,000 `Booking` records, and the latest `NoiseTelemetryRelease` into memory from Prisma.
 - **Memory Footprint:** While `createVenueAuditCsvStream` operates with an $O(1)$ streaming transformation footprint over an iterable, the current route handler resolves the entire database result array before passing it to the stream. Therefore, memory usage is bounded by the Prisma query limits (`5000` records per table query).
 - **PDF Generation:** PDF documents are generated synchronously in memory using `pdf-lib` and returned as a single buffered byte array (`Buffer.from(pdfBytes)`). PDF generation is not streamed.
 
@@ -186,13 +198,13 @@ sequenceDiagram
 
 The CSV export strictly outputs 5 columns in the exact order defined by `AUDIT_EXPORT_COLUMNS`:
 
-| Position | Column Header | Data Type | Example Value | Description |
-| :---: | :--- | :--- | :--- | :--- |
-| 1 | `Timestamp` | ISO 8601 String | `2026-11-24T12:00:00.000Z` | Check-in or booking timestamp. Returns empty string `""` if null/invalid. |
-| 2 | `User ID` | String | `user_2s6fEXAMPLE` | Clerk user identifier associated with the activity. |
-| 3 | `Seat Label` | String | `Desk 42` | Assigned seat number or zone name. Defaults to `"Hot Desk"` if null, undefined, or empty. |
-| 4 | `Check-in Duration` | String | `120 mins` | Duration formatted as rounded minutes plus `" mins"`. Defaults to `"N/A"` if missing, or `"0 mins"` if negative. |
-| 5 | `Average Decibels` | String | `48.5` | Ambient sound level formatted to 1 decimal place. Defaults to `"N/A"` if missing or NaN. |
+| Position | Column Header       | Data Type       | Example Value              | Description                                                                                                      |
+| :------: | :------------------ | :-------------- | :------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+|    1     | `Timestamp`         | ISO 8601 String | `2026-11-24T12:00:00.000Z` | Check-in or booking timestamp. Returns empty string `""` if null/invalid.                                        |
+|    2     | `User ID`           | String          | `user_2s6fEXAMPLE`         | Clerk user identifier associated with the activity.                                                              |
+|    3     | `Seat Label`        | String          | `Desk 42`                  | Assigned seat number or zone name. Defaults to `"Hot Desk"` if null, undefined, or empty.                        |
+|    4     | `Check-in Duration` | String          | `120 mins`                 | Duration formatted as rounded minutes plus `" mins"`. Defaults to `"N/A"` if missing, or `"0 mins"` if negative. |
+|    5     | `Average Decibels`  | String          | `48.5`                     | Ambient sound level formatted to 1 decimal place. Defaults to `"N/A"` if missing or NaN.                         |
 
 ### Formatting and Escaping Rules
 
@@ -240,7 +252,7 @@ PDF exports are generated via `pdf-lib` using custom grid coordinates:
    - When table rows exceed vertical page bounds, `ensureSpace()` triggers a new page and redraws table headers.
    - Page numbers are injected across all pages in the footer (`Page X of Y`).
 
-### Representative PDF Content Structure *(Illustrative Text Representation)*
+### Representative PDF Content Structure _(Illustrative Text Representation)_
 
 ```text
 +-----------------------------------------------------------------------------------------------+
@@ -309,20 +321,21 @@ curl -X GET "https://api.worksphere.com/api/admin/venues/VENUE_ID/export?format=
 
 ### HTTP Status Codes
 
-| Status Code | Description | Content-Type | Cause |
-| :---: | :--- | :--- | :--- |
-| `200 OK` | Export generated successfully | `text/csv; charset=utf-8` or `application/pdf` | Valid request; body contains stream or binary PDF. |
-| `400 Bad Request` | Validation failure | `application/json` | Missing `venueId`, or unsupported `format` parameter. |
-| `401 Unauthorized` | Authentication required | `application/json` | Missing or expired Clerk user session. |
-| `403 Forbidden` | Access denied | `application/json` | User lacks admin/owner roles or attempted cross-tenant venue access. |
-| `404 Not Found` | Venue not found | `application/json` | No venue matching `venueId` (tested against `id` and `placeId`). |
-| `500 Internal Server Error` | Server export failure | `application/json` | Unhandled error during database fetch or PDF/stream compilation. |
+|         Status Code         | Description                   | Content-Type                                   | Cause                                                                |
+| :-------------------------: | :---------------------------- | :--------------------------------------------- | :------------------------------------------------------------------- |
+|          `200 OK`           | Export generated successfully | `text/csv; charset=utf-8` or `application/pdf` | Valid request; body contains stream or binary PDF.                   |
+|      `400 Bad Request`      | Validation failure            | `application/json`                             | Missing `venueId`, or unsupported `format` parameter.                |
+|     `401 Unauthorized`      | Authentication required       | `application/json`                             | Missing or expired Clerk user session.                               |
+|       `403 Forbidden`       | Access denied                 | `application/json`                             | User lacks admin/owner roles or attempted cross-tenant venue access. |
+|       `404 Not Found`       | Venue not found               | `application/json`                             | No venue matching `venueId` (tested against `id` and `placeId`).     |
+| `500 Internal Server Error` | Server export failure         | `application/json`                             | Unhandled error during database fetch or PDF/stream compilation.     |
 
 ### Error Response Schemas
 
 All error responses return a standardized JSON object:
 
 #### 1. Missing Venue ID (400)
+
 ```json
 {
   "error": "Venue ID is required"
@@ -330,6 +343,7 @@ All error responses return a standardized JSON object:
 ```
 
 #### 2. Unsupported Format (400)
+
 ```json
 {
   "error": "Invalid format parameter. Supported formats are 'csv' and 'pdf'."
@@ -337,6 +351,7 @@ All error responses return a standardized JSON object:
 ```
 
 #### 3. Unauthenticated Request (401)
+
 ```json
 {
   "error": "Unauthorized"
@@ -344,6 +359,7 @@ All error responses return a standardized JSON object:
 ```
 
 #### 4. Insufficient Role Permissions (403)
+
 ```json
 {
   "error": "Forbidden: Restricted to ADMIN or VENUE_OWNER roles"
@@ -351,6 +367,7 @@ All error responses return a standardized JSON object:
 ```
 
 #### 5. Cross-Tenant Venue Access Violation (403)
+
 ```json
 {
   "error": "Forbidden: Not authorized for this venue"
@@ -358,6 +375,7 @@ All error responses return a standardized JSON object:
 ```
 
 #### 6. Venue Not Found (404)
+
 ```json
 {
   "error": "Venue not found"
@@ -365,6 +383,7 @@ All error responses return a standardized JSON object:
 ```
 
 #### 7. Internal Server Error (500)
+
 ```json
 {
   "error": "Failed to export venue audit report"

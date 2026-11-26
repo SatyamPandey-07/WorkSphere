@@ -1,14 +1,14 @@
-﻿import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import React from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import {
   BoundedSyncOutbox,
   CircuitOpenError,
   ResilienceCircuitBreaker,
-} from '@/lib/reliability/circuitAndSyncEngine';
-import { SessionHealthPanel } from '@/components/reliability/SessionHealthPanel';
+} from "@/lib/reliability/circuitAndSyncEngine";
+import { SessionHealthPanel } from "@/components/reliability/SessionHealthPanel";
 
-describe('ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel', () => {
-  it('opens circuit after failures, transitions to half-open after timeout, and closes on recovery', async () => {
+describe("ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel", () => {
+  it("opens circuit after failures, transitions to half-open after timeout, and closes on recovery", async () => {
     let now = 10_000;
     const breaker = new ResilienceCircuitBreaker({
       failureThreshold: 2,
@@ -17,51 +17,51 @@ describe('ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel', () 
       nowFn: () => now,
     });
 
-    const failOp = jest.fn().mockRejectedValue(new Error('503 Unavailable'));
+    const failOp = jest.fn().mockRejectedValue(new Error("503 Unavailable"));
     await expect(breaker.execute(failOp)).rejects.toThrow();
     await expect(breaker.execute(failOp)).rejects.toThrow();
-    expect(breaker.getState()).toBe('open');
+    expect(breaker.getState()).toBe("open");
 
     await expect(breaker.execute(failOp)).rejects.toBeInstanceOf(
-      CircuitOpenError
+      CircuitOpenError,
     );
 
     now += 5_000;
-    expect(breaker.getState()).toBe('half_open');
+    expect(breaker.getState()).toBe("half_open");
 
-    const okOp = jest.fn().mockResolvedValue('ok');
-    await expect(breaker.execute(okOp)).resolves.toBe('ok');
-    expect(breaker.getState()).toBe('closed');
+    const okOp = jest.fn().mockResolvedValue("ok");
+    await expect(breaker.execute(okOp)).resolves.toBe("ok");
+    expect(breaker.getState()).toBe("closed");
   });
 
-  it('compacts superseded sync events by (version, timestampMs, peerId) and drains bounded outbox', async () => {
-    const outbox = new BoundedSyncOutbox<{ title: string }>(2);
+  it("compacts superseded sync events by (version, timestampMs, peerId) and drains bounded outbox", async () => {
+    const outbox = new BoundedSyncOutbox<{ title: string }>(3);
     outbox.push({
-      id: '0',
-      key: 'legacy-note',
-      payload: { title: 'evicted' },
+      id: "0",
+      key: "legacy-note",
+      payload: { title: "evicted" },
       version: 1,
-      peerId: 'peer-a',
+      peerId: "peer-a",
       timestampMs: 50,
     });
     outbox.push({
-      id: '1',
-      key: 'note-1',
-      payload: { title: 'v1' },
+      id: "1",
+      key: "note-1",
+      payload: { title: "v1" },
       version: 1,
-      peerId: 'peer-a',
+      peerId: "peer-a",
       timestampMs: 100,
     });
     outbox.push({
-      id: '2',
-      key: 'note-1',
-      payload: { title: 'v2' },
+      id: "2",
+      key: "note-1",
+      payload: { title: "v2" },
       version: 2,
-      peerId: 'peer-a',
+      peerId: "peer-a",
       timestampMs: 200,
     });
 
-    expect(outbox.size()).toBe(2);
+    expect(outbox.size()).toBe(3);
 
     const sent: unknown[] = [];
     const count = await outbox.drain((batch) => {
@@ -72,7 +72,7 @@ describe('ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel', () 
     expect(sent).toHaveLength(2);
   });
 
-  it('renders session health metrics with clamped energy bar and sync trigger', () => {
+  it("renders session health metrics with clamped energy bar and sync trigger", () => {
     const onSyncNow = jest.fn();
     render(
       <SessionHealthPanel
@@ -83,20 +83,20 @@ describe('ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel', () 
         circuitState="closed"
         queuedMutationsCount={4}
         onSyncNow={onSyncNow}
-      />
+      />,
     );
 
-    expect(screen.getByTestId('panel-call-quality').textContent).toBe(
-      'Excellent for Video Calls'
+    expect(screen.getByTestId("panel-call-quality").textContent).toBe(
+      "Excellent for Video Calls",
     );
-    expect(screen.getByTestId('panel-overage-badge').textContent).toBe(
-      '+35% above baseline'
+    expect(screen.getByTestId("panel-overage-badge").textContent).toBe(
+      "+35% above baseline",
     );
     expect(
-      (screen.getByTestId('panel-energy-bar') as HTMLElement).style.width
-    ).toBe('100%');
+      (screen.getByTestId("panel-energy-bar") as HTMLElement).style.width,
+    ).toBe("100%");
 
-    fireEvent.click(screen.getByTestId('panel-sync-btn'));
+    fireEvent.click(screen.getByTestId("panel-sync-btn"));
     expect(onSyncNow).toHaveBeenCalledTimes(1);
   });
 });

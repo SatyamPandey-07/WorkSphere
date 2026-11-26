@@ -1,25 +1,29 @@
-﻿import {
+import {
   createCursorThrottleController,
   type DataChannelLike,
-} from '@/hooks/useMeshDataChannels';
+} from "@/hooks/useMeshDataChannels";
 
 function makeChannel(sent: string[]): DataChannelLike {
   return {
-    readyState: 'open',
+    readyState: "open",
     send: (data: string) => {
       sent.push(data);
     },
   };
 }
 
-describe('useMeshDataChannels cursor throttle reset on peer reconnect', () => {
-  it('throttles rapid updates within throttleMs, then immediately sends initial cursor on reconnect', () => {
+describe("useMeshDataChannels cursor throttle reset on peer reconnect", () => {
+  it("throttles rapid updates within throttleMs, then immediately sends initial cursor on reconnect", () => {
     const sent: string[] = [];
     const channel = makeChannel(sent);
     const controller = createCursorThrottleController({ throttleMs: 100 });
 
-    expect(controller.trySendCursor(channel, { x: 10, y: 20 }, 10_000)).toBe(true);
-    expect(controller.trySendCursor(channel, { x: 15, y: 25 }, 10_020)).toBe(false);
+    expect(controller.trySendCursor(channel, { x: 10, y: 20 }, 10_000)).toBe(
+      true,
+    );
+    expect(controller.trySendCursor(channel, { x: 15, y: 25 }, 10_020)).toBe(
+      false,
+    );
     expect(sent).toHaveLength(1);
 
     controller.resetOnPeerConnect();
@@ -27,18 +31,18 @@ describe('useMeshDataChannels cursor throttle reset on peer reconnect', () => {
     expect(controller.state.forceNextSend).toBe(true);
 
     expect(controller.trySendCursor(channel, { x: 120, y: 240 }, 10_030)).toBe(
-      true
+      true,
     );
     expect(sent).toHaveLength(2);
     expect(JSON.parse(sent[1])).toMatchObject({
-      type: 'cursor',
+      type: "cursor",
       x: 120,
       y: 240,
       ts: 10_030,
     });
   });
 
-  it('handles clock skew cleanly without dropping cursor updates', () => {
+  it("handles clock skew cleanly without dropping cursor updates", () => {
     const sent: string[] = [];
     const channel = makeChannel(sent);
     const controller = createCursorThrottleController({ throttleMs: 50 });

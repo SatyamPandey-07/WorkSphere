@@ -24,7 +24,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const verification = await verifyBatchStudentDiscountProofs(body);
+    const verification = await verifyBatchStudentDiscountProofs(
+      body,
+      req.signal,
+    );
+
+    if (req.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
 
     return NextResponse.json(verification, {
       status: verification.valid ? 200 : 207,

@@ -1,4 +1,3 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   AllEndpointsFailedError,
   SolanaClusterPool,
@@ -10,17 +9,17 @@ describe("SolanaClusterPool", () => {
 
   beforeEach(() => {
     currentTime = 1_000_000;
-    vi.useFakeTimers();
-    vi.setSystemTime(currentTime);
+    jest.useFakeTimers();
+    jest.setSystemTime(currentTime);
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   const advanceTime = async (ms: number) => {
     currentTime += ms;
-    await vi.advanceTimersByTimeAsync(ms);
+    await jest.advanceTimersByTimeAsync(ms);
   };
 
   it("fails over deterministically when primary endpoints return 429 or 5xx errors", async () => {
@@ -188,6 +187,133 @@ describe("SolanaClusterPool", () => {
 
     await expect(pool.call("getSlot", [])).rejects.toBeInstanceOf(
       AllEndpointsFailedError,
+    );
+  });
+
+  it("adds bounded cooldownJitterMs using deterministic random sampler and delays probe until jitter expires", async () => {
+    let failPrimary = true;
+    const transport: RpcTransport = async (endpoint, method) => {
+      if (endpoint === "https://primary.example.com") {
+        if (method === "getHealth") {
+          return failPrimary ? Promise.reject(new Error("down")) : "ok";
+        }
+        if (failPrimary) {
+          throw Object.assign(new Error("Service Unavailable"), {
+            status: 503,
+          });
+        }
+        return "primary-ok";
+      }
+      return "secondary-ok";
+    };
+
+    const pool = new SolanaClusterPool({
+      endpoints: [
+        "https://primary.example.com",
+        "https://secondary.example.com",
+      ],
+      transport,
+      failureThreshold: 1,
+      cooldownMs: 10_000,
+      cooldownJitterMs: 4_000,
+      random: () => 0.5,
+      now: () => currentTime,
+    });
+
+    await expect(pool.call("getSlot", [])).resolves.toBe("secondary-ok");
+
+    const snap = pool
+      .getHealthSnapshot()
+      .find((s) => s.endpoint === "https://primary.example.com");
+    expect(snap?.circuitOpenUntil).toBe(currentTime + 12_000);
+
+    // At base cooldown (10s), circuit must still be open due to +2s jitter
+    failPrimary = false;
+    await advanceTime(10_000);
+    const probeBeforeJitter = await pool.probeHealth();
+    expect(probeBeforeJitter["https://primary.example.com"]).toBe(false);
+
+    // Once full cooldown + jitter (12s total) elapses, endpoint recovers via probe
+    await advanceTime(2_000);
+    const probeAfterJitter = await pool.probeHealth();
+    expect(probeAfterJitter["https://primary.example.com"]).toBe(true);
+  });
+
+  it("computes deterministic staggered cooldowns when cooldownJitterSeed is provided", async () => {
+    const createSeededPool = (seed: number) =>
+      new SolanaClusterPool({
+        endpoints: [
+          "https://rpc-1.example.com",
+          "https://rpc-2.example.com",
+          "https://rpc-3.example.com",
+        ],
+        transport: async (endpoint) => {
+          if (endpoint !== "https://rpc-3.example.com") {
+            throw Object.assign(new Error("429"), { status: 429 });
+          }
+          return "ok";
+        },
+        failureThreshold: 1,
+        cooldownMs: 10_000,
+        cooldownJitterMs: 5_000,
+        cooldownJitterSeed: seed,
+        now: () => currentTime,
+      });
+
+    const poolA = createSeededPool(42);
+    const poolB = createSeededPool(42);
+
+    await poolA.call("getSlot", []);
+    await poolB.call("getSlot", []);
+
+    const snapA = poolA.getHealthSnapshot();
+    const snapB = poolB.getHealthSnapshot();
+
+    expect(snapA[0].circuitOpenUntil).toBe(snapB[0].circuitOpenUntil);
+    expect(snapA[1].circuitOpenUntil).toBe(snapB[1].circuitOpenUntil);
+    expect(snapA[0].circuitOpenUntil).toBeGreaterThanOrEqual(
+      currentTime + 10_000,
+    );
+    expect(snapA[0].circuitOpenUntil).toBeLessThanOrEqual(
+      currentTime + 15_000,
+    );
+    expect(snapA[0].circuitOpenUntil).not.toBe(snapA[1].circuitOpenUntil);
+  });
+
+  it("clamps invalid or negative cooldownJitterMs and out-of-range random samples safely", async () => {
+    const failingTransport: RpcTransport = async (endpoint) => {
+      if (endpoint === "https://rpc-1.example.com") {
+        throw Object.assign(new Error("502"), { status: 502 });
+      }
+      return "ok";
+    };
+
+    const negativeJitterPool = new SolanaClusterPool({
+      endpoints: ["https://rpc-1.example.com", "https://rpc-2.example.com"],
+      transport: failingTransport,
+      failureThreshold: 1,
+      cooldownMs: 8_000,
+      cooldownJitterMs: -500,
+      random: () => 0.9,
+      now: () => currentTime,
+    });
+    await negativeJitterPool.call("getSlot", []);
+    expect(negativeJitterPool.getHealthSnapshot()[0].circuitOpenUntil).toBe(
+      currentTime + 8_000,
+    );
+
+    const clampedUpperPool = new SolanaClusterPool({
+      endpoints: ["https://rpc-1.example.com", "https://rpc-2.example.com"],
+      transport: failingTransport,
+      failureThreshold: 1,
+      cooldownMs: 8_000,
+      cooldownJitterMs: 2_000,
+      random: () => 5,
+      now: () => currentTime,
+    });
+    await clampedUpperPool.call("getSlot", []);
+    expect(clampedUpperPool.getHealthSnapshot()[0].circuitOpenUntil).toBe(
+      currentTime + 10_000,
     );
   });
 });

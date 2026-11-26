@@ -51,8 +51,11 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
 
   describe("formatCountdown helper", () => {
     it("formats minutes under 1 hour correctly", () => {
-      expect(formatCountdown(45, "Closes in")).toBe("Closes in 45m");
-      expect(formatCountdown(35, "Opens in")).toBe("Opens in 35m");
+      expect(formatCountdown(1, "Closes in")).toBe("Closes in 1 min");
+      expect(formatCountdown(2, "Closes in")).toBe("Closes in 2 mins");
+      expect(formatCountdown(45, "Closes in")).toBe("Closes in 45 mins");
+      expect(formatCountdown(35, "Opens in")).toBe("Opens in 35 mins");
+      expect(formatCountdown(0, "Closes in")).toBe("Closes in 0m");
     });
 
     it("formats exact hours and hours with minutes correctly", () => {
@@ -166,6 +169,34 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
   });
 
   describe("VenueHoursBadge presentation & status states", () => {
+    it("renders a singular minute countdown and preserves the closing-soon state", () => {
+      render(
+        <VenueHoursBadge
+          openingHours={standardSchedule}
+          currentTime="2026-11-24T14:29:00.000Z"
+          showCountdown
+        />,
+      );
+
+      const badge = screen.getByTestId("venue-opening-badge");
+      expect(badge.textContent).toBe("Closes in 1 min");
+      expect(badge).toHaveAttribute("data-state", "closing_soon");
+    });
+
+    it("renders two remaining minutes with the plural form", () => {
+      render(
+        <VenueHoursBadge
+          openingHours={standardSchedule}
+          currentTime="2026-11-24T14:28:00.000Z"
+          showCountdown
+        />,
+      );
+
+      const badge = screen.getByTestId("venue-opening-badge");
+      expect(badge.textContent).toBe("Closes in 2 mins");
+      expect(badge).toHaveAttribute("data-state", "closing_soon");
+    });
+
     it("renders green open state with countdown when closing > 60m away during daytime", () => {
       // 09:00 UTC = 14:30 in Kolkata (+5:30), close is 20:00 (5h 30m away)
       render(
@@ -194,7 +225,7 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
 
       const badge = screen.getByTestId("venue-opening-badge");
       expect(badge).toHaveAttribute("data-state", "closing_soon");
-      expect(badge.textContent).toBe("Closes in 45m");
+      expect(badge.textContent).toBe("Closes in 45 mins");
       expect(badge.className).toContain("text-amber-900");
     });
 
@@ -247,7 +278,7 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
         />,
       );
       expect(screen.getByTestId("venue-opening-badge").textContent).toBe(
-        "Closes in 45m",
+        "Closes in 45 mins",
       );
       expect(screen.getByTestId("venue-opening-badge")).toHaveAttribute(
         "data-state",
@@ -310,7 +341,7 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
       });
 
       expect(screen.getByTestId("venue-opening-badge").textContent).toBe(
-        "Closes in 44m",
+        "Closes in 44 mins",
       );
 
       // Advance by another 10 minutes
@@ -319,7 +350,7 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
       });
 
       expect(screen.getByTestId("venue-opening-badge").textContent).toBe(
-        "Closes in 34m",
+        "Closes in 34 mins",
       );
     });
 

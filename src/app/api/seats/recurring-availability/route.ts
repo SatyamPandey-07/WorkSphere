@@ -3,17 +3,11 @@ import {
   validateRecurringBookingSlots,
   type SeatOccupancyStore,
 } from '@/features/seats/recurringBookingService';
+import { defaultRecurringSeriesManager } from '@/features/seats/recurringSeriesStore';
 
-const defaultStore: SeatOccupancyStore = {
-  async getOccupiedDates() {
-    return new Map();
-  },
-  async listCandidateDesks() {
-    return [];
-  },
-};
-
-export function createRecurringAvailabilityHandler(store: SeatOccupancyStore = defaultStore) {
+export function createRecurringAvailabilityHandler(
+  store: SeatOccupancyStore = defaultRecurringSeriesManager
+) {
   return async function POST(req: NextRequest) {
     try {
       const body = await req.json();

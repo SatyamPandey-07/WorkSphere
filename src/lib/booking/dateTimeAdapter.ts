@@ -5,10 +5,7 @@
  * IANA timezone validation, and interval calculations.
  */
 
-import {
-  BookingInterval,
-  BookingSlot,
-} from "./types";
+import { BookingInterval, BookingSlot } from "./types";
 
 export interface DateTimeAdapter {
   isValidTimeZone(timeZone: unknown): timeZone is string;
@@ -138,8 +135,15 @@ export function timeZoneOffsetMs(instant: Date, timeZone: string): number {
 
 /**
  * Parses a booking's date and time as wall-clock time in `timeZone` and
- * returns the corresponding instant, or null when either part is invalid.
+ * returns the corresponding instant, or null when either part is invalid or nonexistent.
  * Uses iterative offset convergence to accurately account for Daylight Saving Time (DST) shifts.
+ *
+ * DST Transition Handling:
+ * - Spring-forward gap: When the local wall-clock time does not exist (e.g. 02:30 in America/New_York
+ *   on the second Sunday in March), round-trip verification fails and null is returned.
+ * - Fall-back ambiguity: When the local wall-clock time occurs twice (e.g. 01:30 in America/New_York
+ *   on the first Sunday in November), this resolves unambiguously to the earlier instant
+ *   (the first occurrence, with the daylight saving offset), which formats cleanly back to the wall clock.
  */
 export function parseBookingDateTime(
   dateStr: string,
@@ -166,7 +170,17 @@ export function parseBookingDateTime(
   }
 
   const result = new Date(instant);
-  return isNaN(result.getTime()) ? null : result;
+  if (isNaN(result.getTime())) return null;
+
+  // Round-trip verification: verify that the computed instant formats back
+  // to the requested local date and time in the specified timezone.
+  // This safely rejects nonexistent local times in DST spring-forward gaps.
+  const wallClock = formatToWallClock(result, zone);
+  if (wallClock.date !== dateStr || wallClock.time !== time) {
+    return null;
+  }
+
+  return result;
 }
 
 /**
@@ -342,7 +356,9 @@ export function conflictDateWindow(
 ): string[] {
   if (!isValidBookingDate(date)) return [];
   const safeRadius =
-    typeof radiusDays === "number" && Number.isFinite(radiusDays) && radiusDays >= 0
+    typeof radiusDays === "number" &&
+    Number.isFinite(radiusDays) &&
+    radiusDays >= 0
       ? Math.floor(radiusDays)
       : 3;
   const [y, m, d] = date.split("-").map(Number);

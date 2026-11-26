@@ -57,6 +57,9 @@ interface NoiseLevelSliderProps {
   maxDb?: number;
   onChange: (range: { minDb: number; maxDb: number }) => void;
   debounceMs?: number;
+  alertThresholdDb?: number;
+  alertsMuted?: boolean;
+  onAlertPreferencesChange?: (prefs: { thresholdDb: number; muted: boolean }) => void;
 }
 
 export const NoiseLevelSlider: React.FC<NoiseLevelSliderProps> = ({
@@ -64,6 +67,9 @@ export const NoiseLevelSlider: React.FC<NoiseLevelSliderProps> = ({
   maxDb = MAX_DB_LIMIT,
   onChange,
   debounceMs = DEBOUNCE_MS,
+  alertThresholdDb = 65,
+  alertsMuted = false,
+  onAlertPreferencesChange,
 }) => {
   const [localMin, setLocalMin] = useState<number>(() =>
     clampDb(Math.min(minDb, maxDb)),
@@ -72,6 +78,10 @@ export const NoiseLevelSlider: React.FC<NoiseLevelSliderProps> = ({
     clampDb(Math.max(minDb, maxDb)),
   );
   const [activeThumb, setActiveThumb] = useState<"min" | "max" | null>(null);
+  const [localAlertThreshold, setLocalAlertThreshold] = useState<number>(() =>
+    clampDb(alertThresholdDb),
+  );
+  const [localAlertsMuted, setLocalAlertsMuted] = useState<boolean>(alertsMuted);
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRenderRef = useRef(true);
@@ -245,6 +255,53 @@ export const NoiseLevelSlider: React.FC<NoiseLevelSliderProps> = ({
         <span>60 dB</span>
         <span>75 dB</span>
         <span>85 dB</span>
+      </div>
+
+      {/* Peak Noise Alert Preference Controls (#9609) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-xs text-slate-300">
+        <label className="flex items-center gap-2">
+          <span>Peak alert threshold</span>
+          <input
+            type="number"
+            min={MIN_DB_LIMIT}
+            max={MAX_DB_LIMIT}
+            step={DB_STEP}
+            value={localAlertThreshold}
+            data-testid="slider-noise-alert-threshold"
+            aria-label="Peak noise alert threshold (dBA)"
+            onChange={(e) => {
+              const next = clampDb(Number(e.target.value));
+              setLocalAlertThreshold(next);
+              onAlertPreferencesChange?.({
+                thresholdDb: next,
+                muted: localAlertsMuted,
+              });
+            }}
+            className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-0.5 text-right font-mono text-xs text-slate-100"
+          />
+          <span className="text-slate-400">dBA</span>
+        </label>
+
+        <button
+          type="button"
+          data-testid="slider-mute-noise-alerts-btn"
+          aria-pressed={localAlertsMuted}
+          onClick={() => {
+            const nextMuted = !localAlertsMuted;
+            setLocalAlertsMuted(nextMuted);
+            onAlertPreferencesChange?.({
+              thresholdDb: localAlertThreshold,
+              muted: nextMuted,
+            });
+          }}
+          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+            localAlertsMuted
+              ? "border-slate-700 bg-slate-950 text-slate-400 hover:bg-slate-800"
+              : "border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+          }`}
+        >
+          {localAlertsMuted ? "Peak Alerts Silenced" : "Peak Alerts On"}
+        </button>
       </div>
     </div>
   );

@@ -106,7 +106,38 @@ export interface MeetHalfwayOptions {
   transitPreference?: "transit" | "walking" | "balanced";
 }
 
+/**
+ * Resolves the effective transit mode for a member based on the team's global preference.
+ * - 'transit': Always 'transit', regardless of the member's individual mode.
+ * - 'walking': Always 'walking', regardless of the member's individual mode.
+ * - 'balanced': Respects the member's individual mode; defaults to 'transit' when missing.
+ */
+export function resolveEffectiveTransitMode(
+  memberMode?: TeamMemberLocation["transitMode"],
+  globalPreference: "transit" | "walking" | "balanced" = "transit",
+): "transit" | "driving" | "bicycling" | "walking" {
+  switch (globalPreference) {
+    case "walking":
+      return "walking";
+    case "balanced":
+      return memberMode || "transit";
+    case "transit":
+    default:
+      return "transit";
+  }
+}
+
 export class MeetHalfwayOptimizer {
+  /**
+   * Resolves the effective transit mode for a member based on the team's global preference.
+   */
+  public static resolveEffectiveTransitMode(
+    memberMode?: TeamMemberLocation["transitMode"],
+    globalPreference: "transit" | "walking" | "balanced" = "transit",
+  ): "transit" | "driving" | "bicycling" | "walking" {
+    return resolveEffectiveTransitMode(memberMode, globalPreference);
+  }
+
   /**
    * Checks if all team members are co-located within a proximity threshold (default 150m).
    */
@@ -200,6 +231,7 @@ export class MeetHalfwayOptimizer {
     centroid: { latitude: number; longitude: number },
     members: TeamMemberLocation[],
     isCoLocated: boolean,
+    transitPreference: "transit" | "walking" | "balanced" = "transit",
   ): RankedVenueRecommendation {
     const availableCapacity = Math.max(
       0,
@@ -220,7 +252,11 @@ export class MeetHalfwayOptimizer {
         venue.latitude,
         venue.longitude,
       );
-      const speed = getSpeedMetersPerMinute(member.transitMode);
+      const effectiveMode = resolveEffectiveTransitMode(
+        member.transitMode,
+        transitPreference,
+      );
+      const speed = getSpeedMetersPerMinute(effectiveMode);
       const durationMinutes = Math.round((distanceMeters / speed) * 1.2 + 2); // 20% routing overhead + 2 min buffer
 
       return {
@@ -228,7 +264,7 @@ export class MeetHalfwayOptimizer {
         memberName: member.name,
         distanceMeters: Math.round(distanceMeters),
         durationMinutes: Math.max(1, durationMinutes),
-        transitMode: member.transitMode || "transit",
+        transitMode: effectiveMode,
       };
     });
 
@@ -305,6 +341,11 @@ export class MeetHalfwayOptimizer {
       (typeof minRequiredSeatsOrOptions === "number"
         ? minRequiredSeatsOrOptions
         : minRequiredSeatsOrOptions?.minRequiredSeats) ?? members.length;
+    const transitPreference =
+      typeof minRequiredSeatsOrOptions === "object" &&
+      minRequiredSeatsOrOptions !== null
+        ? (minRequiredSeatsOrOptions.transitPreference ?? "transit")
+        : "transit";
 
     if (!Array.isArray(venues) || venues.length === 0) {
       return {
@@ -330,13 +371,25 @@ export class MeetHalfwayOptimizer {
 
     if (candidateVenues.length > 0) {
       rankedRecommendations = candidateVenues.map((venue) =>
-        this.evaluateVenue(venue, centroid, members, isCoLocated),
+        this.evaluateVenue(
+          venue,
+          centroid,
+          members,
+          isCoLocated,
+          transitPreference,
+        ),
       );
     } else {
       // Zero venues found matching strict capacity: apply fallback relaxation
       fallbackApplied = true;
       rankedRecommendations = venues.map((venue) =>
-        this.evaluateVenue(venue, centroid, members, isCoLocated),
+        this.evaluateVenue(
+          venue,
+          centroid,
+          members,
+          isCoLocated,
+          transitPreference,
+        ),
       );
     }
 

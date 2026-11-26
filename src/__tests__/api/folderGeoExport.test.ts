@@ -148,9 +148,9 @@ describe("folder geographic export (#3477)", () => {
 
     it("rejects NaN, Infinity, out-of-range and (0,0) placeholder coordinates", () => {
       expect(hasValidCoordinates(nanVenue)).toBe(false);
-      expect(
-        hasValidCoordinates({ latitude: 10, longitude: Infinity }),
-      ).toBe(false);
+      expect(hasValidCoordinates({ latitude: 10, longitude: Infinity })).toBe(
+        false,
+      );
       expect(hasValidCoordinates({ latitude: 91, longitude: 0.5 })).toBe(false);
       expect(hasValidCoordinates({ latitude: 10, longitude: -181 })).toBe(
         false,
@@ -290,7 +290,7 @@ describe("folder geographic export (#3477)", () => {
   });
 
   describe("generateKml", () => {
-    const folder = { name: "Team <Hubs> & \"Friends\"", description: null };
+    const folder = { name: 'Team <Hubs> & "Friends"', description: null };
 
     it("produces well-formed KML 2.2 with a Document root", () => {
       const kml = generateKml([coffeeAndCo], folder);
@@ -485,7 +485,9 @@ describe("folder geographic export (#3477)", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("Content-Type")).toBe("application/geo+json");
       const disposition = res.headers.get("Content-Disposition") ?? "";
-      expect(disposition).toMatch(/^attachment; filename="[a-z0-9-]+\.geojson"$/);
+      expect(disposition).toMatch(
+        /^attachment; filename="[a-z0-9-]+\.geojson"$/,
+      );
       expect(disposition).toBe(
         'attachment; filename="my-faves-work-spots.geojson"',
       );
@@ -568,12 +570,12 @@ describe("folder geographic export (#3477)", () => {
         expect(output).not.toContain("secret_owner");
         expect(output).not.toContain("internal note");
       }
-      expect(Object.keys(JSON.parse(geo).features[0].properties).sort()).toEqual(
-        ["address", "amenities", "category", "name", "workSphereUrl"],
-      );
+      expect(
+        Object.keys(JSON.parse(geo).features[0].properties).sort(),
+      ).toEqual(["address", "amenities", "category", "name", "workSphereUrl"]);
     });
 
-    it("exports an empty folder as an empty FeatureCollection", async () => {
+    it("exports an empty folder as an empty FeatureCollection with metadata", async () => {
       mockFindFolderVenues.mockResolvedValue([]);
       const res = await callExport("?format=geojson");
 
@@ -581,7 +583,89 @@ describe("folder geographic export (#3477)", () => {
       expect(JSON.parse(await res.text())).toEqual({
         type: "FeatureCollection",
         features: [],
+        metadata: {
+          folderId: privateFolder.id,
+          folderName: privateFolder.name,
+          description: privateFolder.description,
+          exportedAt: expect.any(String),
+          featureCount: 0,
+          generator: "WorkSphere",
+        },
       });
+    });
+
+    it("includes collection metadata and venue features in GeoJSON export", async () => {
+      mockFindFolderVenues.mockResolvedValue([
+        { venue: coffeeAndCo },
+        { venue: tomAndJerry },
+      ]);
+      const res = await callExport("?format=geojson");
+      expect(res.status).toBe(200);
+
+      const parsed = JSON.parse(await res.text());
+      expect(parsed.type).toBe("FeatureCollection");
+      expect(parsed.features).toHaveLength(2);
+      expect(parsed.metadata).toEqual({
+        folderId: privateFolder.id,
+        folderName: privateFolder.name,
+        description: privateFolder.description,
+        exportedAt: expect.any(String),
+        featureCount: 2,
+        generator: "WorkSphere",
+      });
+    });
+
+    it("generates a derived spatial boundary polygon when includeBoundary=true", async () => {
+      const thirdVenue: GeoExportVenue = {
+        id: "venue_third",
+        name: "Third Point",
+        latitude: 45.0,
+        longitude: -80.0,
+        address: "789 Pine St",
+        category: "coworking",
+      };
+
+      mockFindFolderVenues.mockResolvedValue([
+        { venue: coffeeAndCo },
+        { venue: tomAndJerry },
+        { venue: thirdVenue },
+      ]);
+      const res = await callExport("?format=geojson&includeBoundary=true");
+      expect(res.status).toBe(200);
+
+      const parsed = JSON.parse(await res.text());
+      // 3 points + 1 boundary polygon
+      expect(parsed.features).toHaveLength(4);
+
+      const polygonFeature = parsed.features.find(
+        (f: any) => f.geometry.type === "Polygon",
+      );
+      expect(polygonFeature).toBeDefined();
+      expect(polygonFeature.properties.type).toBe("BoundingPolygon");
+      expect(polygonFeature.properties.isDerivedEnvelope).toBe(true);
+      expect(polygonFeature.properties.description).toContain(
+        "Derived spatial envelope",
+      );
+      expect(
+        polygonFeature.geometry.coordinates[0].length,
+      ).toBeGreaterThanOrEqual(4);
+    });
+
+    it("does not generate invalid polygon geometry when valid coordinates are fewer than 3", async () => {
+      mockFindFolderVenues.mockResolvedValue([
+        { venue: coffeeAndCo },
+        { venue: placeholderVenue }, // Invalid (0,0) coordinates
+      ]);
+      const res = await callExport("?format=geojson&includeBoundary=true");
+      expect(res.status).toBe(200);
+
+      const parsed = JSON.parse(await res.text());
+      // Only 1 valid point, boundary cannot form a polygon
+      expect(parsed.features).toHaveLength(1);
+      expect(parsed.features[0].geometry.type).toBe("Point");
+      expect(
+        parsed.features.some((f: any) => f.geometry.type === "Polygon"),
+      ).toBe(false);
     });
 
     it("returns 400 when format is missing", async () => {
@@ -664,7 +748,9 @@ describe("folder geographic export (#3477)", () => {
       expect(hasValidCoordinates(undefined as any)).toBe(false);
       expect(hasValidCoordinates({} as any)).toBe(false);
       expect(hasValidCoordinates({ latitude: NaN, longitude: 0 })).toBe(false);
-      expect(hasValidCoordinates({ latitude: 10, longitude: Infinity })).toBe(false);
+      expect(hasValidCoordinates({ latitude: 10, longitude: Infinity })).toBe(
+        false,
+      );
     });
 
     it("handles nullish inputs and invalid dates in generateGeoJson and generateKml safely", () => {

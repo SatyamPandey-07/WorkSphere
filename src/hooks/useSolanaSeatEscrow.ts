@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import type { Connection } from "@solana/web3.js";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { Connection, SignatureStatus } from "@solana/web3.js";
 import {
   reserveSeatOptimistically,
   rollbackSeatReservation,
   getSeatReservationState,
+  cleanupSeatReservation,
   type SeatReservationState,
   type SeatState,
   type PaymentConfirmationStage,
@@ -29,6 +30,20 @@ export function useSolanaSeatEscrow(options?: UseSolanaSeatEscrowOptions) {
 
   const callbacksRef = useRef(options);
   callbacksRef.current = options;
+  const currentSeatIdRef = useRef<string | undefined>(options?.seatId);
+
+  useEffect(() => {
+    currentSeatIdRef.current = options?.seatId;
+  }, [options?.seatId]);
+
+  // Clean up active timers and polling subscriptions on component unmount (#9448)
+  useEffect(() => {
+    return () => {
+      if (currentSeatIdRef.current) {
+        cleanupSeatReservation(currentSeatIdRef.current);
+      }
+    };
+  }, []);
 
   const reserve = useCallback(
     async (params: {
@@ -41,7 +56,16 @@ export function useSolanaSeatEscrow(options?: UseSolanaSeatEscrowOptions) {
       currency?: "SOL" | "USDC";
       timeoutMs?: number;
       powSubmission?: PoWSubmission;
+      fallbackConnection?: Connection;
+      secondaryConnection?: Connection;
+      fallbackPollSignatureStatus?: (
+        signature: string,
+        options?: { signal?: AbortSignal },
+      ) => Promise<SignatureStatus | null>;
+      pollTimeoutMs?: number;
+      signal?: AbortSignal;
     }) => {
+      currentSeatIdRef.current = params.seatId;
       return reserveSeatOptimistically({
         ...params,
         callbacks: {

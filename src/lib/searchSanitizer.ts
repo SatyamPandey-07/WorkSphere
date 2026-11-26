@@ -6,6 +6,13 @@
 export const MAX_SEARCH_QUERY_LENGTH = 100;
 
 /**
+ * Maximum number of non-empty items extracted from a comma-separated search list
+ * (such as the `cities` parameter). Bounds database query complexity and avoids
+ * unbounded processing downstream.
+ */
+export const MAX_SEARCH_LIST_ITEMS = 25;
+
+/**
  * ASCII control characters plus the C1 control block. This covers NUL (\u0000)
  * and ESC (\u001b), the two the search endpoints were seeing arrive via raw
  * query strings, as well as stray tab/newline bytes that some clients append.
@@ -25,7 +32,28 @@ export function sanitizeSearchQuery(value: unknown): string {
   if (typeof value !== "string") {
     return "";
   }
-  return value.replace(CONTROL_CHARACTERS, "").trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+  return value
+    .replace(CONTROL_CHARACTERS, "")
+    .trim()
+    .slice(0, MAX_SEARCH_QUERY_LENGTH);
+}
+
+/**
+ * Canonical form of a free-text query for cache key derivation.
+ *
+ * Every run of whitespace (spaces, tabs, newlines, non-breaking and other
+ * Unicode spaces) collapses to a single space, leading and trailing whitespace
+ * is dropped, and the result is lowercased. `" Quiet   Cafe "` and
+ * `"quiet cafe"` therefore map to the same string and share one cache entry.
+ *
+ * Uses `toLowerCase` rather than `toLocaleLowerCase` so the result never
+ * depends on the server locale.
+ */
+export function normalizeSearchQuery(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /**
@@ -34,13 +62,22 @@ export function sanitizeSearchQuery(value: unknown): string {
  *
  * Splits the raw input string by comma first, then sanitizes each entry
  * individually so entries are sanitized without prematurely truncating the entire list.
+ * Limits the resulting list to at most MAX_SEARCH_LIST_ITEMS non-empty entries.
  */
 export function splitSearchList(value: unknown): string[] {
   if (typeof value !== "string") {
     return [];
   }
-  return value
-    .split(",")
-    .map((entry) => sanitizeSearchQuery(entry))
-    .filter(Boolean);
+  const parts = value.split(",");
+  const results: string[] = [];
+  for (const part of parts) {
+    const sanitized = sanitizeSearchQuery(part);
+    if (sanitized) {
+      results.push(sanitized);
+      if (results.length >= MAX_SEARCH_LIST_ITEMS) {
+        break;
+      }
+    }
+  }
+  return results;
 }

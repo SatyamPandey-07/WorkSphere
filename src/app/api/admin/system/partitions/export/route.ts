@@ -8,6 +8,14 @@ import {
   validateIso8601Timestamp,
   constructAuditLogFilterConditions,
 } from "../dateHelper";
+import {
+  createExportJob,
+  getExportJob,
+  cancelExportJob,
+  updateExportJobProgress,
+  computeChunkDigest,
+  finalizeExportManifest,
+} from "@/lib/admin/partitionExport/exportJobService";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +59,43 @@ export async function GET(request: NextRequest) {
         },
         { status: 400 },
       );
+    }
+
+    // Handle export job management / manifest requests (#10168)
+    const jobIdParam = searchParams.get("jobId");
+    if (jobIdParam) {
+      if (searchParams.get("manifest") === "true") {
+        const manifest =
+          finalizeExportManifest(jobIdParam) ||
+          getExportJob(jobIdParam, admin.id);
+        if (!manifest) {
+          return NextResponse.json(
+            { error: "Export job not found or unauthorized" },
+            { status: 404 },
+          );
+        }
+        return NextResponse.json({ success: true, manifest });
+      }
+
+      if (searchParams.get("cancel") === "true") {
+        const cancelled = cancelExportJob(jobIdParam, admin.id);
+        if (!cancelled) {
+          return NextResponse.json(
+            { error: "Export job could not be cancelled or not found" },
+            { status: 400 },
+          );
+        }
+        return NextResponse.json({
+          success: true,
+          cancelled: true,
+          jobId: jobIdParam,
+        });
+      }
+
+      const existingJob = getExportJob(jobIdParam, admin.id);
+      if (existingJob) {
+        return NextResponse.json({ success: true, job: existingJob });
+      }
     }
 
     const now = new Date();
@@ -252,9 +297,24 @@ export async function GET(request: NextRequest) {
     const writer = transformStream.writable.getWriter();
     const encoder = new TextEncoder();
 
+    // Create a snapshot-consistent durable export job (#10168)
+    const exportJob = createExportJob({
+      adminId: admin.id || "admin",
+      tableType: typeParam,
+      tableName: rawPrefix,
+      startIso,
+      endIso,
+      year,
+      month,
+      actorId: actorIdParam,
+      actionType: actionTypeParam,
+    });
+
     // Stream generation asynchronously without blocking initial HTTP headers
     (async () => {
       let cursorId: string | null = null;
+      let batchIndex = 0;
+      let totalExportedRows = 0;
       let aborted = false;
 
       const abortHandler = () => {
@@ -265,7 +325,15 @@ export async function GET(request: NextRequest) {
 
       try {
         // 1. Write CSV header line immediately (starts downloading in < 500ms)
-        await writer.write(encoder.encode(headers.join(",") + "\r\n"));
+        const headerCsv = headers.join(",") + "\r\n";
+        await writer.write(encoder.encode(headerCsv));
+        const headerDigest = computeChunkDigest(headerCsv);
+        updateExportJobProgress(
+          exportJob.id,
+          { lastId: "HEADER", lastTimestamp: exportJob.snapshotTimestamp, batchIndex: 0 },
+          0,
+          headerDigest,
+        );
 
         // 2. Fetch in streaming cursor batches using prisma.$queryRawUnsafe
         let hasMore = true;
@@ -389,13 +457,29 @@ export async function GET(request: NextRequest) {
           }
 
           await writer.write(encoder.encode(chunkText));
+          const chunkDigest = computeChunkDigest(chunkText);
+          batchIndex++;
+          totalExportedRows += rows.length;
+
+          const lastRow = rows[rows.length - 1];
+          const lastTimestamp = String(
+            (lastRow.createdAt || lastRow.timestamp || exportJob.snapshotTimestamp),
+          );
+          cursorId = String(lastRow.id);
+
+          updateExportJobProgress(
+            exportJob.id,
+            { lastId: cursorId, lastTimestamp, batchIndex },
+            rows.length,
+            chunkDigest,
+          );
 
           if (rows.length < BATCH_SIZE) {
             hasMore = false;
-          } else {
-            cursorId = String(rows[rows.length - 1].id);
           }
         }
+
+        finalizeExportManifest(exportJob.id, totalExportedRows);
       } catch (streamErr) {
         if (!aborted) {
           console.error("[Streaming Partition Export Error]:", streamErr);
@@ -419,6 +503,9 @@ export async function GET(request: NextRequest) {
         "Transfer-Encoding": "chunked",
         "Cache-Control": "private, no-store, max-age=0, must-revalidate",
         "X-Content-Type-Options": "nosniff",
+        "X-Export-Job-Id": exportJob.id,
+        "X-Snapshot-Id": exportJob.snapshotId,
+        "X-Snapshot-Timestamp": exportJob.snapshotTimestamp,
       },
     });
   } catch (error) {

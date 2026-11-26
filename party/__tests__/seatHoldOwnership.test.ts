@@ -18,7 +18,11 @@ jest.mock("y-partykit", () => ({ onConnect: jest.fn() }));
 
 const VENUE = "venue-101";
 
-function makeConn(id: string, userId?: string, name?: string): Party.Connection {
+function makeConn(
+  id: string,
+  userId?: string,
+  name?: string,
+): Party.Connection {
   const conn: any = {
     id,
     state: userId ? { userId, name } : {},
@@ -38,12 +42,26 @@ describe("Seat-hold lock ownership integrity (#3522)", () => {
 
   const hold = (conn: Party.Connection, seatId: string, extra: object = {}) =>
     server.onMessage(
-      JSON.stringify({ type: "seat_hold_request", venueId: VENUE, seatId, ...extra }),
+      JSON.stringify({
+        type: "seat_hold_request",
+        venueId: VENUE,
+        seatId,
+        ...extra,
+      }),
       conn,
     );
-  const release = (conn: Party.Connection, seatId: string, extra: object = {}) =>
+  const release = (
+    conn: Party.Connection,
+    seatId: string,
+    extra: object = {},
+  ) =>
     server.onMessage(
-      JSON.stringify({ type: "seat_release_request", venueId: VENUE, seatId, ...extra }),
+      JSON.stringify({
+        type: "seat_release_request",
+        venueId: VENUE,
+        seatId,
+        ...extra,
+      }),
       conn,
     );
   const reasons = () =>
@@ -143,22 +161,59 @@ describe("Seat-hold lock ownership integrity (#3522)", () => {
       ]);
     });
 
-    it("works for unauthenticated sockets that identify through the payload userId (the shipped client)", () => {
-      // useSeatHoldLock opens its socket without a token, so the server has no
-      // verified state and identifies the user by the userId in the message.
-      const alice1 = makeConn("alice-1");
-      const alice2 = makeConn("alice-2");
-      const bob = makeConn("bob");
+    it("does not trust payload userId when an unauthenticated connection acquires a hold", () => {
+      const attacker = makeConn("attacker-connection");
+      const alice = makeConn("alice-connection", "user-alice");
 
-      hold(alice1, "s1", { userId: "user-alice" });
-      hold(alice2, "s1", { userId: "user-alice" });
-      server.onClose(alice1);
+      hold(attacker, "s1", { userId: "user-alice" });
 
       expect(server.getActiveSeatHolds(VENUE)).toEqual([
-        expect.objectContaining({ userId: "user-alice", connId: "alice-2" }),
+        expect.objectContaining({
+          userId: "attacker-connection",
+          connId: "attacker-connection",
+        }),
       ]);
-      hold(bob, "s1", { userId: "user-bob" });
-      expect(rejected(bob)).toHaveLength(1);
+
+      // Alice cannot be impersonated by the unauthenticated connection.
+      hold(alice, "s1");
+
+      expect(rejected(alice)).toHaveLength(1);
+    });
+
+    it("rejects a spoofed renewal of another user's hold", () => {
+      const alice = makeConn("alice-connection", "user-alice");
+      const attacker = makeConn("attacker-connection");
+
+      hold(alice, "s1");
+      const originalHold = server.getActiveSeatHolds(VENUE)[0];
+
+      hold(attacker, "s1", { userId: "user-alice" });
+
+      expect(rejected(attacker)).toHaveLength(1);
+      expect(server.getActiveSeatHolds(VENUE)).toEqual([
+        expect.objectContaining({
+          userId: "user-alice",
+          connId: "alice-connection",
+          expiresAt: originalHold.expiresAt,
+        }),
+      ]);
+    });
+
+    it("does not allow a spoofed payload userId to release another user's hold", () => {
+      const alice = makeConn("alice-connection", "user-alice");
+      const attacker = makeConn("attacker-connection");
+
+      hold(alice, "s1");
+
+      release(attacker, "s1", { userId: "user-alice" });
+
+      expect(server.getActiveSeatHolds(VENUE)).toEqual([
+        expect.objectContaining({
+          userId: "user-alice",
+          connId: "alice-connection",
+        }),
+      ]);
+      expect(reasons()).toEqual([]);
     });
 
     it("keeps the connection index consistent with the hold index", () => {
@@ -175,6 +230,86 @@ describe("Seat-hold lock ownership integrity (#3522)", () => {
       release(alice1, "s1"); // released through a non-owning connection
       expect(indexes().seatHolds.size).toBe(0);
       expect(indexes().connHolds.size).toBe(0);
+    });
+  });
+  describe("checkout completion ownership (#9128)", () => {
+    it("allows the connection that owns the hold to complete checkout", () => {
+      const alice = makeConn("alice", "user-alice");
+
+      hold(alice, "s1");
+      broadcast.mockClear();
+
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+        }),
+        alice,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(0);
+      expect(reasons()).toEqual(["CHECKOUT_COMPLETE"]);
+    });
+
+    it("does not release another user's hold through unauthorized checkout", () => {
+      const alice = makeConn("alice", "user-alice");
+      const bob = makeConn("bob", "user-bob");
+
+      hold(alice, "s1");
+      broadcast.mockClear();
+
+      // Bob attempts to impersonate Alice through the message payload.
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+          userId: "user-alice",
+        }),
+        bob,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(1);
+      expect(reasons()).toEqual([]);
+    });
+
+    it("allows another authenticated connection belonging to the same user to complete checkout", () => {
+      const alice1 = makeConn("alice-1", "user-alice");
+      const alice2 = makeConn("alice-2", "user-alice");
+
+      hold(alice1, "s1");
+      broadcast.mockClear();
+
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+        }),
+        alice2,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(0);
+      expect(reasons()).toEqual(["CHECKOUT_COMPLETE"]);
+    });
+
+    it("does not broadcast checkout completion when no hold exists", () => {
+      const alice = makeConn("alice", "user-alice");
+
+      broadcast.mockClear();
+
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+        }),
+        alice,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(0);
+      expect(reasons()).toEqual([]);
     });
   });
 });

@@ -1,6 +1,6 @@
 # `TranslatedMessage`: Real-Time Chat Translation, Language Detection & Tooltip States
 
-This documentation details the architecture, component properties, translation state machine, clipboard copying behavior, fallback handling, and UI states of the **`TranslatedMessage`** React component ([`src/components/chat/TranslatedMessage.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/chat/TranslatedMessage.tsx)) and its underlying hook ([`src/hooks/useMessageTranslation.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useMessageTranslation.ts)).
+This documentation details the architecture, component properties, translation state machine, clipboard copying behavior, fallback handling, and UI states of the **`TranslatedMessage`** React component ([`src/components/chat/TranslatedMessage.tsx`](../../src/components/chat/TranslatedMessage.tsx)) and its underlying hook ([`src/hooks/useMessageTranslation.ts`](../../src/hooks/useMessageTranslation.ts)).
 
 ---
 
@@ -13,7 +13,7 @@ WorkSphere brings together remote workers, global digital nomads, and venue staf
 - **Bi-Directional View Toggle:** Once translated, users can instantly toggle between the translated text and the original text without repeating network requests.
 - **Language Detection Badges:** Displays detected source language metadata (e.g. `Translated from Spanish`).
 - **One-Click Clipboard Copying with Tooltip Feedback:** Users can copy the active text (translated or original) with transient visual confirmation (`Copied!` tooltip and `Check` icon).
-- **In-Memory Caching & Request Deduplication:** Integrates [`useMessageTranslation`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useMessageTranslation.ts), caching translation responses in memory and deduplicating concurrent in-flight requests for identical strings and language targets.
+- **In-Memory Caching & Request Deduplication:** Integrates [`useMessageTranslation`](../../src/hooks/useMessageTranslation.ts), caching translation responses in memory and deduplicating concurrent in-flight requests for identical strings and language targets.
 
 ```mermaid
 stateDiagram-v2
@@ -61,7 +61,7 @@ interface TranslatedMessageProps {
 
 | Prop Name | Type | Required | Description |
 | :--- | :--- | :---: | :--- |
-| `messageId` | `string` | **Yes** | The unique UUID or entity ID of the chat message. Changes in `messageId` trigger state resets in [`useMessageTranslation`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useMessageTranslation.ts). |
+| `messageId` | `string` | **Yes** | The unique UUID or entity ID of the chat message. Changes in `messageId` trigger state resets in [`useMessageTranslation`](../../src/hooks/useMessageTranslation.ts). |
 | `text` | `string` | **Yes** | The message string to display and optionally translate into the active user's locale. |
 
 ---
@@ -181,7 +181,7 @@ State C: Copy Tooltip State (2-second temporary status)
 
 ## 5. Clipboard Copy & Browser Fallback Strategy
 
-The copy handler in [`TranslatedMessage.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/chat/TranslatedMessage.tsx#L26-L45) copies whichever text representation is currently visible (`currentText`):
+The copy handler in [`TranslatedMessage.tsx`](../../src/components/chat/TranslatedMessage.tsx#L26-L45) copies whichever text representation is currently visible (`currentText`):
 
 ```typescript
 const currentText = translation && !showOriginal ? translation.translatedText : text;

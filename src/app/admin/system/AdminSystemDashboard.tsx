@@ -18,6 +18,7 @@ import {
 import { WebVitalsWidget } from "@/components/admin/WebVitalsWidget";
 import { RouteLatencyHeatmap } from "@/components/admin/RouteLatencyHeatmap";
 import { BulkVenuePartitionManager } from "@/components/admin/BulkVenuePartitionManager";
+import { RedisLatencyStatusBadge } from "@/components/admin/RedisLatencyStatusBadge";
 import {
   Area,
   AreaChart,
@@ -100,20 +101,25 @@ function MetricCard({
   label,
   value,
   detail,
+  badge,
   icon: Icon,
 }: {
   label: string;
   value: string | number;
   detail: string;
+  badge?: React.ReactNode;
   icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
     <article className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/10 backdrop-blur-xl">
       <div className="mb-5 flex items-center justify-between">
         <span className="text-sm text-zinc-400">{label}</span>
-        <span className="rounded-2xl bg-violet-500/10 p-2.5 text-violet-300">
-          <Icon className="h-5 w-5" />
-        </span>
+        <div className="flex items-center gap-2">
+          {badge}
+          <span className="rounded-2xl bg-violet-500/10 p-2.5 text-violet-300">
+            <Icon className="h-5 w-5" />
+          </span>
+        </div>
       </div>
       <p className="text-3xl font-semibold tracking-tight text-white">
         {value}
@@ -147,11 +153,26 @@ type PartitionHealthData = {
 export default function AdminSystemDashboard() {
   const [range, setRange] = useState<RangeKey>("30d");
   const [data, setData] = useState<SystemMetrics | null>(null);
+  const [healthData, setHealthData] = useState<{
+    latency?: { redisMs?: number; databaseMs?: number };
+  } | null>(null);
   const [partitionsData, setPartitionsData] =
     useState<PartitionHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestId = useRef(0);
+
+  async function loadHealth() {
+    try {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        setHealthData(json);
+      }
+    } catch {
+      // Non-fatal if health check fails
+    }
+  }
 
   async function loadPartitions() {
     try {
@@ -179,6 +200,7 @@ export default function AdminSystemDashboard() {
           cache: "no-store",
         }),
         loadPartitions(),
+        loadHealth(),
       ]);
 
       if (!metricsRes.ok) {
@@ -402,6 +424,22 @@ export default function AdminSystemDashboard() {
               data?.dbLatency.slowQueryThresholdMs ?? 200
             }ms`}
             icon={Database}
+          />
+          <MetricCard
+            label="Redis ping latency"
+            value={
+              typeof healthData?.latency?.redisMs === "number" &&
+              healthData.latency.redisMs >= 0
+                ? `${healthData.latency.redisMs} ms`
+                : "—"
+            }
+            detail="round-trip ping duration"
+            badge={
+              <RedisLatencyStatusBadge
+                latencyMs={healthData?.latency?.redisMs}
+              />
+            }
+            icon={HardDrive}
           />
         </section>
 

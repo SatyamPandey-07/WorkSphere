@@ -3,7 +3,11 @@
 import React, { useState, useCallback, useRef } from "react";
 import { CheckCircle2, Loader2, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useHapticFeedback } from "@/hooks/useHapticFeedback";
+import {
+  triggerErrorTap,
+  triggerPendingTap,
+  triggerSuccessTap,
+} from "@/lib/iot/hapticFeedback";
 
 export interface VenueCheckInButtonProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onError"> {
@@ -54,9 +58,15 @@ export function VenueCheckInButton({
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { triggerSuccess, triggerError } = useHapticFeedback({
-    enabled: enableHaptics,
-  });
+  const triggerSuccess = useCallback(() => {
+    if (enableHaptics) triggerSuccessTap();
+  }, [enableHaptics]);
+  const triggerError = useCallback(() => {
+    if (enableHaptics) triggerErrorTap();
+  }, [enableHaptics]);
+  const triggerPending = useCallback(() => {
+    if (enableHaptics) triggerPendingTap();
+  }, [enableHaptics]);
 
   const checkedIn = isCheckedInProp !== undefined ? isCheckedInProp : internalCheckedIn;
   const isOperatingRef = useRef(false);
@@ -71,6 +81,8 @@ export function VenueCheckInButton({
       isOperatingRef.current = true;
       setIsCheckingIn(true);
       setErrorMessage(null);
+      // Immediate tap acknowledgement while the check-in request is in flight
+      triggerPending();
 
       try {
         let isConfirmed = true;
@@ -95,13 +107,13 @@ export function VenueCheckInButton({
 
         if (isConfirmed) {
           setInternalCheckedIn(true);
-          // Trigger native success confirmation haptic feedback ([15, 50, 20])
+          // Success tap haptic ([50, 30, 50])
           triggerSuccess();
           onSuccess?.();
         } else {
           const err = new Error("Failed to confirm reservation check-in.");
           setErrorMessage(err.message);
-          // Trigger native error alert haptic feedback ([50, 100, 50])
+          // Error tap haptic ([100, 50, 100, 50, 100])
           triggerError();
           onError?.(err);
         }
@@ -125,6 +137,7 @@ export function VenueCheckInButton({
       deskId,
       triggerSuccess,
       triggerError,
+      triggerPending,
       onSuccess,
       onError,
       onClick,

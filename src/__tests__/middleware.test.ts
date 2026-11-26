@@ -17,7 +17,7 @@ jest.mock("@clerk/nextjs/server", () => ({
   }),
 }));
 
-import { isCsrfExemptRoute } from "../middleware";
+import { isCsrfExemptRoute } from "../lib/middleware/routes";
 
 describe("Middleware CSRF exemptions", () => {
   it("exempts static assets with specified file extensions", () => {

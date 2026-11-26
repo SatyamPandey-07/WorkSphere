@@ -4,10 +4,20 @@
  */
 export function getAppUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
+  if (explicit) {
+    const sanitized = explicit.replace(/\/+$/, "");
+    return sanitized.startsWith("http://") || sanitized.startsWith("https://")
+      ? sanitized
+      : `https://${sanitized}`;
+  }
 
   const vercelUrl = process.env.VERCEL_URL?.trim();
-  if (vercelUrl) return `https://${vercelUrl.replace(/\/+$/, "")}`;
+  if (vercelUrl) {
+    const sanitized = vercelUrl.replace(/\/+$/, "");
+    return sanitized.startsWith("http://") || sanitized.startsWith("https://")
+      ? sanitized
+      : `https://${sanitized}`;
+  }
 
   return "http://localhost:3000";
 }

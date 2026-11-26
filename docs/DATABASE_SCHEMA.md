@@ -2,10 +2,10 @@
 
 This document describes the relational database design used by WorkSphere, the relationships implemented through Prisma ORM, the indexes currently defined in `prisma/schema.prisma`, and practical optimization guidance for future growth.
 
-> **Source of truth:** `prisma/schema.prisma`  
-> **Database:** PostgreSQL  
-> **ORM:** Prisma  
-> **PostgreSQL extension:** `vector`  
+> **Source of truth:** `prisma/schema.prisma`
+> **Database:** PostgreSQL
+> **ORM:** Prisma
+> **PostgreSQL extension:** `vector`
 > **Embedding dimension:** 1024
 
 ---
@@ -49,6 +49,8 @@ erDiagram
         boolean hasOutlets
         string noiseLevel "nullable"
         boolean hasErgonomic
+        boolean hasStandingDesk
+        boolean hasExternalMonitor
         string outletDensity "nullable"
         int wifiSpeed "nullable"
         boolean crowdsourced
@@ -141,17 +143,17 @@ erDiagram
 
 ### Relationship cardinality summary
 
-| Parent | Child | Cardinality | Foreign key |
-|---|---|---:|---|
-| `User` | `VenueRating` | One-to-many | `VenueRating.userId` |
-| `Venue` | `VenueRating` | One-to-many | `VenueRating.venueId` |
-| `User` | `Favorite` | One-to-many | `Favorite.userId` |
-| `Venue` | `Favorite` | One-to-many | `Favorite.venueId` |
-| `User` | `Conversation` | One-to-many | `Conversation.userId` |
-| `Conversation` | `Message` | One-to-many | `Message.conversationId` |
-| `User` | `Booking` | One-to-many | `Booking.userId` |
-| `Venue` | `Booking` | One-to-many | `Booking.venueId` |
-| `User` | `UserMemory` | One-to-many | `UserMemory.userId` |
+| Parent         | Child          | Cardinality | Foreign key              |
+| -------------- | -------------- | ----------: | ------------------------ |
+| `User`         | `VenueRating`  | One-to-many | `VenueRating.userId`     |
+| `Venue`        | `VenueRating`  | One-to-many | `VenueRating.venueId`    |
+| `User`         | `Favorite`     | One-to-many | `Favorite.userId`        |
+| `Venue`        | `Favorite`     | One-to-many | `Favorite.venueId`       |
+| `User`         | `Conversation` | One-to-many | `Conversation.userId`    |
+| `Conversation` | `Message`      | One-to-many | `Message.conversationId` |
+| `User`         | `Booking`      | One-to-many | `Booking.userId`         |
+| `Venue`        | `Booking`      | One-to-many | `Booking.venueId`        |
+| `User`         | `UserMemory`   | One-to-many | `UserMemory.userId`      |
 
 `SemanticCache` is intentionally independent. Cached semantic results are not owned by a user or venue.
 
@@ -163,14 +165,14 @@ erDiagram
 
 `User` represents an authenticated WorkSphere account.
 
-| Field | Type | Constraints | Purpose |
-|---|---|---|---|
-| `id` | `String` | Primary key | Authentication-provider user identifier |
-| `email` | `String?` | Unique, nullable | User email |
-| `firstName` | `String?` | Nullable | Given name |
-| `lastName` | `String?` | Nullable | Family name |
-| `createdAt` | `DateTime` | Defaults to `now()` | Account creation time |
-| `crdtState` | `Bytes?` | Nullable | Serialized CRDT state |
+| Field       | Type       | Constraints         | Purpose                                 |
+| ----------- | ---------- | ------------------- | --------------------------------------- |
+| `id`        | `String`   | Primary key         | Authentication-provider user identifier |
+| `email`     | `String?`  | Unique, nullable    | User email                              |
+| `firstName` | `String?`  | Nullable            | Given name                              |
+| `lastName`  | `String?`  | Nullable            | Family name                             |
+| `createdAt` | `DateTime` | Defaults to `now()` | Account creation time                   |
+| `crdtState` | `Bytes?`   | Nullable            | Serialized CRDT state                   |
 
 Relations: `favorites`, `ratings`, `conversations`, `bookings`, `memories`.
 
@@ -243,22 +245,22 @@ Because Prisma exposes the field as `Unsupported("vector(1024)")`, similarity qu
 
 ## 4. Existing indexes and impact
 
-| Model | Index or constraint | Primary use | Performance impact |
-|---|---|---|---|
-| `User` | Unique `email` | Account lookup | Avoids full scans for email lookup |
-| `Venue` | Unique `placeId` | Venue deduplication/upsert | Fast external identity lookup |
-| `Venue` | `@@index([latitude, longitude])` | Bounding-box filtering | Helps coordinate predicates |
-| `Venue` | `@@index([category])` | Category filtering | Speeds café/coworking/library filtering |
-| `VenueRating` | `@@unique([userId, venueId])` | Rating upsert | Prevents duplicates; speeds exact lookup |
-| `VenueRating` | `@@index([venueId])` | Rating aggregation | Speeds venue-rating retrieval |
-| `Favorite` | `@@unique([userId, venueId])` | Favorite toggle | Prevents duplicates |
-| `Favorite` | `@@index([userId])` | Favorites page | Speeds user-scoped lists |
-| `Conversation` | `@@index([userId])` | Conversation history | Speeds user history |
-| `Message` | `@@index([conversationId])` | Message history | Speeds chat loading |
-| `Booking` | `@@index([userId])` | User bookings | Speeds booking history |
-| `Booking` | `@@index([venueId])` | Venue reservations | Speeds venue booking lookup |
-| `UserMemory` | `@@index([userId])` | Personal memory retrieval | Speeds user-scoped memory queries |
-| `SemanticCache` | `@@index([query])` | Exact-query cache lookup | Avoids full cache scans |
+| Model           | Index or constraint              | Primary use                | Performance impact                       |
+| --------------- | -------------------------------- | -------------------------- | ---------------------------------------- |
+| `User`          | Unique `email`                   | Account lookup             | Avoids full scans for email lookup       |
+| `Venue`         | Unique `placeId`                 | Venue deduplication/upsert | Fast external identity lookup            |
+| `Venue`         | `@@index([latitude, longitude])` | Bounding-box filtering     | Helps coordinate predicates              |
+| `Venue`         | `@@index([category])`            | Category filtering         | Speeds café/coworking/library filtering  |
+| `VenueRating`   | `@@unique([userId, venueId])`    | Rating upsert              | Prevents duplicates; speeds exact lookup |
+| `VenueRating`   | `@@index([venueId])`             | Rating aggregation         | Speeds venue-rating retrieval            |
+| `Favorite`      | `@@unique([userId, venueId])`    | Favorite toggle            | Prevents duplicates                      |
+| `Favorite`      | `@@index([userId])`              | Favorites page             | Speeds user-scoped lists                 |
+| `Conversation`  | `@@index([userId])`              | Conversation history       | Speeds user history                      |
+| `Message`       | `@@index([conversationId])`      | Message history            | Speeds chat loading                      |
+| `Booking`       | `@@index([userId])`              | User bookings              | Speeds booking history                   |
+| `Booking`       | `@@index([venueId])`             | Venue reservations         | Speeds venue booking lookup              |
+| `UserMemory`    | `@@index([userId])`              | Personal memory retrieval  | Speeds user-scoped memory queries        |
+| `SemanticCache` | `@@index([query])`               | Exact-query cache lookup   | Avoids full cache scans                  |
 
 ### Coordinate-index limitation
 
@@ -272,11 +274,11 @@ The current schema does **not** declare explicit `onDelete` or `onUpdate` action
 
 For required relations, deletion of a parent with dependent rows is normally rejected until children are removed.
 
-| Deleting | Current result while dependents exist |
-|---|---|
+| Deleting                                                             | Current result while dependents exist |
+| -------------------------------------------------------------------- | ------------------------------------- |
 | `User` with ratings, favorites, conversations, bookings, or memories | Rejected until child rows are removed |
-| `Venue` with ratings, favorites, or bookings | Rejected until child rows are removed |
-| `Conversation` containing messages | Rejected until messages are removed |
+| `Venue` with ratings, favorites, or bookings                         | Rejected until child rows are removed |
+| `Conversation` containing messages                                   | Rejected until messages are removed   |
 
 ### Important clarification
 
@@ -534,15 +536,15 @@ Never concatenate untrusted values into raw SQL.
 
 ## 9. Cascade and retention decision matrix
 
-| Child data | Suggested approach | Reason |
-|---|---|---|
-| Favorites | Cascade | Personal convenience data has little retention value |
-| Conversations/messages | Cascade or user-controlled deletion | Primarily user-owned content |
-| User memories | Cascade | Personalization data should disappear with the user |
-| Ratings | Anonymize or cascade according to policy | Community value may justify retention |
-| Bookings | Retain/anonymize or soft-delete | May be needed for support or reporting |
-| Venue-linked ratings/favorites | Usually cascade on permanent venue removal | Meaningless without the venue |
-| Venue-linked bookings | Restrict or soft-delete venue | Preserve historical integrity |
+| Child data                     | Suggested approach                         | Reason                                               |
+| ------------------------------ | ------------------------------------------ | ---------------------------------------------------- |
+| Favorites                      | Cascade                                    | Personal convenience data has little retention value |
+| Conversations/messages         | Cascade or user-controlled deletion        | Primarily user-owned content                         |
+| User memories                  | Cascade                                    | Personalization data should disappear with the user  |
+| Ratings                        | Anonymize or cascade according to policy   | Community value may justify retention                |
+| Bookings                       | Retain/anonymize or soft-delete            | May be needed for support or reporting               |
+| Venue-linked ratings/favorites | Usually cascade on permanent venue removal | Meaningless without the venue                        |
+| Venue-linked bookings          | Restrict or soft-delete venue              | Preserve historical integrity                        |
 
 A documented retention policy should precede schema-level cascade changes.
 

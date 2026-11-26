@@ -101,7 +101,6 @@ Public endpoints must be configured inside the Next.js middleware file.
     "/sign-up(.*)",
     "/api/webhook(.*)",
     "/api/auth/csrf-token",
-    "/api/auth/resend-otp",
     "/api/auth/verify-otp",
     "/api/auth/forgot-password",
     "/api/auth/reset-password",

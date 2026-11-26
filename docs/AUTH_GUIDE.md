@@ -4,7 +4,7 @@
 
 WorkSphere uses [Clerk](https://clerk.com) for user identity, session management, and authentication across the platform.
 
-Authentication enforcement is centralized in Next.js middleware ([src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)). WorkSphere follows a **protect-by-default (deny-by-default)** security model:
+Authentication enforcement is centralized in Next.js middleware ([src/middleware.ts](../src/middleware.ts)). WorkSphere follows a **protect-by-default (deny-by-default)** security model:
 
 - Every route intercepted by the middleware requires an authenticated Clerk user session by default.
 - Only routes explicitly defined in the public routes allowlist bypass authentication.
@@ -18,7 +18,7 @@ Authentication enforcement is centralized in Next.js middleware ([src/middleware
 
 The authentication middleware is configured in:
 
-- **[src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)**
+- **[src/middleware.ts](../src/middleware.ts)**
 
 The middleware executes on every incoming request matching the `config.matcher` pattern, before the request reaches Next.js pages, layouts, or route handlers.
 
@@ -31,41 +31,22 @@ The middleware executes on every incoming request matching the `config.matcher` 
    - If the request has a valid Clerk session, execution continues.
    - If the request lacks a valid session:
      - **Web Pages**: The user is automatically redirected to `/sign-in` with a `redirect_url` parameter to return them after authentication.
-     - **API Routes**: Clerk immediately returns an HTTP `401 Unauthorized` response.
+     - **API Routes**: Clerk returns its non-document unauthenticated response; in the installed Clerk middleware version this is a not-found response rather than a sign-in redirect.
 4. **Admin Route Authorization (`isAdminRoute`)**: For routes starting with `/admin` or `/api/admin`, the middleware checks whether the authenticated user has an administrative role (`admin`, `super_admin`, `superadmin` in `sessionClaims.metadata.role`) or matches `ADMIN_EMAILS`. Unauthorized requests receive a `403 Forbidden` (for APIs) or are redirected to `/` (for pages).
 5. **Security & Context Headers**: Injects Content Security Policy (CSP) headers with a unique cryptographic nonce, tracks request pathnames via `x-pathname`, and validates CSRF tokens on mutating API calls.
 
 > **Security architecture:** Rate limiting, CSP nonces and CSRF validation run in the same middleware pipeline as authentication. See the [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) for the handler order, sequence diagrams and the exact rules for each layer.
 
-### Middleware Implementation Example
+### Middleware Execution Flow
 
-The core Clerk authentication logic in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) is structured as follows:
+The Next.js entry point in [src/middleware.ts](../src/middleware.ts) initializes Clerk with `clerkMiddleware` and invokes the centralized `runMiddlewarePipeline` from [src/lib/middleware/chain.ts](../src/lib/middleware/chain.ts). Clerk's `auth()` and `auth.protect()` are passed into the pipeline context; protected routes are enforced once, while public routes in the `ROUTE_PERMISSIONS` manifest continue without authentication.
 
-```typescript
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+The handlers execute in this order:
 
-// 1. Define routes accessible without authentication
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/venues(.*)",
-  "/collections/public(.*)",
-  "/collections/join(.*)",
-  "/api/venues(.*)",
-  "/api/map/(.*)",
-  "/api/collections/public(.*)",
-  "/api/webhook(.*)",
-  "/api/auth/csrf-token",
-  "/api/auth/resend-otp",
-  "/api/auth/verify-otp",
-  "/api/auth/forgot-password",
-  "/api/auth/reset-password",
-  "/api/auth/webauthn/verify",
-  "/privacy(.*)",
-  "/terms(.*)",
-]);
+1. **Rate limiting** applies configured API tiers. Sensitive routes use the authenticated user ID when available and otherwise use the client IP.
+2. **Authentication and authorization** allow routes explicitly marked public, require a Clerk session for other matched routes, and apply the existing admin role/email policy to `/admin` and `/api/admin`.
+3. **Security headers** reuse the entry point's per-request CSP nonce and policy, propagate `x-csp-nonce` and `x-pathname` to the downstream request, and attach the CSP to the response.
+4. **CSRF protection** verifies cookie/header pairs for non-exempt state-changing API requests and issues a token cookie on eligible safe requests. Exemptions are defined in the same route-permission manifest.
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
 
@@ -98,6 +79,144 @@ export default function middleware(request: any, event: any) {
       const isEnvAdmin = adminEmails.length > 0 && Boolean(authObj.userId);
 
       if (!isAdminRole && !isEnvAdmin) {
+        return req.nextUrl.pathname.startsWith("/api")
+          ? NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 })
+          : NextResponse.redirect(new URL("/", req.url));
+      }
+    }
+  });
+
+  return clerkMw(request, event);
+}
+```
+
+---
+
+## 3. Middleware Execution Sequence & Security Pipeline
+
+WorkSphere structures request processing as a deterministic, multi-layer defense-in-depth pipeline. Understanding the exact execution order of **`authHandler`**, **`csrfHandler`**, and **`securityHeadersHandler`** is essential for maintaining secure route behaviors, exemptions, and error response guarantees.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Browser / API Client
+    participant Auth as 1. authHandler (Clerk / RBAC)
+    participant Sec as 2. securityHeadersHandler (CSP / Nonce)
+    participant Csrf as 3. csrfHandler (Double-Submit Token)
+    participant Next as Next.js Route / Page Handler
+
+    Client->>Auth: Incoming HTTP Request
+    Note over Auth: Evaluates route exemption (isPublicRoute, static assets)
+    alt Unauthenticated & Protected Route
+        Auth-->>Client: 401 Unauthorized (API) OR 307 Redirect to /sign-in (Web)
+        Note over Auth: Pipeline terminates; downstream handlers DO NOT execute
+    else Admin Route & Non-Admin User
+        Auth-->>Client: 403 Forbidden (API) OR 307 Redirect to / (Web)
+        Note over Auth: Pipeline terminates; downstream handlers DO NOT execute
+    else Authenticated OR Public Route
+        Auth->>Sec: next()
+    end
+
+    Note over Sec: Generates fresh CSP nonce (16 random bytes)<br/>Constructs strict CSP policy<br/>Stamps x-csp-nonce & x-pathname on request headers
+    Sec->>Csrf: next()
+
+    Note over Csrf: Forwards request to downstream handler first
+    Csrf->>Next: forward request
+    Next-->>Csrf: response generated
+
+    alt Mutating Request (POST/PUT/PATCH/DELETE) on /api/* (Not Exempt)
+        Note over Csrf: Validates raw token against HMAC signature in cookie
+        alt Validation Fails (Mismatched, Missing, or Corrupted)
+            Csrf-->>Client: 403 Forbidden ("CSRF validation failed")
+            Note over Csrf: Discards downstream response
+        else Validation Passes
+            Csrf-->>Sec: response
+        end
+    else Safe Request (GET/HEAD) Without csrf_token Cookie (Not Exempt)
+        Note over Csrf: Issues new CSRF token & sets httpOnly cookie on response
+        Csrf-->>Sec: response + Set-Cookie (csrf_token)
+    else Route is CSRF Exempt
+        Csrf-->>Sec: response (unchanged)
+    end
+
+    Note over Sec: Injects Content-Security-Policy & security headers into response
+    Sec-->>Client: Outgoing HTTP Response (with CSP & Security Headers)
+```
+
+### 3.1 Ordered Pipeline Checklist
+
+1. **Step 1: `authHandler` (Authentication & Authorization)**
+   - **Responsibility**: Intercepts requests entering the application, validates session state via Clerk's `auth.protect()`, and checks role-based access control for administrative endpoints (`isAdminRoute`).
+   - **Execution Point**: Runs **first** in the core pipeline before any cryptographic operations, nonce assembly, or CSRF inspections take place.
+   - **Failure Behavior**:
+     - For protected API routes: immediately returns an HTTP `401 Unauthorized` JSON response (`{ error: "Unauthorized" }`).
+     - For protected page views: immediately issues an HTTP `307 Temporary Redirect` to `/sign-in?redirect_url=...`.
+     - For admin routes where the caller lacks admin privileges: immediately returns HTTP `403 Forbidden` for APIs or redirects to `/` for web pages.
+     - **Critical Invariant**: If authentication or admin authorization fails, **the request pipeline terminates immediately**. Downstream handlers (`securityHeadersHandler`, `csrfHandler`, and Next.js route handlers) **never execute**.
+
+2. **Step 2: `securityHeadersHandler` (Request Nonce & CSP Generation)**
+   - **Responsibility**: Generates a high-entropy, per-request cryptographic nonce (16 random bytes, base64-encoded via Web Crypto API), constructs the strict Content Security Policy (`generateCsp`), and propagates `x-csp-nonce`, `x-pathname`, and request-level `Content-Security-Policy` headers to downstream server components.
+   - **Execution Point**: Executes after `authHandler` succeeds.
+   - **Downstream Call & Response Transformation**: Calls `next()` to pass control to `csrfHandler` and the route handler, then intercepts the returning response to inject the authoritative `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy` headers.
+   - **Timing**: Headers are attached to the outgoing response on the way back out, ensuring that even dynamically generated or mutated responses carry strict security headers.
+
+3. **Step 3: `csrfHandler` (Double-Submit HMAC Cookie Protection)**
+   - **Responsibility**: Defends against cross-site request forgery on state-changing API requests using an HMAC-SHA256 signed double-submit cookie architecture.
+   - **Execution Point**: Runs innermost in the middleware wrapper around the downstream Next.js page or route execution.
+   - **Downstream Precedence**: `csrfHandler` forwards the request down to Next.js (`await next()`) and inspects/enforces CSRF rules on the response:
+     - **Mutating Requests (`POST`, `PUT`, `PATCH`, `DELETE`)**: Inspects the incoming `x-csrf-token` header and the `csrf_token` cookie (`raw.signature`). If validation fails (or either value is missing/tampered), the downstream response is discarded, and an HTTP `403 Forbidden` response is returned immediately:
+       ```json
+       {
+         "error": "CSRF validation failed. Please refresh and try again."
+       }
+       ```
+     - **Safe Requests (`GET`, `HEAD`, `OPTIONS`)**: If the client does not yet hold a `csrf_token` cookie, `csrfHandler` mints a fresh token and sets the signed `csrf_token` cookie on the outgoing response.
+     - **Exempt Routes**: Bypasses token verification and cookie modification.
+
+---
+
+## 4. Route Exemptions and Bypass Conditions
+
+To prevent breaking external integrations, public access, and specialized communication protocols, each handler defines clear exemption conditions:
+
+### 4.1 `authHandler` Route Exemptions
+The following request types bypass Clerk `auth.protect()`:
+- **Static Assets**: Paths matching Next.js internal bundles (`/_next/static`, `/_next/image`), browser assets (`favicon.ico`, `robots.txt`, `sitemap.xml`, `sw.js`), and public media (`/icons/*`, `/images/*`).
+- **Public Web Pages**: Landing page (`/`), authentication views (`/sign-in(.*)`, `/sign-up(.*)`), terms and privacy pages (`/terms(.*)`, `/privacy(.*)`), and public venue directories (`/venues(.*)`).
+- **Public API Endpoints**: Read-only public collections (`/api/collections/public(.*)`), public map data (`/api/map/(.*)`), and public venue listings (`/api/venues(.*)`).
+- **OTP & Password Reset Flows**: Auth utility endpoints (`/api/auth/resend-otp`, `/api/auth/verify-otp`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/webauthn/verify`).
+- **External Webhooks**: Endpoints called by external third parties lacking browser session cookies (`/api/webhook(.*)`, `/api/webhooks/worker`). Webhooks rely on provider-specific HMAC signatures (e.g., Svix or Stripe signatures) rather than Clerk user sessions.
+- **CSRF Token Minting Endpoint**: `/api/auth/csrf-token`.
+
+### 4.2 `csrfHandler` Route Exemptions
+CSRF protection is specifically targeted at browser-initiated state-changing operations. The following are exempt:
+- **Safe HTTP Methods**: `GET`, `HEAD`, and `OPTIONS` (CORS preflight requests) are never blocked by CSRF checks.
+- **Non-API Requests**: Page navigation requests (HTML document loads) do not require `x-csrf-token`.
+- **External Webhooks & Workers (`/api/webhook(.*)`, `/api/webhooks/worker`, `/api/cron/(.*)`)**: Webhook callers and cron runners authenticate via request signatures or gateway tokens, not browser cookies, and do not carry CSRF tokens.
+- **CSRF Issuance Endpoint (`/api/auth/csrf-token`)**: Public endpoint used by clients to fetch initial tokens.
+- **Identity Provider Callbacks (`/api/auth/sso/saml`)**: SAML POST bindings originated by external IdPs.
+- **Server-Sent Events Streams (`/api/venues/updates`)**: Persistent streaming connections where setting or rewriting cookies disrupts connection state.
+
+### 4.3 `securityHeadersHandler` Exemptions
+- **Static File Bypass**: Next.js static chunks and public file assets bypass dynamic nonce generation to enable edge caching.
+- **Universal Response Coverage**: All dynamic application pages, server-rendered views, and API responses processed by middleware receive Content Security Policy and defensive headers.
+
+---
+
+## 5. Security Failure Behaviors & Error Handling
+
+| Scenario | Failing Handler | HTTP Status | Response / Redirection | Downstream Execution |
+| :--- | :--- | :---: | :--- | :--- |
+| **Unauthenticated API call** | `authHandler` | `401 Unauthorized` | `{"error": "Unauthorized"}` | **Aborted** (Next.js route never runs) |
+| **Unauthenticated page view** | `authHandler` | `307 Temporary Redirect` | Redirects to `/sign-in?redirect_url=<path>` | **Aborted** (Page component never renders) |
+| **Non-admin user accessing `/admin`** | `authHandler` | `403 Forbidden` / `307 Redirect` | `{"error": "Forbidden: Admin access required"}` or redirects to `/` | **Aborted** (Admin handler never runs) |
+| **Missing/invalid CSRF token on `POST /api/*`** | `csrfHandler` | `403 Forbidden` | `{"error": "CSRF validation failed. Please refresh and try again."}` | **Discarded** (Downstream response discarded) |
+| **Rate limit exceeded (token bucket)** | Rate Limiter | `429 Too Many Requests` | `{"error": "Too many requests"}` + `Retry-After` | **Aborted** (Auth and route handlers skipped) |
+
+### 5.1 Security Implications
+1. **Deny-by-Default Protection**: Because `authHandler` executes before downstream handlers and route controllers, unauthenticated callers cannot trigger route side effects, expensive database transactions, or business logic.
+2. **Double-Submit Invalidation**: When CSRF validation fails on mutating calls, any tentative downstream response generated by Next.js is dropped, preventing sensitive state from leaking back to an untrusted cross-origin requester.
+3. **Nonce Single-Use Guarantee**: A fresh base64 nonce is generated per request in `securityHeadersHandler`, eliminating script re-use vulnerabilities and neutralizing DOM-based XSS injection.
         if (req.nextUrl.pathname.startsWith("/api")) {
           return NextResponse.json(
             { error: "Forbidden: Admin access required" },
@@ -111,21 +230,7 @@ export default function middleware(request: any, event: any) {
     // Security headers and CSRF verification follow...
   });
 
-  return clerkMw(request, event);
-}
-
-// 3. Matcher configuration controlling which paths run through middleware
-export const config = {
-  matcher: [
-    // Skip static assets, media, fonts, and service workers
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf|eot|css|js|json|txt|xml|webmanifest)|manifest\\.json|sw\\.js|service-worker\\.js|robots\\.txt).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
-    // Clerk internal proxy routes
-    "/__clerk/:path*",
-  ],
-};
-```
+Public-route exceptions, CSRF exemptions, and admin-only rules are maintained in [src/lib/middleware/routes.ts](../src/lib/middleware/routes.ts); do not duplicate or broaden those rules in the entry point.
 
 ---
 
@@ -150,8 +255,8 @@ WorkSphere distinguishes between **Public** routes (accessible to guests without
 | `/api/collections/public(.*)` | Public            | Public collection retrieval, sharing, and upvote endpoints                                     |
 | `/api/webhook(.*)`            | Public            | External incoming webhooks (e.g., Clerk user sync, Stripe events; verified by Svix/signatures) |
 | `/api/auth/csrf-token`        | Public            | Generates and issues CSRF protection tokens                                                    |
-| `/api/auth/resend-otp`        | Public            | Resends one-time verification codes during sign-in/verification                                |
-| `/api/auth/verify-otp`        | Public            | Validates one-time verification codes                                                          |
+| `/api/auth/resend-otp`        | Retired (410)     | Retired legacy endpoint (HTTP 410 Gone). Password reset codes are resent via Clerk.            |
+| `/api/auth/verify-otp`        | Retired (410)     | Retired legacy endpoint (HTTP 410 Gone). Verification codes are verified via Clerk.            |
 | `/api/auth/forgot-password`   | Public            | Initiates account password recovery requests                                                   |
 | `/api/auth/reset-password`    | Public            | Finalizes password reset operations                                                            |
 | `/api/auth/webauthn/verify`   | Public            | WebAuthn passkey assertion verification during sign-in                                         |
@@ -216,7 +321,7 @@ Create your new route under `src/app`:
 
 #### Step 2: Ensure Route is Omitted from `isPublicRoute`
 
-Leave [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) unchanged. Because your route is not listed in `isPublicRoute`, the middleware automatically intercepts it and executes `await auth.protect()`.
+Leave [src/middleware.ts](../src/middleware.ts) unchanged. Because your route is not listed in `isPublicRoute`, the middleware automatically intercepts it and executes `await auth.protect()`.
 
 #### Step 3: Access Authenticated User Context in Your Code
 
@@ -309,7 +414,7 @@ When creating a route that should be publicly accessible without authentication 
 
 ### Step-by-Step Guide
 
-1. Open **[src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)**.
+1. Open **[src/middleware.ts](../src/middleware.ts)**.
 2. Locate the `isPublicRoute` array defined inside `createRouteMatcher([ ... ])`.
 3. Add your route pattern to the array:
    - For an exact page match: `"/about"`
@@ -342,7 +447,7 @@ const isPublicRoute = createRouteMatcher([
 ```
 
 4. **CSRF Exemption for Mutating Webhook Endpoints**:
-   If the new route is a mutating API endpoint (`POST`, `PUT`, `DELETE`, `PATCH`) called by external third-party services that do not hold a browser CSRF cookie (e.g., payment gateways or third-party webhooks), also add it to `isCsrfExemptMatcher` in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts):
+   If the new route is a mutating API endpoint (`POST`, `PUT`, `DELETE`, `PATCH`) called by external third-party services that do not hold a browser CSRF cookie (e.g., payment gateways or third-party webhooks), also add it to `isCsrfExemptMatcher` in [src/middleware.ts](../src/middleware.ts):
 
 ```typescript
 const isCsrfExemptMatcher = createRouteMatcher([
@@ -393,7 +498,7 @@ To verify that protection is working:
 
 ### 4. Unit Testing with Mocks (Jest)
 
-When writing Jest tests for components or route handlers that interact with Clerk, mock `@clerk/nextjs` or `@clerk/nextjs/server` as documented in [CONTRIBUTING.md](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/CONTRIBUTING.md):
+When writing Jest tests for components or route handlers that interact with Clerk, mock `@clerk/nextjs` or `@clerk/nextjs/server` as documented in [CONTRIBUTING.md](../CONTRIBUTING.md):
 
 ```typescript
 // Mocking Clerk in API route tests
@@ -423,7 +528,7 @@ To test unauthenticated scenarios, configure the mock to return `null`:
 
 ### 1. Assuming New Routes Are Public by Default
 
-- **Mistake**: Creating a new route intended for public or guest use and expecting it to work without updating [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts).
+- **Mistake**: Creating a new route intended for public or guest use and expecting it to work without updating [src/middleware.ts](../src/middleware.ts).
 - **Result**: WorkSphere's protect-by-default architecture blocks unauthenticated visitors and redirects them to `/sign-in`.
 - **Solution**: Explicitly add the path pattern to `isPublicRoute`.
 
@@ -462,3 +567,26 @@ To test unauthenticated scenarios, configure the mock to return `null`:
 - **Mistake**: Testing protected admin routes (`/admin/*` or `/api/admin/*`) with a standard authenticated user.
 - **Result**: Requests are denied with HTTP `403 Forbidden` or redirected to `/` because admin routes enforce role checks beyond basic authentication.
 - **Solution**: Set the user's Clerk metadata role to `admin` or add their email to the `ADMIN_EMAILS` environment variable.
+
+---
+
+## 8. Password Recovery & Verification Architecture
+
+WorkSphere relies exclusively on Clerk for native password reset and verification code lifecycle.
+
+- **Forgot Password**: The forgot password page (`/forgot-password`) initiates code dispatch via:
+  ```typescript
+  await signIn.create({
+    strategy: "reset_password_email_code",
+    identifier: cleanEmail,
+  });
+  ```
+- **Reset Password & Verification**: The reset password page (`/reset-password`) authoritatively attempts verification and updates the password via:
+  ```typescript
+  await signIn.attemptFirstFactor({
+    strategy: "reset_password_email_code",
+    code: cleanCode,
+    password,
+  });
+  ```
+- **Legacy Endpoints Retired**: The legacy standalone endpoints `POST /api/auth/verify-otp` and `POST /api/auth/resend-otp` have been retired and return `HTTP 410 Gone` with `{ code: "ENDPOINT_RETIRED" }`. No standalone OTP generation, verification, or unauthenticated token validation is accepted outside of Clerk's native authentication pipeline.

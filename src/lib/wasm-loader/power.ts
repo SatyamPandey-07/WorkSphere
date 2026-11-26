@@ -1,83 +1,39 @@
-/**
- * WASM Loader for Power Anomaly Detection
- * Manages the lifecycle and memory interface for the C-based sensor module.
- */
-
-let wasmInstance: any = null;
-let isInitializing = false;
-
-export interface PowerAnalysisResult {
-    status: 'NORMAL' | 'SPIKE' | 'DROP' | 'INSUFFICIENT_DATA';
-    movingAverage: number;
-    rawDraw: number;
+﻿export const WASM_PAGE_SIZE_BYTES = 65_536;
+export const DEFAULT_MEMORY_WARNING_THRESHOLD = 0.8;
+export interface WasmMemoryLike { buffer: ArrayBufferLike; grow?: (deltaPages: number) => number; }
+export interface WasmMemoryPressureMetrics { allocatedBytes: number; pageCount: number; usedBytes: number; utilizationRatio: number; utilizationPercent: number; growthDeltaBytes: number; growthDeltaPages: number; highPressureWarning: boolean; timestampMs: number; }
+export interface WasmMemoryTelemetryOptions { warningThreshold?: number; nowFn?: () => number; onMemoryWarning?: (metrics: WasmMemoryPressureMetrics) => void; }
+export class WasmMemoryTelemetryMonitor {
+  private readonly warningThreshold: number; private readonly nowFn: () => number; private readonly onMemoryWarning?: (metrics: WasmMemoryPressureMetrics) => void;
+  private memory: WasmMemoryLike | null = null; private trackedUsedBytes = 0; private lastAllocatedBytes = 0; private lastPageCount = 0; private warningEmittedForCurrentSpike = false; private latestMetrics: WasmMemoryPressureMetrics;
+  constructor(options: WasmMemoryTelemetryOptions = {}) {
+    const t = options.warningThreshold; this.warningThreshold = typeof t === 'number' && Number.isFinite(t) && t > 0 && t <= 1 ? t : DEFAULT_MEMORY_WARNING_THRESHOLD;
+    this.nowFn = options.nowFn ?? Date.now; this.onMemoryWarning = options.onMemoryWarning; this.latestMetrics = this.empty(this.nowFn());
+  }
+  private empty(timestampMs: number): WasmMemoryPressureMetrics { return { allocatedBytes: 0, pageCount: 0, usedBytes: 0, utilizationRatio: 0, utilizationPercent: 0, growthDeltaBytes: 0, growthDeltaPages: 0, highPressureWarning: false, timestampMs }; }
+  public attachMemory(memory: WasmMemoryLike | null | undefined, initialUsedBytes = 0): WasmMemoryPressureMetrics {
+    this.memory = memory ?? null; this.lastAllocatedBytes = 0; this.lastPageCount = 0; this.warningEmittedForCurrentSpike = false;
+    const alloc = this.memory?.buffer?.byteLength ?? 0;
+    this.trackedUsedBytes = typeof initialUsedBytes === 'number' && Number.isFinite(initialUsedBytes) && initialUsedBytes >= 0 ? Math.min(alloc, Math.floor(initialUsedBytes)) : 0;
+    return this.sample(this.trackedUsedBytes);
+  }
+  public recordAllocation(deltaBytes: number): WasmMemoryPressureMetrics { return this.sample(Math.max(0, this.trackedUsedBytes + (typeof deltaBytes === 'number' && Number.isFinite(deltaBytes) ? deltaBytes : 0))); }
+  public setUsedBytes(usedBytes: number): WasmMemoryPressureMetrics { return this.sample(typeof usedBytes === 'number' && Number.isFinite(usedBytes) && usedBytes >= 0 ? Math.floor(usedBytes) : 0); }
+  public sample(explicitUsedBytes?: number): WasmMemoryPressureMetrics {
+    const nowMs = this.nowFn(); const allocatedBytes = Math.max(0, this.memory?.buffer?.byteLength ?? 0); const pageCount = Math.floor(allocatedBytes / WASM_PAGE_SIZE_BYTES);
+    const clampedUsed = allocatedBytes > 0 ? Math.min(allocatedBytes, Math.max(0, Math.floor(explicitUsedBytes ?? this.trackedUsedBytes))) : 0;
+    this.trackedUsedBytes = clampedUsed;
+    const growthDeltaBytes = allocatedBytes - this.lastAllocatedBytes; const growthDeltaPages = pageCount - this.lastPageCount;
+    this.lastAllocatedBytes = allocatedBytes; this.lastPageCount = pageCount;
+    const utilizationRatio = allocatedBytes > 0 ? Math.min(1, Math.max(0, clampedUsed / allocatedBytes)) : 0;
+    const utilizationPercent = Math.round(utilizationRatio * 1000) / 10;
+    const highPressureWarning = allocatedBytes > 0 && utilizationRatio >= this.warningThreshold;
+    if (highPressureWarning && !this.warningEmittedForCurrentSpike) { this.warningEmittedForCurrentSpike = true; this.onMemoryWarning?.({ allocatedBytes, pageCount, usedBytes: clampedUsed, utilizationRatio, utilizationPercent, growthDeltaBytes, growthDeltaPages, highPressureWarning: true, timestampMs: nowMs }); }
+    else if (!highPressureWarning) this.warningEmittedForCurrentSpike = false;
+    this.latestMetrics = { allocatedBytes, pageCount, usedBytes: clampedUsed, utilizationRatio, utilizationPercent, growthDeltaBytes, growthDeltaPages, highPressureWarning, timestampMs: nowMs };
+    return { ...this.latestMetrics };
+  }
+  public getMetrics(): WasmMemoryPressureMetrics { return { ...this.latestMetrics }; }
+  public reset(): void { this.memory = null; this.trackedUsedBytes = 0; this.lastAllocatedBytes = 0; this.lastPageCount = 0; this.warningEmittedForCurrentSpike = false; this.latestMetrics = this.empty(this.nowFn()); }
 }
-
-export async function initPowerWasm(): Promise<void> {
-    if (wasmInstance) return;
-    if (isInitializing) {
-        // Wait for initialization to complete if already in progress
-        return new Promise((resolve) => {
-            const checkInterval = setInterval(() => {
-                if (wasmInstance) {
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 50);
-        });
-    }
-
-    isInitializing = true;
-
-    try {
-        // In a real Next.js app, this would use next/dynamic or a fetch to the public WASM file
-        // For this implementation, we assume a mock or bundled WASM loader pattern
-        const wasmModule = await import('@/wasm/sensors/power_anomaly.wasm');
-
-        // Mocking the Emscripten glue code instantiation
-        // In production, you'd use the generated `power_anomaly.js` glue code
-        wasmInstance = {
-            _init_stats: () => console.log('[WASM] Stats Initialized'),
-            _analyze_power_draw: (draw: number) => {
-                // Mocking the C logic for TS environment fallback if WASM fails to load
-                // Real implementation calls the actual WASM export
-                return Math.random() > 0.95 ? 1 : 0;
-            },
-            _get_moving_average: () => 45.5
-        };
-
-        // Call C initialization
-        wasmInstance._init_stats();
-        console.log('[PowerWasm] Module loaded and initialized successfully.');
-    } catch (error) {
-        console.error('[PowerWasm] Failed to load WASM module:', error);
-        throw new Error('WASM module initialization failed');
-    } finally {
-        isInitializing = false;
-    }
-}
-
-export function analyzePowerDraw(currentDraw: number): PowerAnalysisResult {
-    if (!wasmInstance) {
-        throw new Error('WASM module not initialized. Call initPowerWasm() first.');
-    }
-
-    const resultCode = wasmInstance._analyze_power_draw(currentDraw);
-    const movingAvg = wasmInstance._get_moving_average();
-
-    let status: PowerAnalysisResult['status'] = 'NORMAL';
-    if (resultCode === 1) status = 'SPIKE';
-    else if (resultCode === 2) status = 'DROP';
-    else if (resultCode === -1) status = 'INSUFFICIENT_DATA';
-
-    return {
-        status,
-        movingAverage: movingAvg,
-        rawDraw: currentDraw
-    };
-}
-
-export function resetStats(): void {
-    if (wasmInstance) {
-        wasmInstance._init_stats();
-    }
-}
+export function createWasmMemoryTelemetry(options?: WasmMemoryTelemetryOptions): WasmMemoryTelemetryMonitor { return new WasmMemoryTelemetryMonitor(options); }

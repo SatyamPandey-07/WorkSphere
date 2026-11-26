@@ -78,7 +78,10 @@ export class ScreenShareManager {
       const senders = this.peerConnection.getSenders();
       for (const sender of senders) {
         if (sender.track && sender.track.kind === 'video') {
-          const parameters = sender.parameters;
+          // RTCRtpSender has no `parameters` property; the current encoding
+          // settings are read with getParameters() and written back with
+          // setParameters().
+          const parameters = sender.getParameters();
           if (parameters.encodings && parameters.encodings[0]) {
             parameters.encodings[0].maxBitrate = this.currentBitrate;
             parameters.encodings[0].maxFramerate = this.currentFramerate;

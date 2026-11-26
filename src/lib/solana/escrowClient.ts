@@ -40,6 +40,7 @@ export async function fetchLatestBlockhashWithBackoff(
   throw lastErr;
 }
 import {
+  DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS,
   getPriorityFeeEstimator,
   type PriorityFeeEstimate,
 } from "./priorityFeeEstimator";
@@ -289,6 +290,119 @@ export const USDC_MINT = new PublicKey(
 
 export type EscrowCurrency = "SOL" | "USDC";
 
+export interface PriorityFeeCapDiagnostics {
+  /** Raw computed or explicitly supplied fee before ceiling enforcement (null if none). */
+  estimatedMicroLamports: number | null;
+  /** Hard upper bound ceiling in micro-lamports. */
+  maxPriorityFeeMicroLamports: number;
+  /** Final priority fee applied to the transaction in micro-lamports. */
+  appliedMicroLamports: number;
+  /** True when the computed fee exceeded maxPriorityFeeMicroLamports and was clamped. */
+  wasCapped: boolean;
+}
+
+export function resolveCappedPriorityFee(options: {
+  explicitMicroLamports?: number | null;
+  estimatedMicroLamports?: number | null;
+  maxPriorityFeeMicroLamports?: number;
+}): PriorityFeeCapDiagnostics {
+  const ceiling =
+    typeof options.maxPriorityFeeMicroLamports === "number" &&
+    Number.isFinite(options.maxPriorityFeeMicroLamports) &&
+    options.maxPriorityFeeMicroLamports >= 0
+      ? Math.floor(options.maxPriorityFeeMicroLamports)
+      : DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS;
+
+  const rawFee =
+    typeof options.explicitMicroLamports === "number" &&
+    Number.isFinite(options.explicitMicroLamports) &&
+    options.explicitMicroLamports >= 0
+      ? Math.floor(options.explicitMicroLamports)
+      : typeof options.estimatedMicroLamports === "number" &&
+          Number.isFinite(options.estimatedMicroLamports) &&
+          options.estimatedMicroLamports >= 0
+        ? Math.floor(options.estimatedMicroLamports)
+        : null;
+
+  if (rawFee === null) {
+    return {
+      estimatedMicroLamports: null,
+      maxPriorityFeeMicroLamports: ceiling,
+      appliedMicroLamports: 0,
+      wasCapped: false,
+    };
+  }
+
+  const appliedMicroLamports = Math.min(rawFee, ceiling);
+  return {
+    estimatedMicroLamports: rawFee,
+    maxPriorityFeeMicroLamports: ceiling,
+    appliedMicroLamports,
+    wasCapped: rawFee > ceiling,
+  };
+}
+
+function upsertComputeUnitPriceInstruction(
+  transaction: Transaction,
+  microLamports: number,
+): void {
+  if (typeof microLamports !== "number" || microLamports <= 0) {
+    return;
+  }
+  const safeFee = Math.max(0, Math.floor(microLamports));
+  const existingIndex = transaction.instructions.findIndex(
+    (ix) =>
+      ix.programId.equals(ComputeBudgetProgram.programId) &&
+      ix.data.length > 0 &&
+      ix.data[0] === 3,
+  );
+  const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: safeFee,
+  });
+  if (existingIndex >= 0) {
+    transaction.instructions[existingIndex] = computeIx;
+  } else {
+    transaction.instructions.unshift(computeIx);
+  }
+}
+
+async function resolveAndApplyEscrowPriorityFee(options: {
+  transaction: Transaction;
+  estimateFee?: () => Promise<PriorityFeeEstimate>;
+  priorityFeeMicroLamports?: number | null;
+  maxPriorityFeeMicroLamports?: number;
+}): Promise<PriorityFeeCapDiagnostics> {
+  let estimatedMicroLamports: number | null = null;
+  if (
+    options.priorityFeeMicroLamports === undefined ||
+    options.priorityFeeMicroLamports === null
+  ) {
+    if (options.estimateFee) {
+      try {
+        const estimate = await options.estimateFee();
+        estimatedMicroLamports = estimate.microLamports;
+      } catch {
+        estimatedMicroLamports = null;
+      }
+    }
+  }
+
+  const diagnostics = resolveCappedPriorityFee({
+    explicitMicroLamports: options.priorityFeeMicroLamports,
+    estimatedMicroLamports,
+    maxPriorityFeeMicroLamports: options.maxPriorityFeeMicroLamports,
+  });
+
+  if (diagnostics.appliedMicroLamports > 0) {
+    upsertComputeUnitPriceInstruction(
+      options.transaction,
+      diagnostics.appliedMicroLamports,
+    );
+  }
+
+  return diagnostics;
+}
+
 export interface EscrowDepositParams {
   payerWallet: string;
   bookingId: string;
@@ -296,6 +410,7 @@ export interface EscrowDepositParams {
   currency: EscrowCurrency;
   rpcUrl: string;
   priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
   computeUnitLimit?: number;
 }
 
@@ -306,6 +421,7 @@ export interface EscrowDepositResult {
   amountBaseUnits: bigint;
   recentBlockhash: string;
   lastValidBlockHeight?: number;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 export interface EscrowValidationResult {
@@ -618,39 +734,17 @@ export async function buildSolDepositTransaction(
     );
   }
 
-  // Dynamic Priority Fee: estimate automatically if not explicitly provided
-  let priorityFee = params.priorityFeeMicroLamports;
-  if (priorityFee === undefined || priorityFee === null) {
-    try {
-      const estimator = getPriorityFeeEstimator();
-      const estimate = await estimator.estimatePriorityFee(connection, [
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+  const priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+    transaction,
+    estimateFee: () =>
+      getPriorityFeeEstimator().estimatePriorityFee(connection, [
         payer,
         escrowVault,
-      ]);
-      priorityFee = estimate.microLamports;
-    } catch {
-      priorityFee = undefined;
-    }
-  }
-
-  // SetComputeUnitPrice must be placed before business instructions
-  if (typeof priorityFee === "number" && priorityFee > 0) {
-    const safeFee = Math.max(0, Math.floor(priorityFee));
-    const existingIndex = transaction.instructions.findIndex(
-      (ix) =>
-        ix.programId.equals(ComputeBudgetProgram.programId) &&
-        ix.data.length > 0 &&
-        ix.data[0] === 3,
-    );
-    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: safeFee,
-    });
-    if (existingIndex >= 0) {
-      transaction.instructions[existingIndex] = computeIx;
-    } else {
-      transaction.instructions.unshift(computeIx);
-    }
-  }
+      ]),
+    priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+    maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+  });
 
   const memoData = Buffer.from(
     JSON.stringify({ bookingId: params.bookingId, type: "escrow_deposit" }),
@@ -680,6 +774,7 @@ export async function buildSolDepositTransaction(
     amountBaseUnits,
     recentBlockhash: blockhash,
     lastValidBlockHeight,
+    priorityFeeDiagnostics,
   };
 }
 
@@ -735,40 +830,18 @@ export async function buildUsdcDepositTransaction(
     );
   }
 
-  // Dynamic Priority Fee: estimate automatically if not explicitly provided
-  let priorityFee = params.priorityFeeMicroLamports;
-  if (priorityFee === undefined || priorityFee === null) {
-    try {
-      const estimator = getPriorityFeeEstimator();
-      const estimate = await estimator.estimatePriorityFee(connection, [
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+  const priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+    transaction,
+    estimateFee: () =>
+      getPriorityFeeEstimator().estimatePriorityFee(connection, [
         payer,
         payerAta,
         vaultAta,
-      ]);
-      priorityFee = estimate.microLamports;
-    } catch {
-      priorityFee = undefined;
-    }
-  }
-
-  // SetComputeUnitPrice must be placed before business instructions
-  if (typeof priorityFee === "number" && priorityFee > 0) {
-    const safeFee = Math.max(0, Math.floor(priorityFee));
-    const existingIndex = transaction.instructions.findIndex(
-      (ix) =>
-        ix.programId.equals(ComputeBudgetProgram.programId) &&
-        ix.data.length > 0 &&
-        ix.data[0] === 3,
-    );
-    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: safeFee,
-    });
-    if (existingIndex >= 0) {
-      transaction.instructions[existingIndex] = computeIx;
-    } else {
-      transaction.instructions.unshift(computeIx);
-    }
-  }
+      ]),
+    priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+    maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+  });
 
   const memoData = Buffer.from(
     JSON.stringify({
@@ -804,6 +877,7 @@ export async function buildUsdcDepositTransaction(
     amountBaseUnits,
     recentBlockhash: blockhash,
     lastValidBlockHeight,
+    priorityFeeDiagnostics,
   };
 }
 
@@ -1594,10 +1668,13 @@ export async function buildReleaseTransaction(params: {
   authorityWallet: string;
   rpcUrl: string;
   programId?: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }): Promise<{
   transaction: Transaction;
   serializedTransaction: string;
   escrowVault: string;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }> {
   const recipient = new PublicKey(params.recipientWallet);
   const authority = new PublicKey(params.authorityWallet);
@@ -1624,6 +1701,24 @@ export async function buildReleaseTransaction(params: {
     }),
   );
 
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+  if (
+    params.priorityFeeMicroLamports !== undefined ||
+    params.maxPriorityFeeMicroLamports !== undefined
+  ) {
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction: tx,
+      estimateFee: () =>
+        getPriorityFeeEstimator().estimatePriorityFee(connection, [
+          escrowVault,
+          authority,
+          recipient,
+        ]),
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+  }
+
   const serializedTransaction = tx
     .serialize({ requireAllSignatures: false, verifySignatures: false })
     .toString("base64");
@@ -1632,6 +1727,7 @@ export async function buildReleaseTransaction(params: {
     transaction: tx,
     serializedTransaction,
     escrowVault: escrowVault.toBase58(),
+    ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
   };
 }
 
@@ -1646,10 +1742,13 @@ export async function buildRefundTransaction(params: {
   authorityWallet: string;
   rpcUrl: string;
   programId?: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }): Promise<{
   transaction: Transaction;
   serializedTransaction: string;
   escrowVault: string;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }> {
   const depositor = new PublicKey(params.depositorWallet);
   const authority = new PublicKey(params.authorityWallet);
@@ -1677,6 +1776,24 @@ export async function buildRefundTransaction(params: {
     }),
   );
 
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+  if (
+    params.priorityFeeMicroLamports !== undefined ||
+    params.maxPriorityFeeMicroLamports !== undefined
+  ) {
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction: tx,
+      estimateFee: () =>
+        getPriorityFeeEstimator().estimatePriorityFee(connection, [
+          escrowVault,
+          authority,
+          depositor,
+        ]),
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+  }
+
   const serializedTransaction = tx
     .serialize({ requireAllSignatures: false, verifySignatures: false })
     .toString("base64");
@@ -1685,6 +1802,7 @@ export async function buildRefundTransaction(params: {
     transaction: tx,
     serializedTransaction,
     escrowVault: escrowVault.toBase58(),
+    ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
   };
 }
 
@@ -2150,6 +2268,7 @@ export interface SubmitEscrowRefundParams {
   confirmationTimeoutMs?: number;
   pollIntervalMs?: number;
   priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -2157,6 +2276,7 @@ export interface EscrowRefundSubmissionResult {
   signature: string;
   escrowVault: string;
   slot?: number;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 /**
@@ -2229,6 +2349,7 @@ export async function submitEscrowRefundTransaction(
   let transaction: Transaction;
   let signature: string;
   let escrowVault: string;
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics;
   try {
     const { blockhash } = await pool.execute((connection) =>
       connection.getLatestBlockhash("confirmed"),
@@ -2250,42 +2371,20 @@ export async function submitEscrowRefundTransaction(
       feePayer: authority.publicKey,
     });
 
-    // Dynamic Priority Fee: estimate automatically if not explicitly provided
-    let priorityFee = params.priorityFeeMicroLamports;
-    if (priorityFee === undefined || priorityFee === null) {
-      try {
-        const estimator = getPriorityFeeEstimator();
-        const estimate = (await pool.execute((conn) =>
-          estimator.estimatePriorityFee(conn, [
+    // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction,
+      estimateFee: () =>
+        pool.execute((conn) =>
+          getPriorityFeeEstimator().estimatePriorityFee(conn, [
             address,
             authority.publicKey,
             depositor,
           ]),
-        )) as PriorityFeeEstimate;
-        priorityFee = estimate.microLamports;
-      } catch {
-        priorityFee = undefined;
-      }
-    }
-
-    // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
-    if (typeof priorityFee === "number" && priorityFee > 0) {
-      const safeFee = Math.max(0, Math.floor(priorityFee));
-      const existingIndex = transaction.instructions.findIndex(
-        (ix) =>
-          ix.programId.equals(ComputeBudgetProgram.programId) &&
-          ix.data.length > 0 &&
-          ix.data[0] === 3,
-      );
-      const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: safeFee,
-      });
-      if (existingIndex >= 0) {
-        transaction.instructions[existingIndex] = computeIx;
-      } else {
-        transaction.instructions.unshift(computeIx);
-      }
-    }
+        ) as Promise<PriorityFeeEstimate>,
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
 
     transaction.add(instruction);
     transaction.sign(authority);
@@ -2370,7 +2469,12 @@ export async function submitEscrowRefundTransaction(
           status.confirmationStatus === "finalized" ||
           status.confirmations === null
         ) {
-          return { signature, escrowVault, slot: status.slot };
+          return {
+            signature,
+            escrowVault,
+            slot: status.slot,
+            priorityFeeDiagnostics,
+          };
         }
       }
     } catch (error) {
@@ -4198,6 +4302,8 @@ export interface SettlementRequest {
   idempotencyKey: string;
   refundBasisPoints?: number;
   nowUnixSeconds?: number;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }
 
 export interface SettlementReceipt {
@@ -4205,6 +4311,7 @@ export interface SettlementReceipt {
   txSignature: string;
   escrow: EscrowRecord;
   deduplicated: boolean;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 export interface EscrowAccountSnapshot {
@@ -4216,9 +4323,16 @@ export interface EscrowAccountSnapshot {
 export interface SolanaEscrowRpcLike {
   getAccountInfo?: (address: string) => Promise<unknown>;
   getEscrowStatus?: (escrowId: string) => Promise<EscrowAccountSnapshot>;
+  estimatePriorityFee?: (
+    record: EscrowRecord,
+  ) => Promise<number | PriorityFeeEstimate>;
   submitSettlement?: (
     record: EscrowRecord,
     idempotencyKey: string,
+    options?: {
+      priorityFeeMicroLamports?: number;
+      priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
+    },
   ) => Promise<{ txSignature: string }>;
 }
 
@@ -4314,9 +4428,43 @@ export class SolanaEscrowClient {
         nowUnixSeconds: request.nowUnixSeconds,
       });
 
+      let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+      if (
+        request.priorityFeeMicroLamports !== undefined ||
+        request.maxPriorityFeeMicroLamports !== undefined ||
+        typeof this.rpc.estimatePriorityFee === "function"
+      ) {
+        let estimatedFee: number | null = null;
+        if (
+          request.priorityFeeMicroLamports === undefined &&
+          typeof this.rpc.estimatePriorityFee === "function"
+        ) {
+          const estimated = await this.rpc.estimatePriorityFee(nextRecord);
+          estimatedFee =
+            typeof estimated === "number"
+              ? estimated
+              : estimated.microLamports;
+        }
+        priorityFeeDiagnostics = resolveCappedPriorityFee({
+          explicitMicroLamports: request.priorityFeeMicroLamports,
+          estimatedMicroLamports: estimatedFee,
+          maxPriorityFeeMicroLamports: request.maxPriorityFeeMicroLamports,
+        });
+      }
+
       const txResult =
         typeof this.rpc.submitSettlement === "function"
-          ? await this.rpc.submitSettlement(nextRecord, request.idempotencyKey)
+          ? await this.rpc.submitSettlement(
+              nextRecord,
+              request.idempotencyKey,
+              priorityFeeDiagnostics
+                ? {
+                    priorityFeeMicroLamports:
+                      priorityFeeDiagnostics.appliedMicroLamports,
+                    priorityFeeDiagnostics,
+                  }
+                : undefined,
+            )
           : {
               txSignature: `sig_${request.escrowId}_${request.idempotencyKey}`,
             };
@@ -4328,6 +4476,7 @@ export class SolanaEscrowClient {
         txSignature: txResult.txSignature,
         escrow: nextRecord,
         deduplicated: false,
+        ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
       };
       this.settlementReceipts.set(request.idempotencyKey, receipt);
       return receipt;

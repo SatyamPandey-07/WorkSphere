@@ -26,32 +26,34 @@ import type { GuestInfo, InviteResult } from "./types";
 
 /**
  * Create BookingGuest records in the database.
- * Uses raw SQL via Prisma $executeRaw since the BookingGuest model
- * has been added to the schema. Falls back to creating records directly.
+ * Normalizes email addresses and executes insertions within a transaction
+ * to prevent partial writes.
  */
 async function createGuestRecords(
   bookingId: string,
   guests: GuestInfo[],
 ): Promise<Array<{ id: string; email: string; name?: string | null }>> {
-  const records = await Promise.all(
-    guests.map((guest) =>
-      prisma.bookingGuest.create({
-        data: {
-          bookingId,
-          email: guest.email,
-          name: guest.name || null,
-          phone: guest.phone || null,
-          status: "PENDING",
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-        },
-      }),
-    ),
+  const operations = guests.map((guest) =>
+    prisma.bookingGuest.create({
+      data: {
+        bookingId,
+        email: guest.email.trim().toLowerCase(),
+        name: guest.name || null,
+        phone: guest.phone || null,
+        status: "PENDING",
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
+    }),
   );
-  return records;
+
+  if (typeof prisma.$transaction === "function") {
+    return await prisma.$transaction(operations);
+  }
+  return await Promise.all(operations);
 }
 
 /**
@@ -97,6 +99,7 @@ export async function sendGuestInvitation(params: {
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   durationMinutes: number;
+  timeZone?: string | null;
 }): Promise<InviteResult> {
   try {
     // 1. Build ICS event data
@@ -115,6 +118,7 @@ export async function sendGuestInvitation(params: {
       date: params.date,
       time: params.time,
       durationMinutes: params.durationMinutes,
+      timeZone: params.timeZone,
     });
 
     // 2. Generate ICS content
@@ -208,6 +212,7 @@ export async function inviteGuestsToBooking(
       date: string;
       time: string;
       durationMinutes: number;
+      timeZone?: string | null;
     };
   }>,
 ): Promise<InviteResult[]> {
@@ -243,6 +248,7 @@ export async function inviteGuestsToBooking(
           date: details.booking.date,
           time: details.booking.time,
           durationMinutes: details.booking.durationMinutes,
+          timeZone: details.booking.timeZone,
         }),
       ),
     );

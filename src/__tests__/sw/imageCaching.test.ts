@@ -5,10 +5,151 @@ import {
   VENUE_PHOTO_CACHE_NAME,
   VENUE_PHOTO_MAX_AGE_SECONDS,
   handleVenuePhotoFetch,
+  isQuotaExceededError,
   isVenuePhotoUrl,
 } from "@/sw";
 
 describe("Service Worker Venue Gallery Photo Caching", () => {
+  describe("Quota handling", () => {
+    it("detects quota errors across browser-specific names and codes", () => {
+      expect(isQuotaExceededError({ name: "QuotaExceededError" })).toBe(true);
+      expect(isQuotaExceededError({ name: "NS_ERROR_DOM_QUOTA_REACHED" })).toBe(
+        true,
+      );
+      expect(isQuotaExceededError({ code: 22 })).toBe(true);
+      expect(isQuotaExceededError(new Error("other failure"))).toBe(false);
+      expect(isQuotaExceededError("QuotaExceededError")).toBe(false);
+    });
+
+    it("evicts the oldest 20% from the image cache", async () => {
+      const deleted: string[] = [];
+      const urls = Array.from(
+        { length: 10 },
+        (_, index) => `https://images.pexels.com/photo-${index}.jpg`,
+      );
+      const cache = {
+        match: jest.fn(),
+        put: jest.fn(),
+        delete: jest.fn().mockImplementation(async (request: Request) => {
+          deleted.push(request.url);
+          return true;
+        }),
+        keys: jest
+          .fn()
+          .mockResolvedValue(urls.map((url) => new Request(url))),
+      };
+      const plugin = new CacheExpirationPlugin();
+      urls.forEach((url, index) => plugin.updateTimestamp(url, index + 1));
+
+      await expect(plugin.evictOldestEntries(cache)).resolves.toEqual(urls.slice(0, 2));
+      expect(deleted).toEqual(urls.slice(0, 2));
+    });
+
+    it("handles empty and small image caches without invalid eviction counts", async () => {
+      const cache = {
+        match: jest.fn(),
+        put: jest.fn(),
+        delete: jest.fn().mockResolvedValue(true),
+        keys: jest.fn().mockResolvedValue([]),
+      };
+      const plugin = new CacheExpirationPlugin();
+
+      await expect(plugin.evictOldestEntries(cache)).resolves.toEqual([]);
+      cache.keys.mockResolvedValue([
+        new Request("https://images.pexels.com/only.jpg"),
+      ]);
+      await expect(plugin.evictOldestEntries(cache)).resolves.toEqual([
+        "https://images.pexels.com/only.jpg",
+      ]);
+    });
+
+    it("evicts and retries once after quota failure", async () => {
+      const cachedUrls = [
+        "https://images.pexels.com/old-1.jpg",
+        "https://images.pexels.com/old-2.jpg",
+        "https://images.pexels.com/old-3.jpg",
+        "https://images.pexels.com/old-4.jpg",
+        "https://images.pexels.com/old-5.jpg",
+      ];
+      const deleted: string[] = [];
+      const cache = {
+        match: jest.fn(),
+        put: jest
+          .fn()
+          .mockRejectedValueOnce({ name: "QuotaExceededError" })
+          .mockResolvedValueOnce(undefined),
+        delete: jest.fn().mockImplementation(async (request: Request) => {
+          deleted.push(request.url);
+          return true;
+        }),
+        keys: jest
+          .fn()
+          .mockResolvedValue(cachedUrls.map((url) => new Request(url))),
+      };
+      const strategy = new StaleWhileRevalidate();
+      cachedUrls.forEach((url, index) =>
+        strategy.expiration.updateTimestamp(url, Date.now() - 1000 + index),
+      );
+
+      const request = new Request("https://images.pexels.com/new.jpg");
+      const response = await strategy.handle({
+        request,
+        cacheInstance: cache,
+        fetchFn: jest.fn().mockResolvedValue(new Response("new image")),
+      });
+
+      expect(await response.text()).toBe("new image");
+      expect(deleted).toEqual(cachedUrls.slice(0, 1));
+      expect(cache.put).toHaveBeenCalledTimes(2);
+      expect(strategy.expiration.hasEntry(request.url)).toBe(true);
+    });
+
+    it("does not retry indefinitely when the retry also exceeds quota", async () => {
+      const cache = {
+        match: jest.fn().mockResolvedValue(undefined),
+        put: jest
+          .fn()
+          .mockRejectedValue({ name: "QuotaExceededError" }),
+        delete: jest.fn().mockResolvedValue(true),
+        keys: jest.fn().mockResolvedValue([]),
+      };
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      try {
+        const response = await handleVenuePhotoFetch(
+          new Request("https://images.pexels.com/large.jpg"),
+          undefined,
+          cache,
+          jest.fn().mockResolvedValue(new Response("image")),
+        );
+        expect(await response.text()).toBe("image");
+        expect(cache.put).toHaveBeenCalledTimes(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("preserves existing non-quota cache failure behavior without retrying", async () => {
+      const cache = {
+        match: jest.fn().mockResolvedValue(undefined),
+        put: jest.fn().mockRejectedValue(new Error("cache unavailable")),
+        delete: jest.fn().mockResolvedValue(true),
+        keys: jest.fn().mockResolvedValue([]),
+      };
+
+      const response = await handleVenuePhotoFetch(
+        new Request("https://images.pexels.com/photo.jpg"),
+        undefined,
+        cache,
+        jest.fn().mockResolvedValue(new Response("image")),
+      );
+
+      expect(response.status).toBe(504);
+      expect(cache.put).toHaveBeenCalledTimes(1);
+      expect(cache.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe("URL Pattern Matching", () => {
     it("identifies Cloudinary photo URLs correctly", () => {
       expect(
@@ -218,5 +359,6 @@ describe("Service Worker Venue Gallery Photo Caching", () => {
 
       expect(response.status).toBe(504);
     });
+
   });
 });

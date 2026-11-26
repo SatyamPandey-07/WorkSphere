@@ -1,6 +1,6 @@
 # Solana Gasless Relayer: Architecture, Fee Limits & RPC Configuration
 
-This document specifies the architecture, environment configuration, fee validation ceilings, and cryptographic partial signing protocol for WorkSphere's Solana Gasless Relayer ([`src/lib/payments/solanaRelayer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaRelayer.ts), [`src/lib/payments/solanaPay.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaPay.ts), and [`src/app/api/payments/solana/relay/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/payments/solana/relay/route.ts)).
+This document specifies the architecture, environment configuration, fee validation ceilings, and cryptographic partial signing protocol for WorkSphere's Solana Gasless Relayer ([`src/lib/payments/solanaRelayer.ts`](../../src/lib/payments/solanaRelayer.ts), [`src/lib/payments/solanaPay.ts`](../../src/lib/payments/solanaPay.ts), and [`src/app/api/payments/solana/relay/route.ts`](../../src/app/api/payments/solana/relay/route.ts)).
 
 ---
 
@@ -105,14 +105,14 @@ Because the relayer covers transaction costs on behalf of unauthenticated or ext
 
 ### 4.1 Maximum Serialized Payload Size
 Solana MTU limits IPv6 packets to $1{,}280$ bytes, yielding a maximum serialized transaction size of **$1{,}232$ bytes**.
-- In [`solanaRelayer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaRelayer.ts#L11):
+- In [`solanaRelayer.ts`](../../src/lib/payments/solanaRelayer.ts#L11):
   ```typescript
   const MAX_SERIALIZED_TRANSACTION_BYTES = 1_232;
   ```
 - Any base64 payload exceeding $1{,}232$ bytes is rejected immediately with `Transaction has an invalid size`.
 
 ### 4.2 Fee Validation (`validateRelayFeeLamports`)
-Before attaching the relayer signature, the relayer queries the cluster for exact execution fees using `connection.getFeeForMessage()` and validates it via [`validateRelayFeeLamports`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaPay.ts#L21-L35):
+Before attaching the relayer signature, the relayer queries the cluster for exact execution fees using `connection.getFeeForMessage()` and validates it via [`validateRelayFeeLamports`](../../src/lib/payments/solanaPay.ts#L21-L35):
 
 ```typescript
 export function validateRelayFeeLamports(

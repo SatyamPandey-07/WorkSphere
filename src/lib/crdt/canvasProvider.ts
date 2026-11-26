@@ -1,444 +1,467 @@
 import * as Y from "yjs";
-import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import { redis } from "@/lib/redis";
 
-/**
- * Offline change-journal replay buffer for decentralized canvas sync (#7528).
- *
- * When a nomad is editing a board over unstable mobile coverage the socket can
- * drop mid-edit. The journal persists every unconfirmed local transaction block
- * to IndexedDB (surviving browser restarts) and re-streams the backlog in
- * sequence order once the transport reconnects, before awareness sync resumes.
- * A per-block checksum plus a post-sync document checksum let peers detect
- * corruption and divergence instead of silently drifting apart.
- */
+export const COMPACTION_ENTRY_THRESHOLD = 50;
+export const COMPACTION_BYTE_THRESHOLD = 64 * 1024; // 64 KB
+export const MAX_WS_FRAME_PAYLOAD_BYTES = 32 * 1024; // 32 KB per binary chunk
 
-export const CANVAS_JOURNAL_DB = "worksphere-crdt-canvas-journal";
-const JOURNAL_STORE = "journal";
-const JOURNAL_META_STORE = "meta";
-const JOURNAL_DB_VERSION = 1;
+const BINARY_FRAME_MAGIC = 0x57; // 'W'
+const BINARY_FRAME_VERSION = 0x01;
+const FRAME_HEADER_BYTES = 16;
 
-/** Sentinel transaction origin for updates that came from journal replay. */
-export const JOURNAL_REPLAY_ORIGIN = "journal-replay";
-
-/** A single durable, ordered change block queued while offline. */
-export interface JournalBlock {
-  /** Monotonic per-room sequence number (the replay ordering key). */
-  seq: number;
-  roomName: string;
-  /** Serialized `Y.encodeStateAsUpdate` bytes, stored as a plain array. */
-  update: number[];
-  /** FNV-1a 64-bit checksum of `update` for corruption detection. */
-  checksum: string;
+export interface JournalEntry {
+  id?: number;
+  roomId: string;
+  update: Uint8Array;
+  byteLength: number;
   createdAt: number;
 }
 
-/** Outcome of a journal replay, including post-sync convergence state. */
-export interface ReplayResult {
-  /** Number of blocks successfully re-streamed and cleared. */
-  replayed: number;
-  /** Checksum of the local document after replay. */
-  checksum: string;
-  /** Whether local and remote checksums matched (`null` when not supplied). */
-  converged: boolean | null;
+export interface ChunkedBinaryFrame {
+  transferId: number;
+  chunkIndex: number;
+  totalChunks: number;
+  payload: Uint8Array;
+  wireBuffer: Uint8Array;
+}
+
+export interface PartyKitSocketLike {
+  readyState: number;
+  send: (data: string | ArrayBuffer | Uint8Array) => void;
+}
+
+export interface CanvasProviderOptions {
+  roomId: string;
+  doc: Y.Doc;
+  dbName?: string;
+  entryThreshold?: number;
+  byteThreshold?: number;
+  maxChunkBytes?: number;
+  mergeUpdatesFn?: (updates: Uint8Array[]) => Uint8Array;
 }
 
 /**
- * Minimal transport abstraction the provider streams updates through. The
- * caller wires this to its WebSocket/PartyKit connection.
+ * Encodes a binary payload into MTU-safe framed chunks for PartyKit WebSocket transmission:
+ * [0]: Magic (0x57) | [1]: Version (0x01) | [2..3]: Reserved
+ * [4..7]: Transfer ID (uint32 BE) | [8..11]: Chunk Index (uint32 BE) | [12..15]: Total Chunks (uint32 BE)
+ * [16..N]: Slice payload
  */
-export interface CanvasTransport {
-  send(update: Uint8Array): void;
-  isConnected(): boolean;
-}
+export function encodeBinaryFrameChunks(
+  mergedUpdate: Uint8Array,
+  maxChunkPayloadBytes: number = MAX_WS_FRAME_PAYLOAD_BYTES,
+  transferId: number = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>>
+    0,
+): ChunkedBinaryFrame[] {
+  const safeMax = Math.max(256, maxChunkPayloadBytes);
+  const totalChunks = Math.max(1, Math.ceil(mergedUpdate.byteLength / safeMax));
+  const frames: ChunkedBinaryFrame[] = [];
 
-export interface CompactionConfig {
-  maxOperations?: number;
-  checkpointIntervalMs?: number;
-  /**
-   * Force-enable/disable the IndexedDB journal. Defaults to on whenever a
-   * transport is supplied and IndexedDB is available.
-   */
-  enableJournal?: boolean;
-  /** Override the journal database name (tests / multiple boards). */
-  journalDbName?: string;
-  /** Transport used for live streaming and offline replay. */
-  transport?: CanvasTransport;
-  /** Invoked after a reconnect replay completes, to resume awareness sync. */
-  onReconnected?: (result: ReplayResult) => void;
-}
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const start = chunkIndex * safeMax;
+    const end = Math.min(start + safeMax, mergedUpdate.byteLength);
+    const payload = mergedUpdate.subarray(start, end);
 
-interface CanvasJournalDB extends DBSchema {
-  journal: {
-    key: number;
-    value: JournalBlock;
-    indexes: { "by-room": string };
-  };
-  meta: {
-    key: string;
-    value: { roomName: string; lastSeq: number };
-  };
-}
+    const wireBuffer = new Uint8Array(FRAME_HEADER_BYTES + payload.byteLength);
+    const view = new DataView(wireBuffer.buffer);
 
-/**
- * FNV-1a 64-bit hash of a byte array, rendered as a zero-padded hex string.
- * Deterministic and dependency-free so it runs identically in the browser and
- * on the server. Two peers that have integrated the same set of Yjs updates
- * produce byte-identical `Y.encodeStateAsUpdate` output, so equal checksums
- * imply converged documents.
- */
-export function computeChecksum(bytes: Uint8Array): string {
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  const mask = 0xffffffffffffffffn;
-  for (let i = 0; i < bytes.length; i++) {
-    hash ^= BigInt(bytes[i]);
-    hash = (hash * prime) & mask;
+    wireBuffer[0] = BINARY_FRAME_MAGIC;
+    wireBuffer[1] = BINARY_FRAME_VERSION;
+    wireBuffer[2] = 0;
+    wireBuffer[3] = 0;
+    view.setUint32(4, transferId, false);
+    view.setUint32(8, chunkIndex, false);
+    view.setUint32(12, totalChunks, false);
+    wireBuffer.set(payload, FRAME_HEADER_BYTES);
+
+    frames.push({
+      transferId,
+      chunkIndex,
+      totalChunks,
+      payload,
+      wireBuffer,
+    });
   }
-  return hash.toString(16).padStart(16, "0");
+
+  return frames;
 }
 
 /**
- * Durable, room-scoped append-only journal backed by IndexedDB.
- *
- * Sequence numbers are persisted in a companion `meta` store so they stay
- * monotonic across removals and browser restarts.
+ * Reassembles framed binary chunks received over PartyKit WebSocket into a single Yjs update.
  */
-export class CanvasChangeJournal {
-  private dbPromise: Promise<IDBPDatabase<CanvasJournalDB>> | null = null;
-
-  constructor(private readonly dbName: string = CANVAS_JOURNAL_DB) {}
-
-  private getDb(): Promise<IDBPDatabase<CanvasJournalDB>> {
-    if (!this.dbPromise) {
-      this.dbPromise = openDB<CanvasJournalDB>(
-        this.dbName,
-        JOURNAL_DB_VERSION,
-        {
-          upgrade(db) {
-            if (!db.objectStoreNames.contains(JOURNAL_STORE)) {
-              const store = db.createObjectStore(JOURNAL_STORE, {
-                keyPath: "seq",
-              });
-              store.createIndex("by-room", "roomName");
-            }
-            if (!db.objectStoreNames.contains(JOURNAL_META_STORE)) {
-              db.createObjectStore(JOURNAL_META_STORE, { keyPath: "roomName" });
-            }
-          },
-        },
-      );
+export class BinaryFrameReassembler {
+  private readonly transfers = new Map<
+    number,
+    {
+      totalChunks: number;
+      received: Map<number, Uint8Array>;
+      updatedAt: number;
     }
-    return this.dbPromise;
-  }
+  >();
 
-  /** Drop the cached connection (test isolation / forced reopen). */
-  resetCache(): void {
-    this.dbPromise = null;
-  }
-
-  /**
-   * Persist one transaction block with the next sequence number.
-   *
-   * The counter read-modify-write and the block insert share a single
-   * `readwrite` transaction so concurrent offline edits can't observe a stale
-   * counter and collide on the same sequence number.
-   */
-  async append(
-    roomName: string,
-    update: Uint8Array,
-  ): Promise<JournalBlock | null> {
-    if (!roomName || !roomName.trim() || !update || update.length === 0) {
+  public pushFrame(wireBuffer: Uint8Array): Uint8Array | null {
+    if (
+      wireBuffer.byteLength < FRAME_HEADER_BYTES ||
+      wireBuffer[0] !== BINARY_FRAME_MAGIC ||
+      wireBuffer[1] !== BINARY_FRAME_VERSION
+    ) {
       return null;
     }
-    const trimmed = roomName.trim();
-    const db = await this.getDb();
 
-    const tx = db.transaction([JOURNAL_META_STORE, JOURNAL_STORE], "readwrite");
-    const metaStore = tx.objectStore(JOURNAL_META_STORE);
-    const journalStore = tx.objectStore(JOURNAL_STORE);
-
-    const meta = await metaStore.get(trimmed);
-    const seq = (meta?.lastSeq ?? 0) + 1;
-    await metaStore.put({ roomName: trimmed, lastSeq: seq });
-
-    const block: JournalBlock = {
-      seq,
-      roomName: trimmed,
-      update: Array.from(update),
-      checksum: computeChecksum(update),
-      createdAt: Date.now(),
-    };
-    await journalStore.put(block);
-    await tx.done;
-    return block;
-  }
-
-  /** All pending blocks for a room, ordered by ascending sequence. */
-  async listPending(roomName: string): Promise<JournalBlock[]> {
-    const db = await this.getDb();
-    const blocks = await db.getAllFromIndex(
-      JOURNAL_STORE,
-      "by-room",
-      roomName,
+    const view = new DataView(
+      wireBuffer.buffer,
+      wireBuffer.byteOffset,
+      wireBuffer.byteLength,
     );
-    return blocks.sort((a, b) => a.seq - b.seq);
-  }
+    const transferId = view.getUint32(4, false);
+    const chunkIndex = view.getUint32(8, false);
+    const totalChunks = view.getUint32(12, false);
 
-  async remove(seq: number): Promise<void> {
-    const db = await this.getDb();
-    await db.delete(JOURNAL_STORE, seq);
-  }
+    if (totalChunks === 0 || chunkIndex >= totalChunks) {
+      return null;
+    }
 
-  async clearRoom(roomName: string): Promise<void> {
-    const db = await this.getDb();
-    const blocks = await db.getAllFromIndex(
-      JOURNAL_STORE,
-      "by-room",
-      roomName,
-    );
-    const tx = db.transaction(JOURNAL_STORE, "readwrite");
-    await Promise.all([
-      ...blocks.map((block) => tx.store.delete(block.seq)),
-      tx.done,
-    ]);
-  }
+    const payload = wireBuffer.slice(FRAME_HEADER_BYTES);
 
-  async size(roomName: string): Promise<number> {
-    return (await this.listPending(roomName)).length;
+    if (totalChunks === 1) {
+      return payload;
+    }
+
+    let bucket = this.transfers.get(transferId);
+    if (!bucket) {
+      bucket = {
+        totalChunks,
+        received: new Map<number, Uint8Array>(),
+        updatedAt: Date.now(),
+      };
+      this.transfers.set(transferId, bucket);
+    }
+
+    bucket.received.set(chunkIndex, payload);
+    bucket.updatedAt = Date.now();
+
+    if (bucket.received.size < totalChunks) {
+      return null;
+    }
+
+    let totalBytes = 0;
+    for (let i = 0; i < totalChunks; i++) {
+      const part = bucket.received.get(i);
+      if (!part) return null;
+      totalBytes += part.byteLength;
+    }
+
+    const assembled = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (let i = 0; i < totalChunks; i++) {
+      const part = bucket.received.get(i)!;
+      assembled.set(part, offset);
+      offset += part.byteLength;
+    }
+
+    this.transfers.delete(transferId);
+    return assembled;
   }
 }
 
-export class NomadCanvasProvider {
-  public doc: Y.Doc;
-  public roomName: string;
-  public readonly journal: CanvasChangeJournal | null;
-  private opCount: number = 0;
-  private maxOps: number;
-  private checkpointIntervalMs: number;
-  private timer: NodeJS.Timeout | null = null;
-  private transport?: CanvasTransport;
-  private onReconnected?: (result: ReplayResult) => void;
-  private connected: boolean;
-  private replaying = false;
+/**
+ * Offline-resilient CRDT IndexedDB change journal with automatic Y.mergeUpdates compaction
+ * and chunked binary framing replay over PartyKit.
+ */
+export class CompactingCrdtJournal {
+  private readonly roomId: string;
+  private readonly dbName: string;
+  private readonly entryThreshold: number;
+  private readonly byteThreshold: number;
+  private readonly maxChunkBytes: number;
+  private readonly mergeUpdatesFn: (updates: Uint8Array[]) => Uint8Array;
 
-  constructor(roomName: string, config: CompactionConfig = {}) {
-    this.roomName = roomName;
-    this.doc = new Y.Doc();
-    this.maxOps = config.maxOperations || 500;
-    this.checkpointIntervalMs = config.checkpointIntervalMs || 5 * 60 * 1000;
-    this.transport = config.transport;
-    this.onReconnected = config.onReconnected;
-    this.connected = config.transport ? config.transport.isConnected() : true;
+  private memoryFallback: JournalEntry[] = [];
+  private isCompacting = false;
 
-    const journalEnabled =
-      config.enableJournal ??
-      (!!config.transport && typeof indexedDB !== "undefined");
-    this.journal = journalEnabled
-      ? new CanvasChangeJournal(config.journalDbName)
-      : null;
+  constructor(options: CanvasProviderOptions) {
+    this.roomId = options.roomId;
+    this.dbName = options.dbName ?? "worksphere-crdt-journal";
+    this.entryThreshold = options.entryThreshold ?? COMPACTION_ENTRY_THRESHOLD;
+    this.byteThreshold = options.byteThreshold ?? COMPACTION_BYTE_THRESHOLD;
+    this.maxChunkBytes = options.maxChunkBytes ?? MAX_WS_FRAME_PAYLOAD_BYTES;
+    this.mergeUpdatesFn = options.mergeUpdatesFn ?? Y.mergeUpdates;
+  }
 
-    // Listen to local & remote update transactions
-    this.doc.on("update", (update: Uint8Array, origin: unknown) => {
-      this.opCount++;
-      if (this.opCount >= this.maxOps) {
-        this.compactAndCheckpoint();
+  private openDatabase(): Promise<IDBDatabase | null> {
+    if (typeof indexedDB === "undefined") {
+      return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const request = indexedDB.open(this.dbName, 1);
+
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains("journal")) {
+            const store = db.createObjectStore("journal", {
+              keyPath: "id",
+              autoIncrement: true,
+            });
+            store.createIndex("by_room", "roomId", { unique: false });
+          }
+        };
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+      } catch {
+        resolve(null);
       }
-
-      // Replayed blocks are already integrated; never re-journal them.
-      if (origin === JOURNAL_REPLAY_ORIGIN) return;
-      this.dispatchUpdate(update);
     });
-
-    // Start periodic 5-minute compaction timer
-    this.startPeriodicCheckpoint();
   }
 
   /**
-   * Routes a fresh local update either straight to the wire (online) or into
-   * the durable journal (offline).
+   * Appends an incremental Yjs update frame to the journal and triggers automatic
+   * Y.mergeUpdates compaction if entry count > 50 or buffered bytes > 64 KB.
    */
-  private dispatchUpdate(update: Uint8Array): void {
-    if (!this.transport) return;
-    if (this.transport.isConnected()) {
-      this.transport.send(update);
-    } else {
-      void this.journalUpdate(update);
-    }
-  }
-
-  private async journalUpdate(update: Uint8Array): Promise<void> {
-    if (!this.journal) return;
-    try {
-      await this.journal.append(this.roomName, update);
-    } catch (err) {
-      console.error("[CRDT Journal] Failed to persist offline update:", err);
-    }
-  }
-
-  /** Current connection state as tracked by the provider. */
-  public get isConnected(): boolean {
-    return this.connected;
-  }
-
-  /**
-   * Update connection state. Transitioning from offline to online triggers a
-   * journal replay so queued blocks are flushed before live sync resumes.
-   */
-  public setConnected(connected: boolean): void {
-    const wasOffline = !this.connected;
-    this.connected = connected;
-    if (connected && wasOffline && this.journal) {
-      void this.replayJournal();
-    }
-  }
-
-  /** Number of unconfirmed blocks currently buffered for this room. */
-  public async pendingJournalCount(): Promise<number> {
-    return this.journal ? this.journal.size(this.roomName) : 0;
-  }
-
-  /**
-   * Re-streams all pending journal blocks in topological (sequence) order,
-   * verifying each block's checksum before it goes on the wire and clearing it
-   * once acknowledged. If `remoteChecksum` is supplied, the local document
-   * checksum is compared against it to confirm post-sync convergence.
-   */
-  public async replayJournal(remoteChecksum?: string): Promise<ReplayResult> {
-    if (this.replaying) {
+  public async appendUpdate(update: Uint8Array): Promise<{
+    compacted: boolean;
+    entryCount: number;
+    totalBytes: number;
+  }> {
+    if (update.byteLength === 0) {
+      const current = await this.getAllEntries();
+      const bytes = current.reduce((acc, item) => acc + item.byteLength, 0);
       return {
-        replayed: 0,
-        checksum: this.getDocumentChecksum(),
-        converged: remoteChecksum
-          ? this.getDocumentChecksum() === remoteChecksum
-          : null,
+        compacted: false,
+        entryCount: current.length,
+        totalBytes: bytes,
       };
     }
 
-    this.replaying = true;
-    let replayed = 0;
+    const entry: JournalEntry = {
+      roomId: this.roomId,
+      update: new Uint8Array(update),
+      byteLength: update.byteLength,
+      createdAt: Date.now(),
+    };
+
+    const db = await this.openDatabase();
+    if (!db) {
+      this.memoryFallback.push(entry);
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("journal", "readwrite");
+        tx.objectStore("journal").add(entry);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    }
+
+    const entries = await this.getAllEntries();
+    const totalBytes = entries.reduce((sum, item) => sum + item.byteLength, 0);
+
+    if (
+      entries.length > this.entryThreshold ||
+      totalBytes > this.byteThreshold
+    ) {
+      await this.compact();
+      const postEntries = await this.getAllEntries();
+      const postBytes = postEntries.reduce(
+        (sum, item) => sum + item.byteLength,
+        0,
+      );
+      return {
+        compacted: true,
+        entryCount: postEntries.length,
+        totalBytes: postBytes,
+      };
+    }
+
+    return {
+      compacted: false,
+      entryCount: entries.length,
+      totalBytes,
+    };
+  }
+
+  public async getAllEntries(): Promise<JournalEntry[]> {
+    const db = await this.openDatabase();
+    if (!db) {
+      return this.memoryFallback.filter((e) => e.roomId === this.roomId);
+    }
+
+    return new Promise<JournalEntry[]>((resolve) => {
+      const tx = db.transaction("journal", "readonly");
+      const index = tx.objectStore("journal").index("by_room");
+      const req = index.getAll(IDBKeyRange.only(this.roomId));
+
+      req.onsuccess = () => {
+        db.close();
+        resolve((req.result as JournalEntry[]) ?? []);
+      };
+      req.onerror = () => {
+        db.close();
+        resolve([]);
+      };
+    });
+  }
+
+  /**
+   * Compacts all queued incremental frames for `roomId` into a single merged
+   * state vector update via `Y.mergeUpdates(queuedFrames)`.
+   */
+  public async compact(): Promise<Uint8Array | null> {
+    if (this.isCompacting) {
+      return null;
+    }
+
+    this.isCompacting = true;
     try {
-      const pending = this.journal
-        ? await this.journal.listPending(this.roomName)
-        : [];
-
-      for (const block of pending) {
-        const update = new Uint8Array(block.update);
-
-        if (computeChecksum(update) !== block.checksum) {
-          console.error(
-            `[CRDT Journal] Checksum mismatch on block #${block.seq}; dropping corrupt block`,
-          );
-          if (this.journal) await this.journal.remove(block.seq);
-          continue;
-        }
-
-        // Nothing to stream to yet: keep the backlog for the next attempt.
-        if (!this.transport) break;
-
-        try {
-          this.transport.send(update);
-        } catch (err) {
-          console.error(
-            "[CRDT Journal] Transport failed mid-replay; keeping remaining blocks:",
-            err,
-          );
-          break;
-        }
-
-        if (this.journal) await this.journal.remove(block.seq);
-        replayed++;
+      const entries = await this.getAllEntries();
+      if (entries.length === 0) {
+        return null;
       }
 
-      const checksum = this.getDocumentChecksum();
-      const converged =
-        remoteChecksum != null ? checksum === remoteChecksum : null;
-      if (remoteChecksum != null && !converged) {
-        console.warn(
-          `[CRDT Journal] Post-sync divergence for room ${this.roomName}: local=${checksum} remote=${remoteChecksum}`,
-        );
+      if (entries.length === 1) {
+        return entries[0].update;
       }
 
-      const result: ReplayResult = { replayed, checksum, converged };
-      this.onReconnected?.(result);
-      return result;
+      const queuedFrames = entries.map((entry) => entry.update);
+      const mergedUpdate = this.mergeUpdatesFn(queuedFrames);
+
+      const compactedEntry: JournalEntry = {
+        roomId: this.roomId,
+        update: mergedUpdate,
+        byteLength: mergedUpdate.byteLength,
+        createdAt: Date.now(),
+      };
+
+      const db = await this.openDatabase();
+      if (!db) {
+        this.memoryFallback = [
+          ...this.memoryFallback.filter((e) => e.roomId !== this.roomId),
+          compactedEntry,
+        ];
+        return mergedUpdate;
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("journal", "readwrite");
+        const store = tx.objectStore("journal");
+
+        for (const existing of entries) {
+          if (typeof existing.id === "number") {
+            store.delete(existing.id);
+          }
+        }
+        store.add(compactedEntry);
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+
+      db.close();
+      return mergedUpdate;
     } finally {
-      this.replaying = false;
+      this.isCompacting = false;
     }
   }
 
-  /** Checksum of the current local document state. */
-  public getDocumentChecksum(): string {
-    return computeChecksum(Y.encodeStateAsUpdate(this.doc));
-  }
-
-  /** True when the local document matches the supplied remote checksum. */
-  public verifyConvergence(remoteChecksum: string): boolean {
-    return this.getDocumentChecksum() === remoteChecksum;
-  }
-
   /**
-   * Compacts current Y.Doc transaction history into a single update blob
-   * using Y.encodeStateAsUpdate and flushes checkpoint state.
+   * Compacts all offline updates into a single merged state update, splits it into
+   * <= 32 KB binary framed chunks, streams them over PartyKit, and clears the journal.
    */
-  public compactState(): Uint8Array {
-    return Y.encodeStateAsUpdate(this.doc);
-  }
-
-  /**
-   * Flushes compacted document snapshot to Redis storage.
-   */
-  public async compactAndCheckpoint(): Promise<Uint8Array> {
-    const compactedSnapshot = this.compactState();
-    const redisKey = `crdt:room:${this.roomName}:snapshot`;
-
-    try {
-      if (redis && typeof (redis as any).set === "function") {
-        // Store binary base64 string buffer in Redis
-        const snapshotBase64 = Buffer.from(compactedSnapshot).toString("base64");
-        await (redis as any).set(redisKey, snapshotBase64);
-      }
-      this.opCount = 0;
-      console.log(`[CRDT Compaction] Checkpointed room snapshot: ${this.roomName}`);
-    } catch (err) {
-      console.error("[CRDT Compaction] Failed to flush snapshot to Redis:", err);
+  public async flushToPartyKit(socket: PartyKitSocketLike): Promise<{
+    sentFrames: number;
+    mergedByteLength: number;
+  }> {
+    if (socket.readyState !== 1) {
+      return { sentFrames: 0, mergedByteLength: 0 };
     }
 
-    return compactedSnapshot;
+    const mergedUpdate = await this.compact();
+    if (!mergedUpdate || mergedUpdate.byteLength === 0) {
+      return { sentFrames: 0, mergedByteLength: 0 };
+    }
+
+    const frames = encodeBinaryFrameChunks(mergedUpdate, this.maxChunkBytes);
+    for (const frame of frames) {
+      socket.send(frame.wireBuffer);
+    }
+
+    await this.clear();
+
+    return {
+      sentFrames: frames.length,
+      mergedByteLength: mergedUpdate.byteLength,
+    };
   }
 
-  /**
-   * Loads compacted snapshot for a joining peer and merges state.
-   */
-  public async loadRoomSnapshot(): Promise<boolean> {
-    const redisKey = `crdt:room:${this.roomName}:snapshot`;
-    try {
-      if (redis && typeof (redis as any).get === "function") {
-        const snapshotBase64 = await (redis as any).get(redisKey);
-        if (snapshotBase64) {
-          const snapshotBuffer = Buffer.from(snapshotBase64, "base64");
-          Y.applyUpdate(this.doc, new Uint8Array(snapshotBuffer));
-          return true;
+  public async clear(): Promise<void> {
+    const db = await this.openDatabase();
+    if (!db) {
+      this.memoryFallback = this.memoryFallback.filter(
+        (e) => e.roomId !== this.roomId,
+      );
+      return;
+    }
+
+    const entries = await this.getAllEntries();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("journal", "readwrite");
+      const store = tx.objectStore("journal");
+      for (const entry of entries) {
+        if (typeof entry.id === "number") {
+          store.delete(entry.id);
         }
       }
-    } catch (err) {
-      console.error("[CRDT Compaction] Error loading snapshot:", err);
-    }
-    return false;
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }
+}
+
+export class OfflineCanvasProvider {
+  public readonly doc: Y.Doc;
+  public readonly journal: CompactingCrdtJournal;
+  private socket: PartyKitSocketLike | null = null;
+  private isOnline = true;
+
+  constructor(options: CanvasProviderOptions) {
+    this.doc = options.doc;
+    this.journal = new CompactingCrdtJournal(options);
+    this.doc.on("update", this.handleDocUpdate);
   }
 
-  private startPeriodicCheckpoint(): void {
-    this.timer = setInterval(() => {
-      if (this.opCount > 0) {
-        this.compactAndCheckpoint();
+  private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+    if (origin === "remote-sync") {
+      return;
+    }
+
+    if (this.isOnline && this.socket && this.socket.readyState === 1) {
+      const frames = encodeBinaryFrameChunks(update);
+      for (const frame of frames) {
+        this.socket.send(frame.wireBuffer);
       }
-    }, this.checkpointIntervalMs);
+      return;
+    }
+
+    void this.journal.appendUpdate(update);
+  };
+
+  public setOnlineStatus(online: boolean): void {
+    this.isOnline = online;
+  }
+
+  public async attachSocketAndReplay(socket: PartyKitSocketLike): Promise<{
+    sentFrames: number;
+    mergedByteLength: number;
+  }> {
+    this.socket = socket;
+    this.isOnline = true;
+    return this.journal.flushToPartyKit(socket);
   }
 
   public destroy(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-    }
-    this.doc.destroy();
+    this.doc.off("update", this.handleDocUpdate);
+    this.socket = null;
   }
 }

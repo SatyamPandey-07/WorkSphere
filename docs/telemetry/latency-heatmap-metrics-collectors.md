@@ -76,7 +76,7 @@ flowchart TB
 
 ## 2. Telemetry Pipeline & Data Ingestion Flow
 
-File: [`src/lib/telemetry/collectors/performanceCollector.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/telemetry/collectors/performanceCollector.ts)
+File: [`src/lib/telemetry/collectors/performanceCollector.ts`](../../src/lib/telemetry/collectors/performanceCollector.ts)
 
 ### Asynchronous Ingestion Hook (`recordApiLatency`)
 
@@ -313,7 +313,7 @@ function getLatencySeverity(p95Ms: number, count: number): LatencySeverity {
 
 ## 7. Admin UI Visualization Engine (`RouteLatencyHeatmap.tsx`)
 
-File: [`src/components/admin/RouteLatencyHeatmap.tsx`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/components/admin/RouteLatencyHeatmap.tsx)
+File: [`src/components/admin/RouteLatencyHeatmap.tsx`](../../src/components/admin/RouteLatencyHeatmap.tsx)
 
 ### 2D Temporal Heatmap Grid
 

@@ -20,8 +20,9 @@ jest.mock("@clerk/nextjs/server", () => ({
 import {
   isCsrfExemptRoute,
   ROUTE_PERMISSIONS,
-} from "../middleware";
-import { isPublicRoute, isAdminRoute } from "../lib/middleware/routes";
+  isPublicRoute,
+  isAdminRoute,
+} from "../lib/middleware/routes";
 
 describe("ROUTE_PERMISSIONS Manifest and Route Classification", () => {
   it("defines valid route permissions rules with required properties", () => {

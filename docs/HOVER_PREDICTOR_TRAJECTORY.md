@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-WorkSphere incorporates an intent-driven hover prediction algorithm implemented in the [`useHoverPredictor`](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/hooks/useHoverPredictor.ts) React hook.
+WorkSphere incorporates an intent-driven hover prediction algorithm implemented in the [`useHoverPredictor`](../src/hooks/useHoverPredictor.ts) React hook.
 
 The primary objective of the hover predictor is **anticipatory resource prefetching** (e.g., pre-rendering routes or pre-caching venue details via Next.js `router.prefetch` and Service Worker messaging). Instead of naively triggering expensive network requests whenever the cursor momentarily glances across an interactive element, the algorithm models the cursor's 2D velocity vector and dwell time.
 
@@ -215,7 +215,7 @@ export function WorkspaceListItem({ workspace }: WorkspaceListItemProps) {
 
 ### 4.2 Production Implementation in WorkSphere
 
-In [src/components/VenueCard.tsx](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/components/VenueCard.tsx), `useHoverPredictor` is attached to each card in the venue exploration grid:
+In [src/components/VenueCard.tsx](../src/components/VenueCard.tsx), `useHoverPredictor` is attached to each card in the venue exploration grid:
 
 ```tsx
 // src/components/VenueCard.tsx lines 119-139

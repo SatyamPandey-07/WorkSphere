@@ -423,3 +423,4 @@ In the browser, the Network tab should show `x-csrf-token` on mutating `/api` ca
 - [Rate Limiting](../RATE_LIMITING.md), [Rate Limiting Strategies](../architecture/rate-limiting-strategies.md) and [Redis Cache and Rate Limit](../REDIS_CACHE_AND_RATELIMIT.md)
 - [Authentication Guide](../AUTH_GUIDE.md): Clerk middleware, public and protected routes
 - [Cryptographic Security Architecture](../CRYPTOGRAPHIC_SECURITY_ARCHITECTURE.md)
+- [Escrow Smart Contract Threat Model](./ESCROW_SMART_CONTRACT_THREAT_MODEL.md): STRIDE analysis of the Payer -> Escrow Vault PDA -> Operator/Auto-Refund asset flow

@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-WorkSphere uses indoor wireless radio triangulation to power autonomous desk check-ins, indoor wayfinding, and spatial occupancy heatmaps. The **`RSSITrilaterationEngine`** ([`src/core/spatial/RSSITrilaterationEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/spatial/RSSITrilaterationEngine.ts)) and background worker ([`src/workers/wifiScanningWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/wifiScanningWorker.ts)) convert raw Received Signal Strength Indication (RSSI) samples into 2D/3D Euclidean coordinates $(x, y, z)$.
+WorkSphere uses indoor wireless radio triangulation to power autonomous desk check-ins, indoor wayfinding, and spatial occupancy heatmaps. The **`RSSITrilaterationEngine`** ([`src/core/spatial/RSSITrilaterationEngine.ts`](../../src/core/spatial/RSSITrilaterationEngine.ts)) and background worker ([`src/workers/wifiScanningWorker.ts`](../../src/workers/wifiScanningWorker.ts)) convert raw Received Signal Strength Indication (RSSI) samples into 2D/3D Euclidean coordinates $(x, y, z)$.
 
 Because electromagnetic waves attenuate non-linearly through walls, furniture, glass partitions, and human bodies, uncalibrated trilateration can yield errors exceeding $5\text{--}8\text{ meters}$. This manual provides venue managers and deployment engineers with:
 - **Log-Distance Path Loss Model Fundamentals:** Mathematical basis linking RSSI to metric distance.
@@ -110,7 +110,7 @@ Signal Drop (dB)
 
 ## 5. Multilateration & Error Weighting
 
-In [`src/core/spatial/RSSITrilaterationEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/spatial/RSSITrilaterationEngine.ts), proximity weighting minimizes error from distant APs:
+In [`src/core/spatial/RSSITrilaterationEngine.ts`](../../src/core/spatial/RSSITrilaterationEngine.ts), proximity weighting minimizes error from distant APs:
 
 $$W_i = \frac{1}{d_i^2}$$
 

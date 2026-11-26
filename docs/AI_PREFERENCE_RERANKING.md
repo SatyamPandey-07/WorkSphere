@@ -177,7 +177,7 @@ return scored.sort((a, b) => {
 
 ## 5. Client-Side React Hook Integration (`usePreferenceReranking`)
 
-The `usePreferenceReranking` hook ([src/hooks/usePreferenceReranking.ts](file:///d:/ECSOC/Worksphere/WorkSphere/src/hooks/usePreferenceReranking.ts#L38-L106)) binds the vector engine to Next.js components with minimal overhead.
+The `usePreferenceReranking` hook ([src/hooks/usePreferenceReranking.ts](../src/hooks/usePreferenceReranking.ts#L38-L106)) binds the vector engine to Next.js components with minimal overhead.
 
 ### Hook Lifecycle & State Management
 1. **Personalization Toggle State**: Persisted in `localStorage` under key `ai_personalization_enabled`.
@@ -325,10 +325,10 @@ npm test -- src/__tests__/lib/preferenceVector.test.ts src/__tests__/lib/cosineS
 
 ## 10. Symbol Mapping & Source Reference
 
-* [usePreferenceReranking](file:///d:/ECSOC/Worksphere/WorkSphere/src/hooks/usePreferenceReranking.ts#L38-L106): Main React hook exposing reranked results and toggle states.
-* [buildUserPreferenceVector](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/preferenceVector.ts#L8-L59): Constructs and normalizes user preference vectors from history.
-* [UserHistoryItem](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/preferenceVector.ts#L3-L6): Interface defining weighted user interaction events.
-* [rerankVenues](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/recommendation.ts#L27-L63): Core recommendation engine sorting candidate venues by similarity score.
-* [generateVenueFeatureVector](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/recommendation.ts#L9-L25): Maps raw venue metadata into binary feature vectors.
-* [cosineSimilarity](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/cosineSimilarity.ts#L1-L20): Computes vector dot product divided by $L_2$ norm product.
+* [usePreferenceReranking](../src/hooks/usePreferenceReranking.ts#L38-L106): Main React hook exposing reranked results and toggle states.
+* [buildUserPreferenceVector](../src/lib/preferenceVector.ts#L8-L59): Constructs and normalizes user preference vectors from history.
+* [UserHistoryItem](../src/lib/preferenceVector.ts#L3-L6): Interface defining weighted user interaction events.
+* [rerankVenues](../src/lib/recommendation.ts#L27-L63): Core recommendation engine sorting candidate venues by similarity score.
+* [generateVenueFeatureVector](../src/lib/recommendation.ts#L9-L25): Maps raw venue metadata into binary feature vectors.
+* [cosineSimilarity](../src/lib/cosineSimilarity.ts#L1-L20): Computes vector dot product divided by $L_2$ norm product.
 $$

@@ -1,0 +1,1252 @@
+openapi: 3.1.0
+
+info:
+  title: WorkSphere Environmental Acoustics & Telemetry API
+  version: 1.0.0
+  summary: Environmental noise telemetry, crowdsourced acoustic ratings, and RT60 reverberation mapping.
+  description: |
+    Comprehensive OpenAPI 3.1.0 specification for WorkSphere's environmental acoustics
+    and noise telemetry endpoints. This specification covers crowdsourced ambient sound
+    level ratings, automated hardware IoT noise sensor ingestion with Rényi Differential
+    Privacy (RDP) accounting, and room acoustic reverberation time (RT60) spatial mapping.
+
+    ### Acoustic Telemetry Architecture
+    1. **Crowdsourced User Reports (`/api/venues/{venueId}/noise-metrics`):**
+       Authenticated mobile and web clients submit ambient decibel readings ($30\text{--}90\text{ dBA}$)
+       and read aggregated time-bucket profiles (Morning, Lunch, Afternoon, Evening).
+    2. **Hardware IoT Telemetry Ingestion (`/api/telemetry/noise`):**
+       Microphone sensors installed across coworking spaces stream decibel observations
+       using `WORKER_SECRET` bearer token authentication. Gaussian differential privacy
+       protects visitor confidentiality against acoustic surveillance.
+    3. **Reverberation Time & Call Quality (`/api/venues/acoustics/rt60`):**
+       Crowdsourced impulse response measurements map room reverberation decay ($T_{60}$)
+       and compute call-quality suitability scores for hybrid remote workers.
+  contact:
+    name: WorkSphere Maintainers
+    url: https://github.com/SatyamPandey-07/WorkSphere
+  license:
+    name: MIT
+    identifier: MIT
+
+externalDocs:
+  description: WorkSphere Ambient Noise Monitoring & Microphone Calibration Guide
+  url: https://github.com/SatyamPandey-07/WorkSphere/blob/main/docs/features/ambient-noise-monitoring.md
+
+servers:
+  - url: /
+    description: Current WorkSphere deployment
+
+tags:
+  - name: Venue Noise Metrics
+    description: Crowdsourced ambient noise ratings, hourly bucket summaries, and spectrogram telemetry.
+  - name: Hardware Telemetry
+    description: Dedicated IoT hardware noise sensor data ingestion with differential privacy protection.
+  - name: Reverberation & RT60
+    description: Spatial acoustic reverberation time (RT60) ingestion and call-quality heatmap mapping.
+
+paths:
+  /api/venues/{venueId}/noise-metrics:
+    parameters:
+      - $ref: "#/components/parameters/VenueIdPath"
+    get:
+      operationId: getVenueNoiseMetrics
+      tags:
+        - Venue Noise Metrics
+      summary: Retrieve venue ambient noise metrics and acoustic bucket aggregates
+      description: |
+        Retrieves historical and aggregated noise metrics for a workspace venue.
+        Noise readings are grouped into four operational time buckets: Morning (< 11:00),
+        Lunch hour (11:00–14:00), Afternoon (14:00–18:00), and Evening (≥ 18:00).
+
+        Optional query parameters allow clients to filter by lookback window (`windowHours`),
+        restrict analysis to specific frequency bands (`frequencyBand`), or request raw
+        Fourier transform spectrogram frequency bins (`includeSpectrogram`).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/WindowHoursQuery"
+        - $ref: "#/components/parameters/FrequencyBandQuery"
+        - $ref: "#/components/parameters/IncludeSpectrogramQuery"
+      responses:
+        "200":
+          description: Aggregated noise metrics and time-bucket averages successfully retrieved.
+          headers:
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimit-Limit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimit-Remaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimit-Reset"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoiseMetricsResponse"
+              examples:
+                standardProfile:
+                  summary: Standard time-bucket noise summary
+                  value:
+                    venueId: cly019abc0001xyz890venue1
+                    buckets:
+                      - key: morning
+                        label: Morning
+                        averageDb: 41.2
+                        peakDb: 52.8
+                        samples: 14
+                      - key: lunch
+                        label: Lunch hour
+                        averageDb: 58.7
+                        peakDb: 71.3
+                        samples: 22
+                      - key: afternoon
+                        label: Afternoon
+                        averageDb: 49.4
+                        peakDb: 63.0
+                        samples: 18
+                      - key: evening
+                        label: Evening
+                        averageDb: 44.1
+                        peakDb: 55.6
+                        samples: 9
+                    totalSamples: 63
+                withSpectrogram:
+                  summary: Metrics with optional spectrogram frequency distribution
+                  value:
+                    venueId: cly019abc0001xyz890venue1
+                    buckets:
+                      - key: morning
+                        label: Morning
+                        averageDb: 41.2
+                        peakDb: 52.8
+                        samples: 14
+                      - key: lunch
+                        label: Lunch hour
+                        averageDb: 58.7
+                        peakDb: 71.3
+                        samples: 22
+                      - key: afternoon
+                        label: Afternoon
+                        averageDb: 49.4
+                        peakDb: 63.0
+                        samples: 18
+                      - key: evening
+                        label: Evening
+                        averageDb: 44.1
+                        peakDb: 55.6
+                        samples: 9
+                    totalSamples: 63
+                    spectrogram:
+                      sampleRate: 44100
+                      windowHours: 24
+                      frequencyBand: all
+                      bands:
+                        - band: low
+                          frequencyRange: 20Hz-250Hz
+                          averageEnergyDb: 36.4
+                          peakFrequencyHz: 120
+                        - band: mid
+                          frequencyRange: 250Hz-4kHz
+                          averageEnergyDb: 51.2
+                          peakFrequencyHz: 1050
+                        - band: high
+                          frequencyRange: 4kHz-16kHz
+                          averageEnergyDb: 31.8
+                          peakFrequencyHz: 5400
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: submitVenueNoiseMetric
+      tags:
+        - Venue Noise Metrics
+      summary: Submit user decibel reading and update venue acoustic profile
+      description: |
+        Submits a calibrated crowdsourced ambient sound pressure level (SPL) reading in
+        decibels (dBA). Authenticated user session is required via Clerk to attribute ratings
+        and prevent anonymous rating manipulation.
+
+        Readings must be between $30\text{ dB}$ (quiet whisper/library) and $90\text{ dB}$
+        (intense city/industrial noise). Peak decibel measurements are clamped to at least
+        the average decibel reading. Submissions update the user's rating record and recompute
+        the venue's aggregate noise category (`quiet`, `moderate`, or `loud`).
+      security:
+        - clerkBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitNoiseMetricRequest"
+            examples:
+              typicalReading:
+                summary: User microphone reading
+                value:
+                  decibels: 52.4
+                  peakDecibels: 64.1
+              averageAlias:
+                summary: Submission using avgDecibels alias
+                value:
+                  avgDecibels: 48.6
+                  peakDecibels: 55.0
+      responses:
+        "201":
+          description: Noise metric recorded and aggregate venue profile updated.
+          headers:
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimit-Limit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimit-Remaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimit-Reset"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitNoiseMetricResponse"
+              examples:
+                recorded:
+                  summary: Successfully recorded rating
+                  value:
+                    success: true
+                    venueId: cly019abc0001xyz890venue1
+                    decibels: 52.4
+                    noiseLevel: moderate
+                    buckets:
+                      - key: morning
+                        label: Morning
+                        averageDb: 41.2
+                        peakDb: 52.8
+                        samples: 14
+                      - key: lunch
+                        label: Lunch hour
+                        averageDb: 58.7
+                        peakDb: 71.3
+                        samples: 22
+                      - key: afternoon
+                        label: Afternoon
+                        averageDb: 49.8
+                        peakDb: 64.1
+                        samples: 19
+                      - key: evening
+                        label: Evening
+                        averageDb: 44.1
+                        peakDb: 55.6
+                        samples: 9
+                    totalSamples: 64
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/telemetry/noise:
+    post:
+      operationId: ingestIoTNoiseTelemetry
+      tags:
+        - Hardware Telemetry
+      summary: Ingest hardware IoT acoustic sensor telemetry with differential privacy
+      description: |
+        Ingestion endpoint for dedicated hardware IoT noise sensor stations located
+        in workspace venues. Because embedded microcontrollers cannot maintain Clerk user
+        sessions, requests authenticate using a shared `WORKER_SECRET` bearer token.
+
+        **Privacy Protection:**
+        Readings are protected by a Gaussian Differential Privacy mechanism with Rényi
+        Differential Privacy (RDP) accounting ($\epsilon = 1.0, \delta = 10^{-5}$ daily budget).
+        If the venue's daily privacy accountant budget is exhausted, the endpoint responds
+        with HTTP 429.
+      security:
+        - workerBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IoTNoisePayloadRequest"
+            examples:
+              standardStationReport:
+                summary: Periodic sensor station telemetry
+                value:
+                  venueId: cly019abc0001xyz890venue1
+                  decibelLevel: 56.8
+                  measuredAt: "2026-11-22T16:30:00.000Z"
+                  sensorId: station-acoustic-north-wing-02
+              minimalReport:
+                summary: Minimal payload defaulting measuredAt to server clock
+                value:
+                  venueId: cly019abc0001xyz890venue1
+                  decibelLevel: 42.1
+      responses:
+        "200":
+          description: Telemetry successfully ingested, calibrated, and recorded.
+          headers:
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimit-Limit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimit-Remaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimit-Reset"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IoTNoiseTelemetryResponse"
+              examples:
+                ingested:
+                  summary: Privacy-sanitized telemetry result
+                  value:
+                    success: true
+                    venueId: cly019abc0001xyz890venue1
+                    noiseCategory: moderate
+                    timestamp: "2026-11-22T16:30:00.000Z"
+                    sensorId: station-acoustic-north-wing-02
+                    privacy:
+                      epsilon: 0.32
+                      delta: 0.00001
+                      submissions: 15
+        "400":
+          description: Malformed JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Invalid JSON body
+        "401":
+          description: Missing or invalid WORKER_SECRET authorization token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Unauthorized
+        "404":
+          description: Referenced venue does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Venue not found
+        "409":
+          description: Concurrent telemetry update conflict; client should retry with exponential backoff
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Concurrent telemetry update; please retry
+        "422":
+          description: Schema validation failure (out-of-bounds decibelLevel or invalid venueId)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+              example:
+                error: Validation failed
+                details:
+                  decibelLevel:
+                    - decibelLevel exceeds physically plausible maximum
+        "429":
+          description: Daily differential privacy budget exhausted or rate limit exceeded
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/Retry-After"
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimit-Limit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimit-Remaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivacyBudgetExhaustedError"
+              examples:
+                privacyBudgetExhausted:
+                  summary: Daily differential privacy expenditure exceeded
+                  value:
+                    error: Daily telemetry privacy budget exhausted
+        "500":
+          description: Persistent database write error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Failed to store telemetry
+        "503":
+          description: WORKER_SECRET shared secret is not configured on the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Service not configured
+
+  /api/venues/acoustics/rt60:
+    get:
+      operationId: getVenueAcousticRt60Heatmap
+      tags:
+        - Reverberation & RT60
+      summary: Retrieve acoustic reverberation time (RT60) heatmap and call-quality scores
+      description: |
+        Retrieves spatial reverberation time ($T_{60}$) decay metrics and call-quality scores
+        across individual zones within a workspace venue.
+
+        RT60 is the duration (in seconds) required for sound pressure level to decay by $60\text{ dB}$
+        after sound excitation stops. Values $< 0.6\text{s}$ indicate superior acoustic clarity
+        for voice calls and remote meetings; values $> 1.0\text{s}$ produce echo and hollow audio.
+      security: []
+      parameters:
+        - name: venueId
+          in: query
+          required: false
+          description: Unique venue identifier or placeId to filter heatmap records.
+          schema:
+            type: string
+          example: cly019abc0001xyz890venue1
+        - $ref: "#/components/parameters/WindowHoursQuery"
+        - $ref: "#/components/parameters/FrequencyBandQuery"
+        - $ref: "#/components/parameters/IncludeSpectrogramQuery"
+      responses:
+        "200":
+          description: Zone-level reverberation heatmap and call-quality metrics successfully retrieved.
+          headers:
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimit-Limit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimit-Remaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimit-Reset"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rt60HeatmapResponse"
+              examples:
+                zoneHeatmap:
+                  summary: Multi-zone RT60 reverberation profile
+                  value:
+                    venueId: cly019abc0001xyz890venue1
+                    heatmap:
+                      - zoneId: zone_quiet_annex
+                        rt60: 0.42
+                        callQualityScore: 98
+                      - zoneId: zone_phone_booth_alpha
+                        rt60: 0.28
+                        callQualityScore: 100
+                      - zoneId: zone_open_atrium
+                        rt60: 1.25
+                        callQualityScore: 28
+                withSpectrogramWaterfall:
+                  summary: RT60 heatmap with decay waterfall data
+                  value:
+                    venueId: cly019abc0001xyz890venue1
+                    heatmap:
+                      - zoneId: zone_quiet_annex
+                        rt60: 0.42
+                        callQualityScore: 98
+                    spectrogram:
+                      sampleRate: 48000
+                      windowHours: 24
+                      frequencyBand: all
+                      timeBinsMs: [0, 50, 100, 150, 200, 250, 300]
+                      frequencyDecay:
+                        - frequencyHz: 500
+                          decayDb:
+                            [-3.2, -11.5, -21.8, -34.2, -46.7, -58.2, -60.0]
+                        - frequencyHz: 1000
+                          decayDb:
+                            [-4.0, -14.1, -27.6, -41.3, -54.9, -60.0, -60.0]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: submitVenueAcousticRt60
+      tags:
+        - Reverberation & RT60
+      summary: Ingest crowdsourced RT60 reverberation decay measurements
+      description: |
+        Ingests crowdsourced room impulse response reverberation ($T_{60}$) data computed
+        via Web Audio worklets (`calculateRt60FromImpulseResponse`). Clamps physically
+        impossible values to the acoustic lower bound (`MIN_RT60_SECONDS = 0.05s`).
+
+        Updates zone acoustic models, recalculates call-quality indices, and feeds
+        venue acoustic raytracing engines.
+      security:
+        - clerkBearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRt60PayloadRequest"
+            examples:
+              zoneMeasurement:
+                summary: Crowdsourced reverberation measurement
+                value:
+                  venueId: cly019abc0001xyz890venue1
+                  zoneId: zone_quiet_annex
+                  rt60: 0.45
+                  coordinates:
+                    x: 12.4
+                    y: 8.1
+                    z: 1.2
+              minimalMeasurement:
+                summary: Measurement without 3D coordinates
+                value:
+                  venueId: cly019abc0001xyz890venue1
+                  zoneId: zone_phone_booth_alpha
+                  rt60: 0.32
+      responses:
+        "200":
+          description: Acoustic RT60 reverberation metric recorded successfully.
+          headers:
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimit-Limit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimit-Remaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimit-Reset"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitRt60Response"
+              examples:
+                success:
+                  summary: Measurement ingested
+                  value:
+                    success: true
+                    message: Acoustic data ingested successfully
+        "400":
+          description: Invalid acoustic payload (missing venueId/zoneId or non-positive RT60 value)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Invalid acoustic payload
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          description: Internal server error while ingesting reverberation data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleErrorResponse"
+              example:
+                error: Internal Server Error
+
+components:
+  securitySchemes:
+    clerkBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Clerk session token passed in the standard `Authorization: Bearer <token>` header.
+        Required for user-attributed noise ratings.
+    workerBearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Shared secret authentication used by hardware IoT sensor stations.
+        Passed as `Authorization: Bearer <WORKER_SECRET>`.
+
+  parameters:
+    VenueIdPath:
+      name: venueId
+      in: path
+      required: true
+      description: WorkSphere venue database identifier (CUID) or external Google Place ID.
+      schema:
+        type: string
+        minLength: 1
+      example: cly019abc0001xyz890venue1
+
+    WindowHoursQuery:
+      name: windowHours
+      in: query
+      required: false
+      description: Number of hours in the lookback window for telemetry aggregation.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 168
+        default: 24
+      example: 24
+
+    FrequencyBandQuery:
+      name: frequencyBand
+      in: query
+      required: false
+      description: |
+        Acoustic frequency band filter for sound pressure level analysis:
+        - `all`: Full audible spectrum ($20\text{ Hz}\text{--}20\text{ kHz}$)
+        - `low`: Low bass/structural hum ($20\text{--}250\text{ Hz}$)
+        - `mid`: Human speech and conversational band ($250\text{ Hz}\text{--}4\text{ kHz}$)
+        - `high`: High-frequency clatter, espresso steam, dish clatter ($4\text{--}16\text{ kHz}$)
+        - Standard octave bands: `125Hz`, `250Hz`, `500Hz`, `1kHz`, `2kHz`, `4kHz`, `8kHz`
+        - `1/3-octave`: 24-band 1/3-octave psychoacoustic decomposition
+      schema:
+        type: string
+        enum:
+          - all
+          - low
+          - mid
+          - high
+          - sub-bass
+          - speech
+          - clatter
+          - 125Hz
+          - 250Hz
+          - 500Hz
+          - 1kHz
+          - 2kHz
+          - 4kHz
+          - 8kHz
+          - 1/3-octave
+        default: all
+      example: mid
+
+    IncludeSpectrogramQuery:
+      name: includeSpectrogram
+      in: query
+      required: false
+      description: |
+        When true, returns the Fast Fourier Transform (FFT) spectrogram frequency
+        distribution and energy profile in the response payload.
+      schema:
+        type: boolean
+        default: false
+      example: true
+
+  headers:
+    RateLimit-Limit:
+      description: Maximum number of allowed requests in the active rate-limit quota window.
+      schema:
+        type: integer
+      example: 120
+
+    RateLimit-Remaining:
+      description: Number of remaining requests permitted in the active quota window.
+      schema:
+        type: integer
+      example: 119
+
+    RateLimit-Reset:
+      description: Number of seconds remaining until the current quota window resets.
+      schema:
+        type: integer
+      example: 60
+
+    X-RateLimit-Limit:
+      description: Middleware rate-limit quota allowance for this route tier.
+      schema:
+        type: integer
+      example: 120
+
+    X-RateLimit-Remaining:
+      description: Middleware rate-limit quota remaining in current window.
+      schema:
+        type: integer
+      example: 119
+
+    X-RateLimit-Reset:
+      description: Unix epoch timestamp (in seconds) when the middleware rate limit resets.
+      schema:
+        type: integer
+      example: 1763830800
+
+    Retry-After:
+      description: Number of seconds the client must wait before retrying the rate-limited request.
+      schema:
+        type: integer
+        minimum: 1
+      example: 60
+
+  schemas:
+    NoiseBucketKey:
+      type: string
+      enum:
+        - morning
+        - lunch
+        - afternoon
+        - evening
+      description: Time bucket identifier for venue noise aggregation.
+
+    NoiseCategory:
+      type: string
+      enum:
+        - quiet
+        - moderate
+        - loud
+      description: Categorical workspace noise rating derived from decibel thresholds.
+
+    NoiseBucket:
+      type: object
+      required:
+        - key
+        - label
+        - averageDb
+        - peakDb
+        - samples
+      properties:
+        key:
+          $ref: "#/components/schemas/NoiseBucketKey"
+        label:
+          type: string
+          description: Human-readable display label for the time window.
+          example: Morning
+        averageDb:
+          type:
+            - number
+            - "null"
+          description: Mean measured sound level in decibels (dBA), or null if no samples exist.
+          example: 41.2
+        peakDb:
+          type:
+            - number
+            - "null"
+          description: Peak instantaneous decibel reading recorded within this time window.
+          example: 52.8
+        samples:
+          type: integer
+          minimum: 0
+          description: Number of crowdsourced acoustic samples in this time bucket.
+          example: 14
+
+    SpectrogramBandEnergy:
+      type: object
+      required:
+        - band
+        - frequencyRange
+        - averageEnergyDb
+        - peakFrequencyHz
+      properties:
+        band:
+          type: string
+          description: Frequency band name or identifier.
+          example: mid
+        frequencyRange:
+          type: string
+          description: Frequency range spanned by this band.
+          example: 250Hz-4kHz
+        averageEnergyDb:
+          type: number
+          description: Average acoustic energy in decibels for this band.
+          example: 51.2
+        peakFrequencyHz:
+          type: number
+          description: Peak spectral frequency observed within the band in Hertz.
+          example: 1050
+
+    SpectrogramData:
+      type: object
+      required:
+        - sampleRate
+        - windowHours
+        - frequencyBand
+        - bands
+      properties:
+        sampleRate:
+          type: integer
+          description: Sampling rate in Hz used during spectral analysis.
+          example: 44100
+        windowHours:
+          type: integer
+          description: Analysis time window in hours.
+          example: 24
+        frequencyBand:
+          type: string
+          description: Filter applied to the spectrogram.
+          example: all
+        bands:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpectrogramBandEnergy"
+
+    NoiseMetricsResponse:
+      type: object
+      required:
+        - venueId
+        - buckets
+        - totalSamples
+      properties:
+        venueId:
+          type: string
+          description: WorkSphere venue identifier.
+          example: cly019abc0001xyz890venue1
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/NoiseBucket"
+          description: 4-period daily acoustic distribution.
+        totalSamples:
+          type: integer
+          minimum: 0
+          description: Total number of acoustic samples recorded for this venue.
+          example: 63
+        spectrogram:
+          $ref: "#/components/schemas/SpectrogramData"
+
+    SubmitNoiseMetricRequest:
+      type: object
+      properties:
+        decibels:
+          type: number
+          minimum: 30
+          maximum: 90
+          description: Sound pressure level reading in dBA (between 30.0 and 90.0 dB).
+          example: 52.4
+        avgDecibels:
+          type: number
+          minimum: 30
+          maximum: 90
+          description: Alternative field alias for decibels reading.
+          example: 52.4
+        peakDecibels:
+          type: number
+          minimum: 30
+          maximum: 150
+          description: Optional peak instantaneous sound level in dBA.
+          example: 64.1
+
+    SubmitNoiseMetricResponse:
+      type: object
+      required:
+        - success
+        - venueId
+        - decibels
+        - noiseLevel
+        - buckets
+        - totalSamples
+      properties:
+        success:
+          type: boolean
+          const: true
+        venueId:
+          type: string
+          example: cly019abc0001xyz890venue1
+        decibels:
+          type: number
+          example: 52.4
+        noiseLevel:
+          $ref: "#/components/schemas/NoiseCategory"
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/NoiseBucket"
+        totalSamples:
+          type: integer
+          example: 64
+
+    IoTNoisePayloadRequest:
+      type: object
+      required:
+        - venueId
+        - decibelLevel
+      properties:
+        venueId:
+          type: string
+          minLength: 1
+          description: Venue database ID to associate with the sensor telemetry.
+          example: cly019abc0001xyz890venue1
+        decibelLevel:
+          type: number
+          minimum: 0
+          maximum: 150
+          description: Measured physical sound level in decibels.
+          example: 56.8
+        measuredAt:
+          type: string
+          format: date-time
+          description: Optional ISO 8601 sensor timestamp. Defaults to server receipt clock.
+          example: "2026-11-22T16:30:00.000Z"
+        sensorId:
+          type: string
+          maxLength: 64
+          description: Optional hardware station identifier for hardware tracing and calibration.
+          example: station-acoustic-north-wing-02
+
+    IoTNoiseTelemetryResponse:
+      type: object
+      required:
+        - success
+        - venueId
+        - noiseCategory
+        - timestamp
+        - sensorId
+        - privacy
+      properties:
+        success:
+          type: boolean
+          const: true
+        venueId:
+          type: string
+          example: cly019abc0001xyz890venue1
+        noiseCategory:
+          $ref: "#/components/schemas/NoiseCategory"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-11-22T16:30:00.000Z"
+        sensorId:
+          type:
+            - string
+            - "null"
+          example: station-acoustic-north-wing-02
+        privacy:
+          type: object
+          required:
+            - epsilon
+            - delta
+            - submissions
+          properties:
+            epsilon:
+              type: number
+              description: Current Rényi Differential Privacy cumulative epsilon expenditure.
+              example: 0.32
+            delta:
+              type: number
+              description: Differential privacy delta parameter ($10^{-5}$).
+              example: 0.00001
+            submissions:
+              type: integer
+              description: Number of telemetry submissions ingested during the current daily epoch.
+              example: 15
+
+    Rt60HeatmapZone:
+      type: object
+      required:
+        - zoneId
+        - rt60
+        - callQualityScore
+      properties:
+        zoneId:
+          type: string
+          description: Zone or room identifier within the venue.
+          example: zone_quiet_annex
+        rt60:
+          type: number
+          minimum: 0.05
+          description: Measured or estimated reverberation decay time ($T_{60}$) in seconds.
+          example: 0.42
+        callQualityScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Normalised call suitability score (0–100, where 100 = studio-quality clarity).
+          example: 98
+
+    Rt60DecaySeries:
+      type: object
+      required:
+        - frequencyHz
+        - decayDb
+      properties:
+        frequencyHz:
+          type: integer
+          example: 1000
+        decayDb:
+          type: array
+          items:
+            type: number
+          description: Sound level decay in dB relative to initial excitation across time bins.
+          example: [-4.0, -14.1, -27.6, -41.3, -54.9, -60.0, -60.0]
+
+    Rt60SpectrogramData:
+      type: object
+      required:
+        - sampleRate
+        - windowHours
+        - frequencyBand
+        - timeBinsMs
+        - frequencyDecay
+      properties:
+        sampleRate:
+          type: integer
+          example: 48000
+        windowHours:
+          type: integer
+          example: 24
+        frequencyBand:
+          type: string
+          example: all
+        timeBinsMs:
+          type: array
+          items:
+            type: integer
+          example: [0, 50, 100, 150, 200, 250, 300]
+        frequencyDecay:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rt60DecaySeries"
+
+    Rt60HeatmapResponse:
+      type: object
+      required:
+        - venueId
+        - heatmap
+      properties:
+        venueId:
+          type:
+            - string
+            - "null"
+          example: cly019abc0001xyz890venue1
+        heatmap:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rt60HeatmapZone"
+        spectrogram:
+          $ref: "#/components/schemas/Rt60SpectrogramData"
+
+    SpatialCoordinates:
+      type: object
+      required:
+        - x
+        - y
+        - z
+      properties:
+        x:
+          type: number
+          description: Cartesian X coordinate in meters within the venue coordinate frame.
+          example: 12.4
+        y:
+          type: number
+          description: Cartesian Y coordinate in meters.
+          example: 8.1
+        z:
+          type: number
+          description: Cartesian Z elevation coordinate in meters.
+          example: 1.2
+
+    SubmitRt60PayloadRequest:
+      type: object
+      required:
+        - venueId
+        - zoneId
+        - rt60
+      properties:
+        venueId:
+          type: string
+          minLength: 1
+          description: Unique venue identifier.
+          example: cly019abc0001xyz890venue1
+        zoneId:
+          type: string
+          minLength: 1
+          description: Zone identifier where reverberation was sampled.
+          example: zone_quiet_annex
+        rt60:
+          type: number
+          exclusiveMinimum: 0
+          description: Measured reverberation time ($T_{60}$) in seconds (clamped to >= 0.05s).
+          example: 0.45
+        coordinates:
+          $ref: "#/components/schemas/SpatialCoordinates"
+
+    SubmitRt60Response:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Acoustic data ingested successfully
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+        - code
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Human-readable error explanation.
+          example: Decibel reading must be a number between 30 and 90 dB
+        code:
+          type: string
+          description: Machine-readable application error code.
+          example: VALIDATION_FAILED
+
+    SimpleErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: Invalid JSON body
+
+    ValidationErrorResponse:
+      type: object
+      required:
+        - error
+        - details
+      properties:
+        error:
+          type: string
+          example: Validation failed
+        details:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    RateLimitedError:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+          example: Rate limit exceeded
+        code:
+          type: string
+          const: RATE_LIMITED
+
+    PrivacyBudgetExhaustedError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: Daily telemetry privacy budget exhausted
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters, out-of-bounds decibels, or malformed JSON payload.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            decibelValidationFailed:
+              summary: Decibel value out of allowable 30-90 dB range
+              value:
+                success: false
+                error: Decibel reading must be a number between 30 and 90 dB
+                code: VALIDATION_FAILED
+            generalBadRequest:
+              summary: Bad request or malformed parameter
+              value:
+                success: false
+                error: Invalid request parameters
+                code: BAD_REQUEST
+
+    Unauthorized:
+      description: Authentication required via Clerk session or WORKER_SECRET token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error: Unauthorized
+            code: UNAUTHORIZED
+
+    VenueNotFound:
+      description: The requested venue identifier was not found in the database.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error: Venue not found
+            code: VENUE_NOT_FOUND
+
+    RateLimited:
+      description: Request rate limit exceeded for telemetry route tier (120 requests / 1 minute).
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
+        RateLimit-Limit:
+          $ref: "#/components/headers/RateLimit-Limit"
+        RateLimit-Remaining:
+          $ref: "#/components/headers/RateLimit-Remaining"
+        RateLimit-Reset:
+          $ref: "#/components/headers/RateLimit-Reset"
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitedError"
+          examples:
+            rateLimited:
+              summary: Rate limit exceeded response
+              value:
+                error: Rate limited
+                code: RATE_LIMITED
+
+    InternalServerError:
+      description: Unexpected runtime or database error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error: Internal server error submitting noise metric
+            code: INTERNAL_ERROR

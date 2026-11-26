@@ -98,6 +98,144 @@ export default function middleware(request: any, event: any) {
       const isEnvAdmin = adminEmails.length > 0 && Boolean(authObj.userId);
 
       if (!isAdminRole && !isEnvAdmin) {
+        return req.nextUrl.pathname.startsWith("/api")
+          ? NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 })
+          : NextResponse.redirect(new URL("/", req.url));
+      }
+    }
+  });
+
+  return clerkMw(request, event);
+}
+```
+
+---
+
+## 3. Middleware Execution Sequence & Security Pipeline
+
+WorkSphere structures request processing as a deterministic, multi-layer defense-in-depth pipeline. Understanding the exact execution order of **`authHandler`**, **`csrfHandler`**, and **`securityHeadersHandler`** is essential for maintaining secure route behaviors, exemptions, and error response guarantees.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Browser / API Client
+    participant Auth as 1. authHandler (Clerk / RBAC)
+    participant Sec as 2. securityHeadersHandler (CSP / Nonce)
+    participant Csrf as 3. csrfHandler (Double-Submit Token)
+    participant Next as Next.js Route / Page Handler
+
+    Client->>Auth: Incoming HTTP Request
+    Note over Auth: Evaluates route exemption (isPublicRoute, static assets)
+    alt Unauthenticated & Protected Route
+        Auth-->>Client: 401 Unauthorized (API) OR 307 Redirect to /sign-in (Web)
+        Note over Auth: Pipeline terminates; downstream handlers DO NOT execute
+    else Admin Route & Non-Admin User
+        Auth-->>Client: 403 Forbidden (API) OR 307 Redirect to / (Web)
+        Note over Auth: Pipeline terminates; downstream handlers DO NOT execute
+    else Authenticated OR Public Route
+        Auth->>Sec: next()
+    end
+
+    Note over Sec: Generates fresh CSP nonce (16 random bytes)<br/>Constructs strict CSP policy<br/>Stamps x-csp-nonce & x-pathname on request headers
+    Sec->>Csrf: next()
+
+    Note over Csrf: Forwards request to downstream handler first
+    Csrf->>Next: forward request
+    Next-->>Csrf: response generated
+
+    alt Mutating Request (POST/PUT/PATCH/DELETE) on /api/* (Not Exempt)
+        Note over Csrf: Validates raw token against HMAC signature in cookie
+        alt Validation Fails (Mismatched, Missing, or Corrupted)
+            Csrf-->>Client: 403 Forbidden ("CSRF validation failed")
+            Note over Csrf: Discards downstream response
+        else Validation Passes
+            Csrf-->>Sec: response
+        end
+    else Safe Request (GET/HEAD) Without csrf_token Cookie (Not Exempt)
+        Note over Csrf: Issues new CSRF token & sets httpOnly cookie on response
+        Csrf-->>Sec: response + Set-Cookie (csrf_token)
+    else Route is CSRF Exempt
+        Csrf-->>Sec: response (unchanged)
+    end
+
+    Note over Sec: Injects Content-Security-Policy & security headers into response
+    Sec-->>Client: Outgoing HTTP Response (with CSP & Security Headers)
+```
+
+### 3.1 Ordered Pipeline Checklist
+
+1. **Step 1: `authHandler` (Authentication & Authorization)**
+   - **Responsibility**: Intercepts requests entering the application, validates session state via Clerk's `auth.protect()`, and checks role-based access control for administrative endpoints (`isAdminRoute`).
+   - **Execution Point**: Runs **first** in the core pipeline before any cryptographic operations, nonce assembly, or CSRF inspections take place.
+   - **Failure Behavior**:
+     - For protected API routes: immediately returns an HTTP `401 Unauthorized` JSON response (`{ error: "Unauthorized" }`).
+     - For protected page views: immediately issues an HTTP `307 Temporary Redirect` to `/sign-in?redirect_url=...`.
+     - For admin routes where the caller lacks admin privileges: immediately returns HTTP `403 Forbidden` for APIs or redirects to `/` for web pages.
+     - **Critical Invariant**: If authentication or admin authorization fails, **the request pipeline terminates immediately**. Downstream handlers (`securityHeadersHandler`, `csrfHandler`, and Next.js route handlers) **never execute**.
+
+2. **Step 2: `securityHeadersHandler` (Request Nonce & CSP Generation)**
+   - **Responsibility**: Generates a high-entropy, per-request cryptographic nonce (16 random bytes, base64-encoded via Web Crypto API), constructs the strict Content Security Policy (`generateCsp`), and propagates `x-csp-nonce`, `x-pathname`, and request-level `Content-Security-Policy` headers to downstream server components.
+   - **Execution Point**: Executes after `authHandler` succeeds.
+   - **Downstream Call & Response Transformation**: Calls `next()` to pass control to `csrfHandler` and the route handler, then intercepts the returning response to inject the authoritative `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy` headers.
+   - **Timing**: Headers are attached to the outgoing response on the way back out, ensuring that even dynamically generated or mutated responses carry strict security headers.
+
+3. **Step 3: `csrfHandler` (Double-Submit HMAC Cookie Protection)**
+   - **Responsibility**: Defends against cross-site request forgery on state-changing API requests using an HMAC-SHA256 signed double-submit cookie architecture.
+   - **Execution Point**: Runs innermost in the middleware wrapper around the downstream Next.js page or route execution.
+   - **Downstream Precedence**: `csrfHandler` forwards the request down to Next.js (`await next()`) and inspects/enforces CSRF rules on the response:
+     - **Mutating Requests (`POST`, `PUT`, `PATCH`, `DELETE`)**: Inspects the incoming `x-csrf-token` header and the `csrf_token` cookie (`raw.signature`). If validation fails (or either value is missing/tampered), the downstream response is discarded, and an HTTP `403 Forbidden` response is returned immediately:
+       ```json
+       {
+         "error": "CSRF validation failed. Please refresh and try again."
+       }
+       ```
+     - **Safe Requests (`GET`, `HEAD`, `OPTIONS`)**: If the client does not yet hold a `csrf_token` cookie, `csrfHandler` mints a fresh token and sets the signed `csrf_token` cookie on the outgoing response.
+     - **Exempt Routes**: Bypasses token verification and cookie modification.
+
+---
+
+## 4. Route Exemptions and Bypass Conditions
+
+To prevent breaking external integrations, public access, and specialized communication protocols, each handler defines clear exemption conditions:
+
+### 4.1 `authHandler` Route Exemptions
+The following request types bypass Clerk `auth.protect()`:
+- **Static Assets**: Paths matching Next.js internal bundles (`/_next/static`, `/_next/image`), browser assets (`favicon.ico`, `robots.txt`, `sitemap.xml`, `sw.js`), and public media (`/icons/*`, `/images/*`).
+- **Public Web Pages**: Landing page (`/`), authentication views (`/sign-in(.*)`, `/sign-up(.*)`), terms and privacy pages (`/terms(.*)`, `/privacy(.*)`), and public venue directories (`/venues(.*)`).
+- **Public API Endpoints**: Read-only public collections (`/api/collections/public(.*)`), public map data (`/api/map/(.*)`), and public venue listings (`/api/venues(.*)`).
+- **OTP & Password Reset Flows**: Auth utility endpoints (`/api/auth/resend-otp`, `/api/auth/verify-otp`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/webauthn/verify`).
+- **External Webhooks**: Endpoints called by external third parties lacking browser session cookies (`/api/webhook(.*)`, `/api/webhooks/worker`). Webhooks rely on provider-specific HMAC signatures (e.g., Svix or Stripe signatures) rather than Clerk user sessions.
+- **CSRF Token Minting Endpoint**: `/api/auth/csrf-token`.
+
+### 4.2 `csrfHandler` Route Exemptions
+CSRF protection is specifically targeted at browser-initiated state-changing operations. The following are exempt:
+- **Safe HTTP Methods**: `GET`, `HEAD`, and `OPTIONS` (CORS preflight requests) are never blocked by CSRF checks.
+- **Non-API Requests**: Page navigation requests (HTML document loads) do not require `x-csrf-token`.
+- **External Webhooks & Workers (`/api/webhook(.*)`, `/api/webhooks/worker`, `/api/cron/(.*)`)**: Webhook callers and cron runners authenticate via request signatures or gateway tokens, not browser cookies, and do not carry CSRF tokens.
+- **CSRF Issuance Endpoint (`/api/auth/csrf-token`)**: Public endpoint used by clients to fetch initial tokens.
+- **Identity Provider Callbacks (`/api/auth/sso/saml`)**: SAML POST bindings originated by external IdPs.
+- **Server-Sent Events Streams (`/api/venues/updates`)**: Persistent streaming connections where setting or rewriting cookies disrupts connection state.
+
+### 4.3 `securityHeadersHandler` Exemptions
+- **Static File Bypass**: Next.js static chunks and public file assets bypass dynamic nonce generation to enable edge caching.
+- **Universal Response Coverage**: All dynamic application pages, server-rendered views, and API responses processed by middleware receive Content Security Policy and defensive headers.
+
+---
+
+## 5. Security Failure Behaviors & Error Handling
+
+| Scenario | Failing Handler | HTTP Status | Response / Redirection | Downstream Execution |
+| :--- | :--- | :---: | :--- | :--- |
+| **Unauthenticated API call** | `authHandler` | `401 Unauthorized` | `{"error": "Unauthorized"}` | **Aborted** (Next.js route never runs) |
+| **Unauthenticated page view** | `authHandler` | `307 Temporary Redirect` | Redirects to `/sign-in?redirect_url=<path>` | **Aborted** (Page component never renders) |
+| **Non-admin user accessing `/admin`** | `authHandler` | `403 Forbidden` / `307 Redirect` | `{"error": "Forbidden: Admin access required"}` or redirects to `/` | **Aborted** (Admin handler never runs) |
+| **Missing/invalid CSRF token on `POST /api/*`** | `csrfHandler` | `403 Forbidden` | `{"error": "CSRF validation failed. Please refresh and try again."}` | **Discarded** (Downstream response discarded) |
+| **Rate limit exceeded (token bucket)** | Rate Limiter | `429 Too Many Requests` | `{"error": "Too many requests"}` + `Retry-After` | **Aborted** (Auth and route handlers skipped) |
+
+### 5.1 Security Implications
+1. **Deny-by-Default Protection**: Because `authHandler` executes before downstream handlers and route controllers, unauthenticated callers cannot trigger route side effects, expensive database transactions, or business logic.
+2. **Double-Submit Invalidation**: When CSRF validation fails on mutating calls, any tentative downstream response generated by Next.js is dropped, preventing sensitive state from leaking back to an untrusted cross-origin requester.
+3. **Nonce Single-Use Guarantee**: A fresh base64 nonce is generated per request in `securityHeadersHandler`, eliminating script re-use vulnerabilities and neutralizing DOM-based XSS injection.
         if (req.nextUrl.pathname.startsWith("/api")) {
           return NextResponse.json(
             { error: "Forbidden: Admin access required" },

@@ -8,7 +8,7 @@ When developing on WorkSphere across multiple feature branches, contributors fre
 
 ## 1. Architectural Overview of Prisma Migration Pipeline
 
-Prisma uses a declarative migration engine that compares your Prisma schema file ([prisma/schema.prisma](file:///c:/Users/admin/Desktop/workfere/prisma/schema.prisma)) against the current database structure and the migration history recorded in the `_prisma_migrations` table.
+Prisma uses a declarative migration engine that compares your Prisma schema file ([prisma/schema.prisma](../../prisma/schema.prisma)) against the current database structure and the migration history recorded in the `_prisma_migrations` table.
 
 ```mermaid
 flowchart TD
@@ -116,7 +116,7 @@ Use this approach when your local database contains valuable mock data or manual
 Use this approach when switching back to `main` or starting fresh work.
 
 > [!CAUTION]
-> **DATA LOSS WARNING**: Running `npx prisma migrate reset` will drop the target database, recreate it, apply all migrations from scratch, and execute `prisma/seed.ts`. All existing records will be permanently deleted.
+> **DATA LOSS WARNING**: Running `npx prisma migrate reset` will drop the target database, recreate it, apply all migrations from scratch, and execute `prisma/seed.js`. All existing records will be permanently deleted.
 
 1. **Execute full database reset**:
    ```bash
@@ -292,7 +292,7 @@ ALTER USER worksphere_user WITH CREATEDB;
 
 #### Solution 2: Explicitly Define `SHADOW_DATABASE_URL`
 
-If using a cloud database provider (e.g., Supabase, Neon, AWS RDS) where `CREATEDB` is restricted, create a second empty database manually and define `SHADOW_DATABASE_URL` in [.env](file:///c:/Users/admin/Desktop/workfere/.env):
+If using a cloud database provider (e.g., Supabase, Neon, AWS RDS) where `CREATEDB` is restricted, create a second empty database manually and define `SHADOW_DATABASE_URL` in `.env`:
 
 ```env
 # .env configuration
@@ -309,7 +309,7 @@ After executing `prisma migrate reset`, your database tables will be empty. Work
 ```json
 {
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.js"
   }
 }
 ```
@@ -326,7 +326,7 @@ npx prisma db seed
 
 ### 8.2 Seed Script Safety Measures
 
-Ensure [prisma/seed.ts](file:///c:/Users/admin/Desktop/workfere/prisma/seed.ts) uses idempotent upsert operations (`prisma.user.upsert()`) rather than direct `create()` statements to prevent duplicate key constraint failures when re-running seeds.
+Ensure [prisma/seed.js](../../prisma/seed.js) uses idempotent upsert operations (`prisma.user.upsert()`) rather than direct `create()` statements to prevent duplicate key constraint failures when re-running seeds.
 
 ```typescript
 // Example idempotent seed pattern

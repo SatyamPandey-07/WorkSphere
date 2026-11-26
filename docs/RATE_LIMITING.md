@@ -84,13 +84,13 @@ graph TD
 
 Below is the complete list of rate-limited routes implemented in the codebase:
 
-| Endpoint                         | Method |  Default Limit   | Purpose                                                                 |
-| :------------------------------- | :----: | :--------------: | :---------------------------------------------------------------------- |
-| `POST /api/chat`                 | `POST` | **20 req / min** | Protects the Groq LLM API from query abuse and token credit exhaustion. |
-| `POST /api/auth/forgot-password` | `POST` | **3 req / min**  | Prevents email spam, account enumeration, and dictionary attacks.       |
-| `POST /api/auth/resend-otp`      | `POST` | **3 req / min**  | Limits outbound OTP codes to protect SMS/email carrier budgets.         |
-| `POST /api/auth/reset-password`  | `POST` | **5 req / min**  | Prevents brute-forcing user credentials during password recovery.       |
-| `POST /api/auth/verify-otp`      | `POST` | **5 req / min**  | Prevents credential-stuffing and guess attacks against OTP codes.       |
+| Endpoint                         | Method |   Default Limit    | Purpose                                                                 |
+| :------------------------------- | :----: | :----------------: | :---------------------------------------------------------------------- |
+| `POST /api/chat`                 | `POST` |  **20 req / min**  | Protects the Groq LLM API from query abuse and token credit exhaustion. |
+| `POST /api/auth/forgot-password` | `POST` |  **3 req / min**   | Prevents email spam, account enumeration, and dictionary attacks.       |
+| `POST /api/auth/resend-otp`      | `POST` | Retired (HTTP 410) | Retired legacy endpoint (replaced by Clerk native password reset).      |
+| `POST /api/auth/reset-password`  | `POST` |  **5 req / min**   | Prevents brute-forcing user credentials during password recovery.       |
+| `POST /api/auth/verify-otp`      | `POST` |  **5 req / min**   | Prevents credential-stuffing and guess attacks against OTP codes.       |
 
 > [!IMPORTANT]
 > **Venue Search Route Limits**
@@ -131,7 +131,113 @@ When a client exceeds the request limit, the API halts request execution and res
 
 ---
 
-## 4. Best Practices
+## 5. Token Bucket Fallback & Degraded-Mode Telemetry (`src/lib/ratelimit/tokenBucketFallback.ts`)
+
+When external Redis or Edge rate-limiting infrastructure experiences transient network outages, connection resets, or gateway timeouts, WorkSphere enters a **degraded fallback mode** rather than failing open (which would permit unbounded traffic) or failing closed (which would take down legitimate user requests).
+
+This degraded state is managed by the in-memory client-side/edge token bucket fallback limiter implemented in `src/lib/ratelimit/tokenBucketFallback.ts`.
+
+### 5.1 Fallback Triggers and Recovery
+
+#### Degradation Trigger (`isRecoverableRedisError`)
+Fallback activation occurs when calls to Redis encounter transient network or service unavailability errors:
+- **HTTP Status Codes:** `503 Service Unavailable`
+- **Network Error Codes:** `ETIMEDOUT`, `ECONNREFUSED`, `ECONNRESET`, `EAI_AGAIN`
+- **Error Messages:** Messages containing `"503"`, `"timeout"`, `"timed out"`, `"econnrefused"`, `"network"`, or `"service unavailable"`
+
+When `isRecoverableRedisError(err)` returns `true`, the middleware initializes or retrieves an in-memory token bucket instance via `getOrCreateFallbackLimiter(tierName, capacity, refillRatePerSecond, burstAllowance)` and evaluates token consumption locally.
+
+#### Recovery Triggers
+The system automatically returns from degraded fallback mode to distributed Redis enforcement on the very next request where:
+1. Redis connectivity succeeds within `REDIS_TIMEOUT_MS` (1500ms).
+2. The primary rate-limiting Promise resolves normally without throwing a recoverable error or timing out.
+
+Because fallback limiters are transient and keyed in-memory, no manual administrative reset is necessary once Redis recovers.
+
+### 5.2 Exported Telemetry Fields & Types
+
+`src/lib/ratelimit/tokenBucketFallback.ts` exports the following core configuration, state, and telemetry interfaces:
+
+#### `TokenBucketFallbackConfig`
+Configures an individual in-memory token bucket instance:
+
+| Field Name | Type | Meaning & Behavior |
+| :--- | :--- | :--- |
+| `capacity` | `number` | The base maximum token capacity that the bucket can hold. Must be a positive finite number ($> 0$). |
+| `refillRatePerSecond` | `number` | The steady-state replenishment velocity in tokens per second. Must be a positive finite number ($> 0$). |
+| `burstAllowance` | `number` | Optional extra token allowance above the base capacity (default: `0`). When $> 0$, `effectiveCapacity = capacity + burstAllowance`. |
+| `maxIdleMs` | `number` | Maximum duration in milliseconds before an unaccessed bucket is pruned from memory (default: `60,000` ms = 1 minute). |
+| `maxBuckets` | `number` | Hard upper bound on active bucket entries in memory to prevent memory exhaustion and DoS (default: `10,000` entries). |
+
+#### `FallbackRateLimitResult`
+The result structure returned by `limiter.consume(identifier, cost)` during degraded mode:
+
+| Field Name | Type | Meaning & Behavior |
+| :--- | :--- | :--- |
+| `allowed` | `boolean` | `true` if the bucket contained sufficient tokens to satisfy the request cost; `false` if rejected. |
+| `limit` | `number` | The maximum effective burst capacity of the bucket (`capacity + burstAllowance`). |
+| `remaining` | `number` | The integer floor of remaining tokens in the bucket after deduction (or current balance if rejected). |
+| `retryAfterSeconds` | `number` | Number of seconds the client must wait before enough tokens replenish to allow the request. `0` when `allowed: true`. |
+| `resetSeconds` | `number` | Number of seconds until the bucket reaches full effective capacity. |
+
+#### Internal State Counters (`BucketEntry` & `TokenBucketLimiter`)
+
+| Field / Property | Type | Event Causing State Change |
+| :--- | :--- | :--- |
+| `tokens` | `number` | Decrements atomically when a request is allowed (`tokens -= safeCost`). Increases over time based on elapsed monotonic seconds multiplied by `refillRatePerSecond`, capped at `effectiveCapacity`. Rejected requests never decrement tokens. |
+| `lastRefillMs` | `number` | Updated to `performance.now()` whenever tokens are replenished during request evaluation. |
+| `lastAccessMs` | `number` | Updated to `performance.now()` on every call to `consume()`, regardless of whether the request is allowed or blocked. |
+| `size` (getter) | `number` | Current count of active bucket identifiers in memory (`buckets.size`). Increments when a new client identifier is observed; decrements when expired entries are pruned or oldest keys dropped. |
+
+### 5.3 Snapshot Payload Structure
+
+When telemetry collectors or health probes query the state of fallback limiters, the snapshot payload captures the following structural representation:
+
+```json
+{
+  "tier": "tier:mutations",
+  "status": "degraded",
+  "effectiveCapacity": 60,
+  "refillRatePerSecond": 1.0,
+  "burstAllowance": 10,
+  "activeBuckets": 142,
+  "maxBuckets": 10000,
+  "maxIdleMs": 60000,
+  "lastPruneTimestampMs": 1795687250123.45,
+  "recentEvictions": 0
+}
+```
+
+#### Snapshot Field Descriptions
+- `tier`: Identifier of the rate tier running in degraded mode (e.g., `sensitive:auth`, `tier:search`, `tier:mutations`).
+- `status`: State indicator; reports `"degraded"` while requests are serviced via in-memory token buckets.
+- `effectiveCapacity`: Total burst limit (`capacity + burstAllowance`).
+- `refillRatePerSecond`: Number of tokens added per second.
+- `burstAllowance`: Configured burst overhead above base capacity.
+- `activeBuckets`: Current count of unique client IP/user buckets tracked in memory (`limiter.size`).
+- `maxBuckets`: Hard capacity limit for tracked clients.
+- `maxIdleMs`: Inactivity threshold for bucket eviction.
+- `lastPruneTimestampMs`: Monotonic timestamp of the most recent sweep for expired buckets.
+- `recentEvictions`: Number of expired buckets reclaimed during the last prune pass.
+
+### 5.4 Consumption in Admin Vitals & Monitoring
+
+Admin system health endpoints (`/api/admin/system/diagnostics` and `/api/admin/vitals`) aggregate degraded-mode telemetry to alert operators of underlying Redis connectivity issues:
+1. **Health Degraded Flag**: When fallback limiters are actively instantiated and tracking entries (`limiter.size > 0`), the admin vitals subsystem flags Redis health as `"degraded"` rather than `"healthy"`.
+2. **Rate Limit Headers in Fallback**: Even in degraded mode, the gateway middleware attaches standard RFC rate-limiting headers derived from `FallbackRateLimitResult` (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After`), ensuring downstream clients can back off smoothly.
+3. **Memory Boundary Protection**: If total tracked clients exceed `maxBuckets` (10,000), `pruneExpired()` is invoked automatically. If memory remains saturated, the oldest accessed bucket (`this.buckets.keys().next().value`) is evicted, ensuring zero memory leaks in Edge or Node processes.
+
+### 5.5 Current Implemented vs. Unsupported Capabilities
+
+| Feature | Status | Notes |
+| :--- | :---: | :--- |
+| **In-Memory Token Bucket** | **Implemented** | Millisecond-accurate monotonic refills via `performance.now()`. |
+| **Burst Allowances** | **Implemented** | Configurable `burstAllowance` above base capacity. |
+| **Automatic Outage Detection** | **Implemented** | Detects HTTP 503, connection timeouts, and network failure codes. |
+| **Bounded Memory / Eviction** | **Implemented** | Prunes idle buckets after `maxIdleMs` and caps total buckets at `maxBuckets`. |
+| **Cross-Instance Fallback Sync** | **Not Supported** | Fallback buckets are local to the running process/edge worker. Aggregate limits across multiple serverless instances can exceed single-instance quotas during outages. |
+| **Persistent Token Eviction Logs** | **Not Supported** | Evicted buckets are dropped immediately from memory without writing tombstone records to disk. |
+
 
 ### Modifying Rate-Limit Values
 

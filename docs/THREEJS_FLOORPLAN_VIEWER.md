@@ -6,7 +6,7 @@ This document provides a comprehensive technical reference for WorkSphere's inte
 
 ## 1. Overview & System Architecture
 
-WorkSphere provides high-performance interactive 3D coworking venue visualizers using hardware-accelerated rendering. The component primary entry point is [`FloorPlan3D.tsx`](file:///d:/ECSOC/Worksphere/WorkSphere/src/components/venue/floorplan/FloorPlan3D.tsx), which initializes a WebGPU rendering pipeline via [`WebGPUFloorPlanRenderer`](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts) when WebGPU is supported by the browser, and automatically falls back to an optimized WebGL 2.0 / GLSL 3.0 ES shader pipeline when WebGPU is unavailable or device context loss occurs.
+WorkSphere provides high-performance interactive 3D coworking venue visualizers using hardware-accelerated rendering. The component primary entry point is [`FloorPlan3D.tsx`](../src/components/venue/floorplan/FloorPlan3D.tsx), which initializes a WebGPU rendering pipeline via [`WebGPUFloorPlanRenderer`](../src/lib/webgpu/floorPlanRenderer.ts) when WebGPU is supported by the browser, and automatically falls back to an optimized WebGL 2.0 / GLSL 3.0 ES shader pipeline when WebGPU is unavailable or device context loss occurs.
 
 ### Component & Rendering Architecture Diagram
 
@@ -36,7 +36,7 @@ graph TD
 
 ### 2.1 Scene Hierarchy & Node Structure
 
-The 3D floor plan scene hierarchy is constructed programmatically from structured [`FloorPlanData`](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts#L49-L67) models consisting of floor bounds, walls, and seat nodes:
+The 3D floor plan scene hierarchy is constructed programmatically from structured [`FloorPlanData`](../src/lib/webgpu/floorPlanRenderer.ts#L49-L67) models consisting of floor bounds, walls, and seat nodes:
 
 ```
 Scene Root Node (World Space Origin [0, 0, 0])
@@ -260,7 +260,7 @@ export const DEFAULT_CAMERA_STATE: CameraState = {
 
 ### 4.3 WebGL Context Loss & DPR-Correct Restoration Architecture
 
-High-DPI / Retina displays require explicit canvas drawing buffer buffer re-allocation when recovering from WebGL context loss. WorkSphere coordinates canvas size management using [`allocateCanvasDrawingBuffer`](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/webgl/canvasBufferSize.ts) and [`attachWebGLContextRecovery`](file:///d:/ECSOC/Worksphere/WorkSphere/src/lib/webgl/contextManager.ts).
+High-DPI / Retina displays require explicit canvas drawing buffer buffer re-allocation when recovering from WebGL context loss. WorkSphere coordinates canvas size management using [`allocateCanvasDrawingBuffer`](../src/lib/webgl/canvasBufferSize.ts) and [`attachWebGLContextRecovery`](../src/lib/webgl/contextManager.ts).
 
 ```typescript
 // Attachment pattern in FloorPlan3D component lifecycle

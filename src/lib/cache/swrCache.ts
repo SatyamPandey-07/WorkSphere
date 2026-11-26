@@ -98,6 +98,10 @@ export interface SWROptions {
   freshTtlSeconds?: number;
   staleTtlSeconds?: number;
   redisClient?: any;
+  onCacheStatus?: (status: "hit" | "miss") => void;
+  backgroundFetch?: <T>(fetcher: () => Promise<T>) => Promise<T>;
+  cacheMissFetch?: <T>(fetcher: () => Promise<T>) => Promise<T>;
+  validateData?: (data: unknown) => boolean;
 }
 
 // In-flight mutex map to deduplicate concurrent background revalidations for the same key
@@ -168,6 +172,17 @@ export async function getOrInitRedisVersion(
   }
 }
 
+function reportCacheStatus(
+  options: SWROptions | undefined,
+  status: "hit" | "miss",
+): void {
+  try {
+    options?.onCacheStatus?.(status);
+  } catch (error) {
+    console.warn("[swrCache] Cache status callback failed:", error);
+  }
+}
+
 /**
  * Triggers background revalidation without blocking the caller.
  * Deduplicates in-flight revalidations for the same key.
@@ -198,7 +213,9 @@ export function triggerBackgroundRevalidation<T>(
       const remoteVersion = await getOrInitRedisVersion(redis, versionKey);
 
       // Now execute the background fetcher
-      const freshData = await fetcher();
+      const freshData = options?.backgroundFetch
+        ? await options.backgroundFetch(fetcher)
+        : await fetcher();
 
       // Fast-path Invalidation Guard:
       // If the cache key was invalidated in this process while fetch was in-flight, abort.
@@ -324,7 +341,10 @@ export async function swrCache<T>(
   // If Redis connection/query failed, do NOT serve stale in-memory data.
   // Execute fetcher directly from the database.
   if (redisError) {
-    return await fetcher();
+    reportCacheStatus(options, "miss");
+    return options?.cacheMissFetch
+      ? await options.cacheMissFetch(fetcher)
+      : await fetcher();
   }
 
   // 3. In-memory Tier 1 cache is ONLY used when Redis is intentionally unconfigured (no client).
@@ -334,23 +354,36 @@ export async function swrCache<T>(
     entry = inMemorySWRCache.get(key) as SWREntry<T>;
   }
 
+  if (entry && options?.validateData && !options.validateData(entry.data)) {
+    entry = null;
+    if (!redis) inMemorySWRCache.delete(key);
+  }
+
   // 4. Evaluate cached entry freshness
-  if (entry && typeof entry.cachedAt === "number" && "data" in entry) {
+  if (
+    entry &&
+    typeof entry.cachedAt === "number" &&
+    Number.isFinite(entry.cachedAt) &&
+    "data" in entry
+  ) {
     const ageSeconds = (Date.now() - entry.cachedAt) / 1000;
 
     // Fresh Hit: Return cached data immediately
-    if (ageSeconds < freshTtlSeconds) {
+    if (ageSeconds >= 0 && ageSeconds < freshTtlSeconds) {
+      reportCacheStatus(options, "hit");
       return entry.data;
     }
 
     // Stale Hit: Return cached data immediately, trigger background revalidation
-    if (ageSeconds < staleTtlSeconds) {
+    if (ageSeconds >= 0 && ageSeconds < staleTtlSeconds) {
+      reportCacheStatus(options, "hit");
       triggerBackgroundRevalidation(key, fetcher, options);
       return entry.data;
     }
   }
 
   // 5. Cache Miss or Expired past stale window:
+  reportCacheStatus(options, "miss");
   const localVersion = bumpKeyVersion(key);
 
   // ORDERING REQUIREMENT:
@@ -358,7 +391,9 @@ export async function swrCache<T>(
   const remoteVersion = await getOrInitRedisVersion(redis, versionKey);
 
   // Execute fetcher from database
-  const freshData = await fetcher();
+  const freshData = options?.cacheMissFetch
+    ? await options.cacheMissFetch(fetcher)
+    : await fetcher();
 
   const envelope: SWREntry<T> = {
     data: freshData,

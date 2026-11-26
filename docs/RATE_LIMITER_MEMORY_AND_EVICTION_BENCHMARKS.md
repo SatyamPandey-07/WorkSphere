@@ -1,6 +1,6 @@
 # In-Memory Rate Limiter Memory Footprint Benchmarks & Eviction Policies
 
-This document provides a comprehensive technical analysis of the memory footprint, heap allocation benchmarks, eviction policies, and lifecycle management for WorkSphere's in-memory rate limiting subsystems ([`src/lib/rateLimit/stores/memoryStore.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/rateLimit/stores/memoryStore.ts), [`src/lib/rateLimit/limiters/slidingWindowLimiter.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/rateLimit/limiters/slidingWindowLimiter.ts), and [`src/lib/rateLimit/limiters/tokenBucketLimiter.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/rateLimit/limiters/tokenBucketLimiter.ts)).
+This document provides a comprehensive technical analysis of the memory footprint, heap allocation benchmarks, eviction policies, and lifecycle management for WorkSphere's in-memory rate limiting subsystems ([`src/lib/rateLimit/stores/memoryStore.ts`](../src/lib/rateLimit/stores/memoryStore.ts), [`src/lib/rateLimit/limiters/slidingWindowLimiter.ts`](../src/lib/rateLimit/limiters/slidingWindowLimiter.ts), and [`src/lib/rateLimit/limiters/tokenBucketLimiter.ts`](../src/lib/rateLimit/limiters/tokenBucketLimiter.ts)).
 
 ---
 
@@ -33,7 +33,7 @@ flowchart TD
 
 ## 2. In-Memory Store Architecture & State Representation
 
-The in-memory rate limiting state is encapsulated in `MemoryRateLimitStore` ([`src/lib/rateLimit/stores/memoryStore.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/rateLimit/stores/memoryStore.ts)):
+The in-memory rate limiting state is encapsulated in `MemoryRateLimitStore` ([`src/lib/rateLimit/stores/memoryStore.ts`](../src/lib/rateLimit/stores/memoryStore.ts)):
 
 ```typescript
 export interface MemEntry {

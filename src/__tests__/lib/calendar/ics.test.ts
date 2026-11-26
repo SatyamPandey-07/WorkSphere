@@ -21,6 +21,22 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
         end: "",
       });
     });
+    it.each([
+      -30,
+      0,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_VALUE,
+    ])("returns empty strings for invalid duration %p", (duration) => {
+      expect(
+        formatDateTimeForCalendar("2026-07-20", "09:00", duration),
+      ).toEqual({
+        start: "",
+        end: "",
+      });
+    });
 
     it("uses the given duration in minutes for DTEND", () => {
       const oneHour = formatDateTimeForCalendar("2026-07-20", "09:00", 60);
@@ -108,6 +124,25 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
       expect(unfolded).toContain(
         "DESCRIPTION:Hot desk booking at Indie Desk Hub\\nVenue Address: 42 Market Street\\, Austin\\nBooking ID: WS-#482910\\nDuration: 90 min",
       );
+    });
+    it.each([
+      -30,
+      0,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_VALUE,
+    ])("returns an empty string for invalid duration %p", (duration) => {
+      expect(
+        generateICSContent({
+          venueName: "Venue",
+          venueAddress: "Address",
+          date: "2026-07-20",
+          time: "09:00",
+          durationMinutes: duration,
+        }),
+      ).toBe("");
     });
 
     it("generates RFC 5545 compliant iCalendar string with object options", () => {
@@ -220,6 +255,42 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
       expect(bulkIcs).toContain("SUMMARY:Booking at Venue Two (120 min) [B2]");
       expect(bulkIcs).toContain("END:VCALENDAR");
     });
+    it.each([
+      -30,
+      0,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_VALUE,
+    ])(
+      "skips invalid duration %p without interrupting bulk export",
+      (duration) => {
+        const bulkIcs = generateBulkICSContent([
+          {
+            venueName: "Valid Venue",
+            venueAddress: "Valid Address",
+            date: "2026-07-20",
+            time: "09:00",
+            duration: 60,
+            bookingId: "VALID-1",
+          },
+          {
+            venueName: "Invalid Venue",
+            venueAddress: "Invalid Address",
+            date: "2026-07-20",
+            time: "10:00",
+            duration,
+            bookingId: "INVALID-1",
+          },
+        ]);
+
+        expect(bulkIcs).not.toBeNull();
+        expect(bulkIcs?.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+        expect(bulkIcs).toContain("UID:VALID-1@worksphere.app");
+        expect(bulkIcs).not.toContain("INVALID-1");
+      },
+    );
 
     it("returns null if no bookings have valid date/time", () => {
       expect(generateBulkICSContent([])).toBeNull();

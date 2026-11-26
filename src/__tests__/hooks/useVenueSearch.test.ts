@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useVenueSearch } from "@/hooks/useVenueSearch";
+import { clearVenueSearchCache } from "@/lib/search/venueSearchCache";
 
 describe("useVenueSearch (#3513)", () => {
   const originalFetch = global.fetch;
@@ -7,6 +8,7 @@ describe("useVenueSearch (#3513)", () => {
   let mockFetch: jest.Mock;
 
   beforeEach(() => {
+    clearVenueSearchCache();
     jest.useFakeTimers();
     mockFetch = jest.fn();
     global.fetch = mockFetch;
@@ -52,6 +54,41 @@ describe("useVenueSearch (#3513)", () => {
 
     expect(result.current.suggestedQuery).toBe("Starbucks");
     expect(result.current.venues).toEqual([]);
+  });
+
+  it("reissues the current search when active filter parameters change", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ venues: [] }),
+    });
+
+    const { result, rerender } = renderHook(
+      ({ filterParams }) => useVenueSearch({ filterParams }),
+      { initialProps: { filterParams: "" } },
+    );
+
+    act(() => {
+      result.current.setQuery("desk");
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/api/venues?query=desk",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    rerender({ filterParams: "standingDesk=true" });
+    await act(async () => {
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/api/venues?query=desk&standingDesk=true",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("debounces rapid keystrokes by 250ms and fires at most one request", async () => {
@@ -119,7 +156,13 @@ describe("useVenueSearch (#3513)", () => {
 
   it("cancels pending debounce timers on rapid keystrokes", async () => {
     const mockVenues = [
-      { id: "v2", name: "Central Library", category: "library", latitude: 15, longitude: 25 },
+      {
+        id: "v2",
+        name: "Central Library",
+        category: "library",
+        latitude: 15,
+        longitude: 25,
+      },
     ];
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -444,7 +487,9 @@ describe("useVenueSearch (#3513)", () => {
         setTimeout(() => {
           resolve({
             ok: true,
-            json: async () => ({ venues: [{ id: "v99", name: "Stale Venue" }] }),
+            json: async () => ({
+              venues: [{ id: "v99", name: "Stale Venue" }],
+            }),
           });
         }, 500);
       });

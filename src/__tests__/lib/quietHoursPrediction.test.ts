@@ -1,8 +1,15 @@
-import { QUIET_THRESHOLD_DB, PEAK_THRESHOLD_DB, classifyNoiseLevelDb, getHourlyNoiseProfile, predictQuietHours } from "@/lib/quietHoursPrediction";
+import {
+  QUIET_THRESHOLD_DB,
+  PEAK_THRESHOLD_DB,
+  classifyNoiseLevelDb,
+  getHourlyNoiseProfile,
+  predictQuietHours,
+} from "@/lib/quietHoursPrediction";
 import { prisma } from "@/lib/prisma";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
+    $queryRaw: jest.fn(),
     venueRating: {
       findMany: jest.fn(),
     },
@@ -82,7 +89,11 @@ describe("quiet window detection logic", () => {
   });
 
   it("handles zero quiet hours resulting in insufficient noise data summary", () => {
-    const quietWindows: Array<{ startHour: number; endHour: number; avgDb: number }> = [];
+    const quietWindows: Array<{
+      startHour: number;
+      endHour: number;
+      avgDb: number;
+    }> = [];
     const summary =
       quietWindows.length > 0
         ? `Quietest times: ...`
@@ -90,7 +101,6 @@ describe("quiet window detection logic", () => {
     expect(summary).toBe("Insufficient noise data to predict quiet windows.");
   });
 });
-
 
 describe("classifyNoiseLevelDb & Input Sanitization (#6750)", () => {
   it("classifies valid decibel ratings correctly", () => {
@@ -107,36 +117,73 @@ describe("classifyNoiseLevelDb & Input Sanitization (#6750)", () => {
     expect(classifyNoiseLevelDb(Infinity)).toBe("Moderate");
   });
 
-  it("getHourlyNoiseProfile safely handles empty venueId", async () => {
-    const profile = await getHourlyNoiseProfile("");
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("getHourlyNoiseProfile safely handles empty and whitespace venueId without querying DB", async () => {
+    const profile = await getHourlyNoiseProfile("   ");
     expect(profile).toHaveLength(24);
     expect(profile[0].averageDb).toBeNull();
     expect(profile[0].samples).toBe(0);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.venueRating.findMany).not.toHaveBeenCalled();
   });
 
-  it("getHourlyNoiseProfile filters corrupted timestamps and NaN decibels without throwing", async () => {
-    (prisma.venueRating.findMany as jest.Mock).mockResolvedValueOnce([
-      { avgDecibels: 42, createdAt: new Date("2026-10-26T10:00:00Z") },
-      { avgDecibels: NaN, createdAt: new Date("2026-10-26T10:00:00Z") }, // NaN decibels
-      { avgDecibels: 50, createdAt: new Date("invalid-date") }, // invalid Date
-      { avgDecibels: 48, createdAt: "2026-10-26T10:00:00Z" }, // string timestamp
-      { avgDecibels: -20, createdAt: new Date("2026-10-26T10:00:00Z") }, // negative decibels
+  it("returns 24 insufficient-data slots when aggregated rows are empty", async () => {
+    (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce([]);
+
+    const prediction = await predictQuietHours("venue-empty");
+    expect(prediction.venueId).toBe("venue-empty");
+    expect(prediction.hourlyProfile).toHaveLength(24);
+    expect(prediction.quietWindows).toEqual([]);
+    expect(prediction.peakHours).toEqual([]);
+    expect(prediction.summary).toBe(
+      "Insufficient noise data to predict quiet windows.",
+    );
+    expect(prisma.venueRating.findMany).not.toHaveBeenCalled();
+  });
+
+  it("executes a parameterized SQL aggregation and ignores invalid bucket rows safely", async () => {
+    (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce([
+      { hour: 10, averageDb: 45, samples: 2 },
+      { hour: 25, averageDb: 50, samples: 1 }, // out-of-range hour
+      { hour: 11, averageDb: Number.NaN, samples: 1 }, // NaN averageDb
+      { hour: 12, averageDb: -20, samples: 1 }, // negative decibels
+      { hour: 13, averageDb: 60, samples: 0 }, // zero samples
     ]);
 
-    const profile = await getHourlyNoiseProfile("venue-123");
+    const profile = await getHourlyNoiseProfile("  venue-123  ");
     expect(profile).toHaveLength(24);
-    const hour10 = profile[10];
-    // Only valid decibels (42 and 48) at hour 10 should be aggregated: (42 + 48) / 2 = 45.0
-    expect(hour10.samples).toBe(2);
-    expect(hour10.averageDb).toBe(45);
-    expect(hour10.label).toBe("Quiet");
+    expect(prisma.venueRating.findMany).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+
+    const [strings, param] = (prisma.$queryRaw as jest.Mock).mock.calls[0];
+    const sqlText = Array.isArray(strings)
+      ? strings.join(" ")
+      : String(strings);
+    expect(sqlText).toContain('FROM "VenueRating"');
+    expect(sqlText).toContain("EXTRACT(HOUR FROM");
+    expect(sqlText).toContain("AVG(");
+    expect(sqlText).toContain("COUNT(*)");
+    expect(sqlText).toContain("GROUP BY");
+    expect(param).toBe("venue-123");
+
+    expect(profile[10]).toEqual({
+      hour: 10,
+      averageDb: 45,
+      label: "Quiet",
+      samples: 2,
+    });
+    expect(profile[11].samples).toBe(0);
+    expect(profile[12].samples).toBe(0);
+    expect(profile[13].samples).toBe(0);
   });
 
   it("predictQuietHours formats midnight windows cleanly and avoids NaN summary", async () => {
-    (prisma.venueRating.findMany as jest.Mock).mockResolvedValueOnce([
-      { avgDecibels: 40, createdAt: new Date("2026-10-26T22:00:00Z") },
-      { avgDecibels: 40, createdAt: new Date("2026-10-26T23:00:00Z") },
+    (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce([
+      { hour: BigInt(22), averageDb: "40", samples: BigInt(3) },
+      { hour: BigInt(23), averageDb: 40, samples: BigInt(2) },
     ]);
 
     const prediction = await predictQuietHours("venue-123");
@@ -148,5 +195,57 @@ describe("classifyNoiseLevelDb & Input Sanitization (#6750)", () => {
     });
     expect(prediction.summary).toContain("22:00–24:00 (~40 dB)");
     expect(prediction.summary).not.toContain("NaN");
+  });
+
+  it("matches reference aggregation across a 25,000-rating dataset without full row scans", async () => {
+    const ratingCount = 25_000;
+    const referenceBuckets = Array.from({ length: 24 }, () => ({
+      sum: 0,
+      count: 0,
+    }));
+
+    for (let i = 0; i < ratingCount; i += 1) {
+      const hour = i % 24;
+      const db =
+        hour >= 9 && hour <= 11
+          ? 44 + (i % 5)
+          : hour >= 17 && hour <= 19
+            ? 73 + (i % 4)
+            : 60 + (i % 6);
+      referenceBuckets[hour].sum += db;
+      referenceBuckets[hour].count += 1;
+    }
+
+    const dbAggregatedRows = referenceBuckets.map((b, hour) => ({
+      hour,
+      averageDb: b.sum / b.count,
+      samples: b.count,
+    }));
+
+    (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce(dbAggregatedRows);
+
+    const startMs = performance.now();
+    const prediction = await predictQuietHours("venue-large");
+    const elapsedMs = performance.now() - startMs;
+
+    expect(prisma.venueRating.findMany).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prediction.hourlyProfile).toHaveLength(24);
+
+    for (let h = 0; h < 24; h += 1) {
+      const expectedAvg =
+        Math.round((referenceBuckets[h].sum / referenceBuckets[h].count) * 10) /
+        10;
+      expect(prediction.hourlyProfile[h].averageDb).toBe(expectedAvg);
+      expect(prediction.hourlyProfile[h].samples).toBe(
+        referenceBuckets[h].count,
+      );
+    }
+
+    expect(prediction.quietWindows).toHaveLength(1);
+    expect(prediction.quietWindows[0].startHour).toBe(9);
+    expect(prediction.quietWindows[0].endHour).toBe(11);
+    expect(prediction.peakHours).toEqual([17, 18, 19]);
+    expect(elapsedMs).toBeLessThan(100);
   });
 });

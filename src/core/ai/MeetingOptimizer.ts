@@ -61,8 +61,21 @@ export interface CandidateVenue {
    * Acoustic quietness score (higher is quieter / better, e.g. 0-100 or 1-5). Missing/NaN defaults to 0.
    */
   acousticQuietness?: number;
+  /** Lower values are preferred when cost is the primary tie-breaker. */
+  cost?: number;
+  /** Lower values are preferred when latency is the primary tie-breaker. */
+  latency?: number;
+  /** Higher values are preferred when comfort is the primary tie-breaker. */
+  comfort?: number;
   /** Additional arbitrary metadata */
   [key: string]: any;
+}
+
+export type ParetoPrimaryTieBreaker = "cost" | "latency" | "comfort";
+
+export interface ParetoRankingOptions {
+  /** Selects the primary sort key for candidates on the Pareto frontier. */
+  primaryTieBreaker?: ParetoPrimaryTieBreaker;
 }
 
 export interface ParetoRankingResult {
@@ -81,132 +94,6 @@ export class MeetingOptimizer {
     const score = typeof slot.score === 'number' && Number.isFinite(slot.score) ? slot.score : Math.max(0, 100 - outOfHoursCount * 25);
     const summaryText = windows.map((w) => `${w.name ? `${w.name} (${w.participantId})` : w.participantId}: ${w.localStartFormatted}–${w.localEndFormatted} (${w.utcOffsetLabel}, ${w.timeZone})${w.isOutOfHours ? ` [OUT OF HOURS: ${w.outOfHoursReasons.join(', ')}]` : ' [In Hours]'}`).join('\n');
     return { startUnixMs: slot.startUnixMs, endUnixMs: slot.endUnixMs, score, outOfHoursCount, isFairForAllParticipants: outOfHoursCount === 0, participants: windows, summaryText };
-  }
-
-  /**
-   * Sanitizes and normalizes an objective score safely.
-   */
-  private sanitizeObjective(val: any): number {
-    const num = Number(val);
-    return Number.isFinite(num) ? num : 0;
-  }
-
-  /**
-   * Evaluates if venue A strictly dominates venue B across all 3 objectives:
-   * 1. travelFairness (higher is better)
-   * 2. wifiReliability (higher is better)
-   * 3. acousticQuietness (higher is better)
-   *
-   * A strictly dominates B if:
-   * A >= B in all 3 objectives, AND
-   * A > B in at least one objective.
-   */
-  public isStrictlyDominated(a: CandidateVenue, b: CandidateVenue): boolean {
-    const aTF = this.sanitizeObjective(a.travelFairness);
-    const aWifi = this.sanitizeObjective(a.wifiReliability);
-    const aQuiet = this.sanitizeObjective(a.acousticQuietness);
-
-    const bTF = this.sanitizeObjective(b.travelFairness);
-    const bWifi = this.sanitizeObjective(b.wifiReliability);
-    const bQuiet = this.sanitizeObjective(b.acousticQuietness);
-
-    const atLeastAsGood = aTF >= bTF && aWifi >= bWifi && aQuiet >= bQuiet;
-    const strictlyBetterInOne = aTF > bTF || aWifi > bWifi || aQuiet > bQuiet;
-
-    return atLeastAsGood && strictlyBetterInOne;
-  }
-
-  /**
-   * Deterministic tie-breaking comparator for venues.
-   * Compares total objective aggregate score, then individual objectives, then stable ID/name.
-   */
-  private compareVenuesDeterministically(a: CandidateVenue, b: CandidateVenue): number {
-    const aTF = this.sanitizeObjective(a.travelFairness);
-    const aWifi = this.sanitizeObjective(a.wifiReliability);
-    const aQuiet = this.sanitizeObjective(a.acousticQuietness);
-    const aTotal = aTF + aWifi + aQuiet;
-
-    const bTF = this.sanitizeObjective(b.travelFairness);
-    const bWifi = this.sanitizeObjective(b.wifiReliability);
-    const bQuiet = this.sanitizeObjective(b.acousticQuietness);
-    const bTotal = bTF + bWifi + bQuiet;
-
-    if (bTotal !== aTotal) {
-      return bTotal - aTotal;
-    }
-    if (bTF !== aTF) {
-      return bTF - aTF;
-    }
-    if (bWifi !== aWifi) {
-      return bWifi - aWifi;
-    }
-    if (bQuiet !== aQuiet) {
-      return bQuiet - aQuiet;
-    }
-
-    // Deterministic tie-breaker using stable identifiers
-    const idA = String(a.id ?? a.name ?? "");
-    const idB = String(b.id ?? b.name ?? "");
-    return idA.localeCompare(idB);
-  }
-
-  /**
-   * Computes the Pareto frontier of candidate venues across travel fairness,
-   * WiFi reliability, and acoustic quietness.
-   *
-   * 1. Eliminates all strictly dominated venues.
-   * 2. Preserves all non-dominated candidates on the Pareto frontier.
-   * 3. Sorts venues deterministically using tie-breakers so repeated runs with
-   *    identical inputs produce identical results regardless of input order.
-   */
-  public rankVenuesPareto(candidates: CandidateVenue[]): ParetoRankingResult {
-    if (!candidates || candidates.length === 0) {
-      return {
-        paretoFrontier: [],
-        dominatedVenues: [],
-        rankedVenues: [],
-      };
-    }
-
-    // Sort initial list deterministically to ensure order independence
-    const cleanCandidates = [...candidates].sort((a, b) =>
-      this.compareVenuesDeterministically(a, b),
-    );
-
-    const paretoFrontier: CandidateVenue[] = [];
-    const dominatedVenues: CandidateVenue[] = [];
-
-    for (let i = 0; i < cleanCandidates.length; i++) {
-      const candidate = cleanCandidates[i];
-      let dominated = false;
-
-      for (let j = 0; j < cleanCandidates.length; j++) {
-        if (i === j) continue;
-        const other = cleanCandidates[j];
-        if (this.isStrictlyDominated(other, candidate)) {
-          dominated = true;
-          break;
-        }
-      }
-
-      if (dominated) {
-        dominatedVenues.push(candidate);
-      } else {
-        paretoFrontier.push(candidate);
-      }
-    }
-
-    paretoFrontier.sort((a, b) => this.compareVenuesDeterministically(a, b));
-    dominatedVenues.sort((a, b) => this.compareVenuesDeterministically(a, b));
-
-    // The final ranked list contains the Pareto frontier first, followed by dominated venues
-    const rankedVenues = [...paretoFrontier, ...dominatedVenues];
-
-    return {
-      paretoFrontier,
-      dominatedVenues,
-      rankedVenues,
-    };
   }
 
   /**
@@ -233,8 +120,9 @@ export class MeetingOptimizer {
    * -------------------------------------------------------------
    * Candidates on the Pareto frontier represent mutually non-dominated trade-offs
    * (e.g., higher travel fairness vs. higher WiFi reliability).
-   * To establish a definitive ordering for downstream consumers, candidates on the
-   * frontier are sorted according to a deterministic multi-tiered hierarchy:
+   * An explicitly supplied primary tie-breaker orders the frontier by cost,
+   * latency, or comfort. If none is supplied, the legacy deterministic hierarchy
+   * is retained exactly:
    *   Tier 1: Aggregate Objective Score DESC (sum of all 3 normalized objectives)
    *   Tier 2: Individual Objective Precedence DESC:
    *           - travelFairness DESC (highest priority dimension)
@@ -348,6 +236,58 @@ export class MeetingOptimizer {
     return idA.localeCompare(idB);
   }
 
+  private compareVenuesWithPreference(
+    a: CandidateVenue,
+    b: CandidateVenue,
+    preference: ParetoPrimaryTieBreaker,
+  ): number {
+    const primaryComparison = this.comparePreferenceValues(a, b, preference);
+
+    if (primaryComparison !== 0) {
+      return primaryComparison;
+    }
+
+    const legacyComparison = this.compareVenuesDeterministically(a, b);
+    if (legacyComparison !== 0) {
+      return legacyComparison;
+    }
+
+    for (const key of ["cost", "latency", "comfort"] as const) {
+      if (key === preference) continue;
+
+      const comparison = this.comparePreferenceValues(a, b, key);
+      if (comparison !== 0) {
+        return comparison;
+      }
+    }
+
+    const nameA = String(a.name ?? "");
+    const nameB = String(b.name ?? "");
+    return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
+  }
+
+  private comparePreferenceValues(
+    a: CandidateVenue,
+    b: CandidateVenue,
+    preference: ParetoPrimaryTieBreaker,
+  ): number {
+    const aRaw = a[preference];
+    const bRaw = b[preference];
+    const aValue = Number(aRaw);
+    const bValue = Number(bRaw);
+    const aValid = aRaw !== undefined && aRaw !== null && Number.isFinite(aValue);
+    const bValid = bRaw !== undefined && bRaw !== null && Number.isFinite(bValue);
+
+    if (aValid !== bValid) {
+      return aValid ? -1 : 1;
+    }
+    if (!aValid) {
+      return 0;
+    }
+
+    return preference === "comfort" ? bValue - aValue : aValue - bValue;
+  }
+
   /**
    * Computes the Pareto frontier of candidate venues across travel fairness,
    * WiFi reliability, and acoustic quietness.
@@ -357,7 +297,20 @@ export class MeetingOptimizer {
    * 3. Sorts venues deterministically using tie-breakers so repeated runs with
    *    identical inputs produce identical results regardless of input order.
    */
-  public rankVenuesPareto(candidates: CandidateVenue[]): ParetoRankingResult {
+  public rankVenuesPareto(
+    candidates: CandidateVenue[],
+    options?: ParetoRankingOptions,
+  ): ParetoRankingResult {
+    const preference = options?.primaryTieBreaker;
+    if (
+      preference !== undefined &&
+      preference !== "cost" &&
+      preference !== "latency" &&
+      preference !== "comfort"
+    ) {
+      throw new RangeError(`Unsupported Pareto primary tie-breaker: ${preference}`);
+    }
+
     if (!candidates || candidates.length === 0) {
       return {
         paretoFrontier: [],
@@ -394,7 +347,11 @@ export class MeetingOptimizer {
       }
     }
 
-    paretoFrontier.sort((a, b) => this.compareVenuesDeterministically(a, b));
+    paretoFrontier.sort((a, b) =>
+      preference
+        ? this.compareVenuesWithPreference(a, b, preference)
+        : this.compareVenuesDeterministically(a, b),
+    );
     dominatedVenues.sort((a, b) => this.compareVenuesDeterministically(a, b));
 
     // The final ranked list contains the Pareto frontier first, followed by dominated venues

@@ -2,6 +2,7 @@ import { POST } from "@/app/api/webhooks/clerk/route";
 import { prisma } from "@/lib/prisma";
 import { Webhook as StandardWebhook } from "standardwebhooks";
 
+
 jest.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
@@ -551,6 +552,71 @@ describe("Clerk Webhook Handler & Verification", () => {
         2,
         expect.objectContaining({ where: { id: "user_duplicate" } }),
       );
+    });
+  });
+});
+describe("Clerk webhook user.updated null email handling (#9267)", () => {
+  it("returns 200 OK and updates profile fields cleanly when user.updated has empty email_addresses and null primary_email_address_id", async () => {
+    
+    const secret =
+      process.env.CLERK_WEBHOOK_SIGNING_SECRET ||
+      "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+    process.env.CLERK_WEBHOOK_SIGNING_SECRET = secret;
+
+    const payload = {
+      type: "user.updated",
+      data: {
+        id: "user_phone_only_9267",
+        first_name: "Gaurika",
+        last_name: "Dogra",
+        image_url: "https://img.clerk.com/avatar.png?sz=64",
+        primary_email_address_id: null,
+        email_addresses: [],
+      },
+    };
+
+    const rawBody = JSON.stringify(payload);
+    const wh = new Webhook(secret);
+    const msgId = "msg_test_user_updated_9267";
+    const now = new Date();
+    const signature = wh.sign(msgId, now, rawBody);
+
+    const req = new Request("http://localhost/api/webhooks/clerk", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "svix-id": msgId,
+        "svix-timestamp": Math.floor(now.getTime() / 1000).toString(),
+        "svix-signature": signature,
+      },
+      body: rawBody,
+    });
+
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toEqual({
+      success: true,
+      action: "updated",
+      userId: "user_phone_only_9267",
+    });
+
+    expect(prisma.user.upsert).toHaveBeenCalledWith({
+      where: { id: "user_phone_only_9267" },
+      update: {
+        email: null,
+        firstName: "Gaurika",
+        lastName: "Dogra",
+        imageUrl: "https://img.clerk.com/avatar.png?sz=150",
+      },
+      create: {
+        id: "user_phone_only_9267",
+        email: null,
+        firstName: "Gaurika",
+        lastName: "Dogra",
+        imageUrl: "https://img.clerk.com/avatar.png?sz=150",
+      },
     });
   });
 });

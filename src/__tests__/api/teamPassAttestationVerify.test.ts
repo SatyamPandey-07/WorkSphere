@@ -92,7 +92,30 @@ describe("Batch team-pass attestation verification (#10241)", () => {
 
     expect(res.status).toBe(200);
     expect(json.verified).toBe(1);
+    expect(json.verifiedCount).toBe(1);
+    expect(json.failedCount).toBe(0);
+    expect(json.total).toBe(1);
     expect(json.results[0].status).toBe("verified");
+  });
+
+  it("returns verified and failed counts for mixed batch results", async () => {
+    const valid = makeAttestation();
+    const expired = makeAttestation({
+      expiresAt: new Date(NOW - 1000).toISOString(),
+    });
+
+    const tampered = makeAttestation();
+    tampered.signature = "invalid-signature";
+
+    const res = await verify([valid, expired, tampered]);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.total).toBe(3);
+    expect(json.verifiedCount).toBe(1);
+    expect(json.failedCount).toBe(2);
+    expect(json.verified).toBe(1);
+    expect(json.results).toHaveLength(3);
   });
 
   it("rejects an expired attestation", async () => {

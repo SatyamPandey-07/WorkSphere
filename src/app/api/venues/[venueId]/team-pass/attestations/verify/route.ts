@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -213,10 +213,17 @@ export async function POST(req: NextRequest, context: RouteContext) {
       }),
     );
 
+    const verifiedCount = results.filter(
+      (result) => result.status === "verified",
+    ).length;
+    const failedCount = results.length - verifiedCount;
+
     return NextResponse.json({
       success: true,
       total: results.length,
-      verified: results.filter((r) => r.status === "verified").length,
+      verified: verifiedCount,
+      verifiedCount,
+      failedCount,
       results,
     });
   } catch (error) {

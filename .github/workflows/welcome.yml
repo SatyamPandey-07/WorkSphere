@@ -19,7 +19,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+            const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
             const issueAuthor = (context.payload.issue?.user?.login || '').toLowerCase();
             if (BLOCKED_USERS.some(u => u.toLowerCase() === issueAuthor)) {
               console.log(`Closing issue #${context.issue.number} by blocked user: ${issueAuthor}`);
@@ -49,11 +49,11 @@ jobs:
             const association = context.payload.issue.author_association;
             const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
             let welcomePrefix = '';
-            
+
             if (isFirstTime) {
               welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
             }
-            
+
             const issueComment = [
               welcomePrefix ? welcomePrefix.trimEnd() + '\n' : null,
               '🎉 Thanks for opening this issue!',
@@ -82,7 +82,7 @@ jobs:
               '- 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)',
               '- 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/LOlGGwIVKkXFBETnZlxDCF) or contact via phone at `+91 9820866720`.'
             ].filter(Boolean).join('\n');
-            
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -94,28 +94,28 @@ jobs:
             const title = (context.payload.issue.title || '').toLowerCase();
             const body = (context.payload.issue.body || '').toLowerCase();
 
-            const isBug = 
-              title.includes('bug') || 
-              title.includes('fix') || 
-              title.includes('error') || 
-              title.includes('fail') || 
+            const isBug =
+              title.includes('bug') ||
+              title.includes('fix') ||
+              title.includes('error') ||
+              title.includes('fail') ||
               title.includes('crash') ||
-              body.includes('steps to reproduce') || 
+              body.includes('steps to reproduce') ||
               body.includes('expected behavior') ||
               body.includes('actual behavior');
-              
-            const isFeature = 
-              title.includes('feature') || 
-              title.includes('feat') || 
-              title.includes('request') || 
+
+            const isFeature =
+              title.includes('feature') ||
+              title.includes('feat') ||
+              title.includes('request') ||
               title.includes('add') ||
-              body.includes('feature request') || 
+              body.includes('feature request') ||
               body.includes('describe the solution you\'d like');
 
-            const isDocs = 
-              title.includes('doc') || 
-              title.includes('readme') || 
-              body.includes('documentation') || 
+            const isDocs =
+              title.includes('doc') ||
+              title.includes('readme') ||
+              body.includes('documentation') ||
               body.includes('proposed changes');
 
             const labelsToAdd = ['needs-review'];
@@ -130,9 +130,9 @@ jobs:
             // Assess if this is a high-quality, well-documented issue to award "good-issue" (+10 XP)
             const issueBody = context.payload.issue.body || '';
             const isDetailed = issueBody.length > 250;
-            const hasGoodStructure = 
-              issueBody.toLowerCase().includes('steps to reproduce') || 
-              issueBody.toLowerCase().includes('expected behavior') || 
+            const hasGoodStructure =
+              issueBody.toLowerCase().includes('steps to reproduce') ||
+              issueBody.toLowerCase().includes('expected behavior') ||
               issueBody.toLowerCase().includes('reproduction') ||
               issueBody.toLowerCase().includes('alternatives') ||
               issueBody.toLowerCase().includes('proposed changes');
@@ -164,9 +164,9 @@ jobs:
               const prAuthor = context.payload.pull_request.user.login;
               const association = context.payload.pull_request.author_association;
               const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
-              
+
               // Immediately reject and close PRs from blocked/banned contributors
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor.toLowerCase())) {
                 console.log(`Auto-closing PR #${prNumber} from blocked contributor: ${prAuthor}`);
                 await github.rest.issues.createComment({
@@ -199,7 +199,7 @@ jobs:
                 console.log(`Skipping bot PR #${prNumber} by ${prAuthor}`);
                 return;
               }
-              
+
               // 1. Post PR Welcome comment (only when first opened)
               if (context.payload.action === 'opened') {
                 let welcomePrefix = '';
@@ -222,7 +222,7 @@ jobs:
                   '- 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)',
                   '- 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/LOlGGwIVKkXFBETnZlxDCF) or contact via phone at `+91 9820866720`.'
                 ].filter(Boolean).join('\n');
-                
+
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -253,6 +253,27 @@ jobs:
                 }
               }
 
+              // Ensure PR author is assigned as an assignee (idempotent, works on opened & synchronize)
+              try {
+                const prRes = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber
+                });
+                const currentAssignees = (prRes.data.assignees || []).map(a => a.login.toLowerCase());
+                if (!currentAssignees.includes(prAuthor.toLowerCase())) {
+                  await github.rest.issues.addAssignees({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    assignees: [prAuthor]
+                  });
+                  console.log(`Auto-assigned author @${prAuthor} to PR #${prNumber}`);
+                }
+              } catch (assignErr) {
+                console.warn(`Could not ensure PR author assignee for #${prNumber}:`, assignErr.message);
+              }
+
               // 2. Fetch list of modified files in the PR to assign labels dynamically
               const { data: files } = await github.rest.pulls.listFiles({
                 owner: context.repo.owner,
@@ -270,14 +291,14 @@ jobs:
                 if (filename.includes('__tests__/') || filename.endsWith('.test.ts') || filename.endsWith('.test.tsx')) {
                   hasTests = true;
                 } else if (
-                  filename.startsWith('src/components/') || 
+                  filename.startsWith('src/components/') ||
                   (filename.startsWith('src/app/') && !filename.includes('/api/') && (filename.endsWith('.tsx') || filename.endsWith('.css')))
                 ) {
                   hasUI = true;
                 } else if (
-                  filename.startsWith('src/app/api/') || 
-                  filename.startsWith('prisma/') || 
-                  filename.startsWith('src/lib/') || 
+                  filename.startsWith('src/app/api/') ||
+                  filename.startsWith('prisma/') ||
+                  filename.startsWith('src/lib/') ||
                   filename === 'src/middleware.ts'
                 ) {
                   hasBackend = true;

@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { hasFolderAccess } from "@/lib/folders";
+import {
+  buildCsvContentDisposition,
+  sanitizeCsvFilename,
+  sanitizeCsvFilenameStem,
+} from "@/lib/export/csvFilename";
 
 // GET /api/folders/[id]/export-billing - Export billing CSV
 export async function GET(
@@ -15,13 +20,16 @@ export async function GET(
     }
 
     const { id } = await params;
-    const { folder, hasAccess } = await hasFolderAccess(id, userId);
+    const { folder, hasAccess, role } = await hasFolderAccess(id, userId);
 
     if (!folder) {
       return new NextResponse("Folder not found", { status: 404 });
     }
-    if (!hasAccess) {
-      return new NextResponse("Forbidden", { status: 403 });
+    if (!hasAccess || (role !== "OWNER" && role !== "EDITOR")) {
+      return new NextResponse(
+        "Forbidden: Insufficient permissions to export billing data",
+        { status: 403 },
+      );
     }
 
     // 1. Fetch all venues in the folder
@@ -72,29 +80,31 @@ export async function GET(
       const mockExpense = (15 + duration * 0.25).toFixed(2);
 
       return [
-        booking.date,
-        `"${booking.venue.name.replace(/"/g, '""')}"`,
-        `"${userName.replace(/"/g, '""')}"`,
-        booking.user.email || booking.customerEmail,
-        duration,
-        booking.projectBillingCode || "N/A",
-        booking.confirmationId,
-        mockExpense,
-      ];
+        escapeCSVField(booking.date),
+        escapeCSVField(booking.venue.name),
+        escapeCSVField(userName),
+        escapeCSVField(booking.user.email || booking.customerEmail),
+        escapeCSVField(duration, true, true),
+        escapeCSVField(booking.projectBillingCode || "N/A"),
+        escapeCSVField(booking.confirmationId),
+        escapeCSVField(mockExpense, true, true),
+      ].join(",");
     });
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => row.join(",")),
-    ].join("\n");
+    const csvContent = [headers.join(","), ...rows].join("\n");
 
     // 4. Return as dynamic CSV stream/file
-    const filename = `billing-export-${folder.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.csv`;
+    const safeFolderName = sanitizeCsvFilenameStem(
+      folder.name.toLowerCase(),
+    );
+    const filename = sanitizeCsvFilename(
+      `billing-export-${safeFolderName}-${new Date().toISOString().split("T")[0]}`,
+    );
 
     return new NextResponse(csvContent, {
       headers: {
         "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": buildCsvContentDisposition(filename),
         "Cache-Control": "no-cache",
       },
     });

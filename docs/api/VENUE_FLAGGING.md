@@ -52,6 +52,22 @@ The API performs strict validation on the `reason` field via Zod enum parsing in
    - Must exactly equal one of the 6 allowed values: `permanently_closed`, `wrong_hours`, `no_wifi`, `wrong_address`, `duplicate`, or `other`. Any arbitrary string within this length range that does not match an allowed value is rejected.
 
 The optional `details` field is trimmed before persistence.
+| `reason` | string | yes | Trimmed and must be one of the values below. |
+| `details` | string | no | Trimmed string. |
+
+Allowed `reason` values:
+
+- `permanently_closed`
+- `wrong_hours`
+- `no_wifi`
+- `wrong_address`
+- `duplicate`
+- `other`
+
+The selected reason must contain at least five non-whitespace characters
+before it can be accepted as a known reason. Because the server validates the
+reason against the enum as well, arbitrary free-form reasons are rejected.
+The optional details field is trimmed before persistence.
 
 ### Example
 
@@ -120,57 +136,8 @@ Errors use the shared `apiError` format:
 }
 ```
 
-### Validation Error Response Format (`400 Bad Request`)
-
-When request validation fails (such as an invalid, missing, too short, or too long `reason`), the `apiHandler` returns an HTTP `400 Bad Request` response with `code: "VALIDATION_FAILED"` and a `details` object containing field-specific error messages.
-
-#### Response Structure
-
-| Field Name | Type | Description |
-| :--- | :--- | :--- |
-| `success` | `boolean` | Always `false` on error responses. |
-| `error` | `string` | Human-readable primary error summary message (derived from the first schema validation issue, e.g., `"Invalid reason. Must be one of: permanently_closed, wrong_hours, no_wifi, wrong_address, duplicate, other"`). |
-| `code` | `string` | Machine-readable error code, always `"VALIDATION_FAILED"` for schema validation errors. |
-| `details` | `object` | Map of invalid field names to an array of error description strings. |
-| `details.reason` | `string[]` | Array of validation error messages specific to the `reason` field. |
-
-#### Realistic Example Payload: Validation Failure
-
-##### Request with Invalid or Out-of-Range Reason
-```bash
-curl -X POST "https://<host>/api/venues/venue_123/flag" \
-  -H "Content-Type: application/json" \
-  -H "Cookie: <authenticated-session-cookie>" \
-  --data '{"reason":"invalid_reason_too_long"}'
-```
-
-##### Response (`HTTP/1.1 400 Bad Request`)
-```json
-{
-  "success": false,
-  "error": "Invalid reason. Must be one of: permanently_closed, wrong_hours, no_wifi, wrong_address, duplicate, other",
-  "code": "VALIDATION_FAILED",
-  "details": {
-    "reason": [
-      "Invalid reason. Must be one of: permanently_closed, wrong_hours, no_wifi, wrong_address, duplicate, other"
-    ]
-  }
-}
-```
-
-##### Missing Reason Failure (`HTTP/1.1 400 Bad Request`)
-```json
-{
-  "success": false,
-  "error": "Invalid reason. Must be one of: permanently_closed, wrong_hours, no_wifi, wrong_address, duplicate, other",
-  "code": "VALIDATION_FAILED",
-  "details": {
-    "reason": [
-      "Invalid reason. Must be one of: permanently_closed, wrong_hours, no_wifi, wrong_address, duplicate, other"
-    ]
-  }
-}
-```
+For validation failures, the middleware may also include a `details` object
+containing field-level messages.
 
 ## Prisma persistence schema
 

@@ -1,164 +1,114 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import {
-  AmbientNoiseSparkline,
-  generateCubicBezierPath,
-  formatHour,
-  getNoiseLevelCategory,
-  HourlyDecibelPoint,
-} from "@/components/analytics/AmbientNoiseSparkline";
+import { AmbientNoiseSparkline } from "@/components/analytics/AmbientNoiseSparkline";
 
-describe("AmbientNoiseSparkline Component & Helpers", () => {
-  describe("generateCubicBezierPath", () => {
-    it("returns empty string for empty points array", () => {
-      expect(generateCubicBezierPath([])).toBe("");
-    });
+describe("AmbientNoiseSparkline threshold alert badge and line", () => {
+  it("renders dashed threshold line at default 65 dB and hides alert badge for normal readings", () => {
+    render(
+      <AmbientNoiseSparkline
+        hourlyDecibels={[
+          { hour: 9, dBA: 50 },
+          { hour: 10, dBA: 58 },
+        ]}
+      />,
+    );
 
-    it("returns single Move command for single point", () => {
-      expect(generateCubicBezierPath([{ x: 10, y: 20 }])).toBe("M 10.0 20.0");
-    });
+    const thresholdLine = screen.getByTestId("noise-threshold-line");
+    expect(thresholdLine).toBeInTheDocument();
+    expect(thresholdLine).toHaveAttribute("stroke-dasharray", "4 3");
+    expect(screen.getByTestId("noise-threshold-label")).toHaveTextContent("65 dB");
 
-    it("generates smooth SVG cubic Bézier path with M... C... format", () => {
-      const points = [
-        { x: 10, y: 50 },
-        { x: 50, y: 30 },
-        { x: 90, y: 70 },
-      ];
-      const path = generateCubicBezierPath(points);
-
-      expect(path.startsWith("M 10.0 50.0")).toBe(true);
-      expect(path).toContain("C");
-      // Matches M ... C ... C ...
-      expect(path).toMatch(/^M\s+[\d.-]+\s+[\d.-]+(?:\s+C\s+[\d.,\s-]+)+$/);
-    });
+    // Alert badge must not render when reading is below threshold
+    expect(
+      screen.queryByTestId("noise-threshold-alert-badge"),
+    ).not.toBeInTheDocument();
   });
 
-  describe("formatHour", () => {
-    it("formats hours into 12-hour AM/PM notation", () => {
-      expect(formatHour(0)).toBe("12:00 AM");
-      expect(formatHour(9)).toBe("9:00 AM");
-      expect(formatHour(12)).toBe("12:00 PM");
-      expect(formatHour(14)).toBe("2:00 PM");
-      expect(formatHour(23)).toBe("11:00 PM");
-    });
+  it("does not render alert badge when current reading is exactly at threshold (borderline)", () => {
+    render(
+      <AmbientNoiseSparkline
+        thresholdDb={65}
+        hourlyDecibels={[
+          { hour: 10, dBA: 60 },
+          { hour: 11, dBA: 65 },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("noise-threshold-alert-badge"),
+    ).not.toBeInTheDocument();
   });
 
-  describe("getNoiseLevelCategory", () => {
-    it("returns Quiet Focus for <45 dBA", () => {
-      const cat = getNoiseLevelCategory(38);
-      expect(cat.label).toBe("Quiet Focus");
-      expect(cat.color).toContain("emerald");
-    });
+  it("renders alert badge and accessible tooltip when rolling 5-minute average exceeds thresholdDb", () => {
+    const baseTime = Date.parse("2026-11-26T12:00:00Z");
+    render(
+      <AmbientNoiseSparkline
+        thresholdDb={65}
+        hourlyDecibels={[
+          { hour: 11, dBA: 62, timestamp: baseTime - 10 * 60_000 },
+          { hour: 12, dBA: 70, timestamp: baseTime - 3 * 60_000 },
+          { hour: 12, dBA: 74, timestamp: baseTime },
+        ]}
+      />,
+    );
 
-    it("returns Moderate Buzz for 45-65 dBA", () => {
-      const cat = getNoiseLevelCategory(55);
-      expect(cat.label).toBe("Moderate Buzz");
-      expect(cat.color).toContain("amber");
-    });
+    // Rolling 5-minute average of 70 and 74 is 72 dB (> 65 dB)
+    const badge = screen.getByTestId("noise-threshold-alert-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent("High Noise Level: 72 dB");
+    expect(badge).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("exceeding the 65 dB threshold"),
+    );
 
-    it("returns Lively / Loud for >65 dBA", () => {
-      const cat = getNoiseLevelCategory(72);
-      expect(cat.label).toBe("Lively / Loud");
-      expect(cat.color).toContain("rose");
-    });
+    // Hovering badge displays peak decibel spike and duration tooltip
+    fireEvent.mouseEnter(badge);
+    const tooltip = screen.getByTestId("noise-threshold-alert-tooltip");
+    expect(tooltip).toBeInTheDocument();
+    expect(tooltip).toHaveTextContent("Peak Spike:");
+    expect(tooltip).toHaveTextContent("74 dB");
+    expect(tooltip).toHaveTextContent("Exceeded For:");
   });
 
-  describe("AmbientNoiseSparkline Rendering & Hover Tooltip", () => {
-    const mockHourlyDecibels: HourlyDecibelPoint[] = [
-      { hour: 8, dBA: 42 }, // Quiet (<45)
-      { hour: 12, dBA: 70 }, // Loud (>65)
-      { hour: 16, dBA: 55 }, // Moderate (45-65)
-    ];
+  it("defaults thresholdDb to 75 dB when venueType is lively", () => {
+    render(
+      <AmbientNoiseSparkline
+        venueType="lively"
+        hourlyDecibels={[
+          { hour: 18, dBA: 72 },
+          { hour: 19, dBA: 74 },
+        ]}
+      />,
+    );
 
-    it("renders SVG with cubic Bézier path and vertical linear gradient", () => {
-      const { container } = render(
-        <AmbientNoiseSparkline
-          hourlyDecibels={mockHourlyDecibels}
-          width={300}
-          height={100}
-        />,
-      );
+    expect(screen.getByTestId("noise-threshold-label")).toHaveTextContent("75 dB");
+    expect(
+      screen.queryByTestId("noise-threshold-alert-badge"),
+    ).not.toBeInTheDocument();
+  });
 
-      expect(screen.getByTestId("ambient-noise-sparkline")).toBeInTheDocument();
-      expect(screen.getByTestId("ambient-noise-svg")).toBeInTheDocument();
+  it("renders threshold line accurately across responsive container dimensions", () => {
+    render(
+      <AmbientNoiseSparkline
+        width={600}
+        height={200}
+        thresholdDb={70}
+        hourlyDecibels={[
+          { hour: 10, dBA: 60 },
+          { hour: 11, dBA: 76 },
+        ]}
+      />,
+    );
 
-      const bezierPath = screen.getByTestId("sparkline-bezier-path");
-      expect(bezierPath).toBeInTheDocument();
-      expect(bezierPath.getAttribute("d")).toMatch(/^M\s+[\d.-]+\s+[\d.-]+\s+C/);
-      expect(bezierPath.getAttribute("stroke")).toContain("noiseLevelGradient");
-
-      // Verify vertical linear gradient exists with green, yellow, and red stops
-      const gradient = container.querySelector("#noiseLevelGradient");
-      expect(gradient).toBeInTheDocument();
-      expect(gradient?.getAttribute("y1")).toBe("0%");
-      expect(gradient?.getAttribute("y2")).toBe("100%");
-
-      const stops = gradient?.querySelectorAll("stop");
-      expect(stops && stops.length >= 3).toBe(true);
-
-      const stopColors = Array.from(stops || []).map((s) =>
-        s.getAttribute("stopColor"),
-      );
-      // Red at top (>65), yellow middle (45-65), green at bottom (<45)
-      expect(stopColors).toContain("#ef4444");
-      expect(stopColors).toContain("#f59e0b");
-      expect(stopColors).toContain("#10b981");
-    });
-
-    it("renders interactive hover tooltip displaying hour and recorded dBA level on hover", () => {
-      render(
-        <AmbientNoiseSparkline
-          hourlyDecibels={mockHourlyDecibels}
-          width={300}
-          height={100}
-        />,
-      );
-
-      const svg = screen.getByTestId("ambient-noise-svg");
-
-      // Initially, no tooltip is visible
-      expect(screen.queryByTestId("sparkline-tooltip")).not.toBeInTheDocument();
-
-      // Mock getBoundingClientRect
-      jest.spyOn(svg, "getBoundingClientRect").mockReturnValue({
-        left: 0,
-        top: 0,
-        width: 300,
-        height: 100,
-        right: 300,
-        bottom: 100,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
-
-      // Hover over middle point (hour 12, 70 dBA) at relativeX ~150
-      fireEvent.pointerMove(svg, {
-        clientX: 150,
-        clientY: 30,
-      });
-
-      const tooltip = screen.getByTestId("sparkline-tooltip");
-      expect(tooltip).toBeInTheDocument();
-      expect(tooltip).toHaveAttribute("data-hour", "12");
-      expect(tooltip).toHaveAttribute("data-dba", "70");
-      expect(tooltip).toHaveTextContent("12:00 PM");
-      expect(tooltip).toHaveTextContent("70dBA");
-      expect(tooltip).toHaveTextContent("Lively / Loud");
-
-      // Hover off SVG
-      fireEvent.pointerLeave(svg);
-      expect(screen.queryByTestId("sparkline-tooltip")).not.toBeInTheDocument();
-    });
-
-    it("renders default baseline data when hourlyDecibels is not passed", () => {
-      render(<AmbientNoiseSparkline />);
-
-      expect(screen.getByTestId("ambient-noise-sparkline")).toBeInTheDocument();
-      expect(screen.getByTestId("sparkline-bezier-path")).toBeInTheDocument();
-      expect(screen.getByText("12 AM")).toBeInTheDocument();
-      expect(screen.getByText("11 PM")).toBeInTheDocument();
-    });
+    const thresholdLine = screen.getByTestId("noise-threshold-line");
+    expect(thresholdLine).toHaveAttribute("x1", "16");
+    expect(thresholdLine).toHaveAttribute("x2", "584");
+    const y1 = Number(thresholdLine.getAttribute("y1"));
+    const y2 = Number(thresholdLine.getAttribute("y2"));
+    expect(y1).toBe(y2);
+    expect(y1).toBeGreaterThanOrEqual(12);
+    expect(y1).toBeLessThanOrEqual(180);
   });
 });

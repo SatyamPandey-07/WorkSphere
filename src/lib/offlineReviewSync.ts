@@ -2,6 +2,10 @@
 
 import { withWebLock, OFFLINE_WRITE_LOCK } from "./webLock";
 import { syncQueueManager } from "./offline/SyncQueueManager";
+import {
+  openDatabaseWithMigration,
+  isConnectionValid,
+} from "./offline/migrationCoordinator";
 
 export const DB_NAME = "worksphere-offline";
 export const DB_VERSION = 9;
@@ -182,179 +186,34 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Open worksphere-offline IndexedDB ensuring version 9 schema upgrade.
+ * Open worksphere-offline IndexedDB using the coordinated version 9 migration protocol.
  */
-export function openReviewDB(): Promise<IDBDatabase> {
+export async function openReviewDB(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
     return Promise.reject(
       new Error("IndexedDB is not available in this environment"),
     );
   }
 
-  if (dbInstance) {
+  if (dbInstance && isConnectionValid(dbInstance)) {
     return Promise.resolve(dbInstance);
   }
+  dbInstance = null;
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timeoutId = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        dbInstance = null;
-        console.warn("[offlineReviewSync] IndexedDB open timed out (likely Safari Private Browsing)");
-        reject(new DOMException("IndexedDB open timed out", "SecurityError"));
-      }
-    }, 3000);
-
-    try {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onblocked = () => {
-        console.warn("[offlineReviewSync] IndexedDB upgrade blocked by open connection, closing inactive connections");
-        if (dbInstance) {
-          try {
-            dbInstance.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-        }
-      };
-
-      request.onerror = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        if (dbInstance) {
-          try {
-            dbInstance.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-        }
-        const err = request.error || new Error("Failed to open IndexedDB");
-        if (err.name === "AbortError") {
-          console.warn("[offlineReviewSync] Transaction abort error during schema upgrade handled gracefully", err);
-        }
-        reject(err);
-      };
-
-      request.onsuccess = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        dbInstance = request.result;
-        dbInstance.onversionchange = () => {
-          console.warn("[offlineReviewSync] Database version change detected, closing connection gracefully");
-          try {
-            dbInstance?.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-        };
-        resolve(dbInstance);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-
-        if (transaction) {
-          transaction.onabort = (e) => {
-            console.warn("[offlineReviewSync] Upgrade transaction aborted", transaction.error || e);
-          };
-          transaction.onerror = (e) => {
-            console.warn("[offlineReviewSync] Upgrade transaction error", transaction.error || e);
-          };
-        }
-
-        db.onversionchange = () => {
-          console.warn("[offlineReviewSync] Database version change during upgrade, closing connection gracefully");
-          try {
-            db.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-        };
-
-        // Existing stores preserved
-        if (!db.objectStoreNames.contains("venues")) {
-          const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
-          venuesStore.createIndex("type", "type", { unique: false });
-          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
-        if (!db.objectStoreNames.contains("favorites")) {
-          const favoritesStore = db.createObjectStore("favorites", { keyPath: "id" });
-          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
-        if (!db.objectStoreNames.contains("searches")) {
-          const searchesStore = db.createObjectStore("searches", { keyPath: "query" });
-          searchesStore.createIndex("timestamp", "timestamp", { unique: false });
-        }
-        if (!db.objectStoreNames.contains("pendingActions")) {
-          db.createObjectStore("pendingActions", { keyPath: "id", autoIncrement: true });
-        }
-        if (!db.objectStoreNames.contains("imageCacheLRU")) {
-          const lruStore = db.createObjectStore("imageCacheLRU", { keyPath: "url" });
-          lruStore.createIndex("lastAccessed", "lastAccessed", { unique: false });
-        }
-        if (!db.objectStoreNames.contains("receiptExports")) {
-          const receiptStore = db.createObjectStore("receiptExports", { keyPath: "bookingId" });
-          receiptStore.createIndex("status", "status", { unique: false });
-          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-        if (!db.objectStoreNames.contains("pendingFavorites")) {
-          db.createObjectStore("pendingFavorites", { keyPath: "id", autoIncrement: true });
-        }
-        if (!db.objectStoreNames.contains("availabilityDeltas")) {
-          const deltaStore = db.createObjectStore("availabilityDeltas", { keyPath: "venueId" });
-          deltaStore.createIndex("timestamp", "timestamp", { unique: false });
-        }
-        if (!db.objectStoreNames.contains("preference_rankings")) {
-          db.createObjectStore("preference_rankings", { keyPath: "id" });
-        }
-
-        // Dedicated offline reviews store (Issue #3366, #3469)
-        if (!db.objectStoreNames.contains(REVIEW_STORE_NAME)) {
-          const reviewStore = db.createObjectStore(REVIEW_STORE_NAME, {
-            keyPath: "id",
-          });
-          reviewStore.createIndex("venueId", "venueId", { unique: false });
-          reviewStore.createIndex("status", "status", { unique: false });
-          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-        if (!db.objectStoreNames.contains(QUEUED_REVIEWS_STORE_NAME)) {
-          const queuedStore = db.createObjectStore(QUEUED_REVIEWS_STORE_NAME, {
-            keyPath: "id",
-          });
-          queuedStore.createIndex("venueId", "venueId", { unique: false });
-          queuedStore.createIndex("status", "status", { unique: false });
-          queuedStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-        if (!db.objectStoreNames.contains(UNSYNCED_REVIEW_DRAFTS_STORE_NAME)) {
-          const draftsStore = db.createObjectStore(
-            UNSYNCED_REVIEW_DRAFTS_STORE_NAME,
-            { keyPath: "id" },
-          );
-          draftsStore.createIndex("venueId", "review.venueId", {
-            unique: false,
-          });
-          draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
-            unique: false,
-          });
-        }
-      };
-    } catch (err) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
+  const db = await openDatabaseWithMigration(DB_NAME, {
+    context: "page",
+    targetVersion: DB_VERSION,
+    timeoutMs: 3000,
+    onVersionChange: () => {
+      console.warn(
+        "[offlineReviewSync] Database version change detected, closing connection gracefully",
+      );
       dbInstance = null;
-      reject(err);
-    }
+    },
   });
+
+  dbInstance = db;
+  return db;
 }
 
 export function broadcastReviewSyncEvent(event: ReviewSyncBroadcastEvent): void {

@@ -1,9 +1,13 @@
 import "@testing-library/jest-dom";
 import React from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { StudentDiscountVerification } from "@/components/student/StudentDiscountVerification";
 
 // Mock Workers & IndexedDB/localStorage
+jest.mock("@/components/student/createZkpWorker", () => ({
+  createZkpWorker: jest.fn(),
+}));
+
 jest.mock("@/lib/zkp/commitment", () => ({
   computeMembershipCommit: jest.fn().mockReturnValue("123456789"),
 }));

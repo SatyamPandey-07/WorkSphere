@@ -1,6 +1,6 @@
 # BLE Proximity RSSI Distance Calibration & Path Loss Modeling
 
-This technical document details the **Log-Distance Path Loss Model (LDPLM)**, reference transmission power calibration ($A_0$ / `txPower`), path loss exponent ($n$), environmental multi-path smoothing, and WebAssembly Kalman filtering used by [`src/lib/wasm-loader/ble-proximity.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/ble-proximity.ts), [`src/workers/bleScanningWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/bleScanningWorker.ts), and [`src/wasm/spatial/ble_kalman.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/spatial/ble_kalman.c).
+This technical document details the **Log-Distance Path Loss Model (LDPLM)**, reference transmission power calibration ($A_0$ / `txPower`), path loss exponent ($n$), environmental multi-path smoothing, and WebAssembly Kalman filtering used by [`src/lib/wasm-loader/ble-proximity.ts`](../../src/lib/wasm-loader/ble-proximity.ts), [`src/workers/bleScanningWorker.ts`](../../src/workers/bleScanningWorker.ts), and [`src/wasm/spatial/ble_kalman.c`](../../src/wasm/spatial/ble_kalman.c).
 
 WorkSphere utilizes BLE (Bluetooth Low Energy) iBeacon and Eddystone hardware beacons installed across cafes, coworking pods, and meeting rooms to provide micro-location check-ins, indoor wayfinding, and spatial desk proximity detection.
 
@@ -38,7 +38,7 @@ $$\text{RSSI}(d) = \text{txPower} - 10 \cdot n \cdot \log_{10}(d) + X_\sigma$$
 
 Where:
 - $\text{RSSI}(d)$: Received signal strength in $\text{dBm}$ measured by the mobile client at distance $d$.
-- $\text{txPower}$ ($A_0$): Measured reference RSSI at exactly $1.0\text{ meter}$ line-of-sight (LOS) from the beacon (typically between $-55\text{ dBm}$ and $-65\text{ dBm}$, standardized to $-59\text{ dBm}$ in [`bleScanningWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/bleScanningWorker.ts#L37)).
+- $\text{txPower}$ ($A_0$): Measured reference RSSI at exactly $1.0\text{ meter}$ line-of-sight (LOS) from the beacon (typically between $-55\text{ dBm}$ and $-65\text{ dBm}$, standardized to $-59\text{ dBm}$ in [`bleScanningWorker.ts`](../../src/workers/bleScanningWorker.ts#L37)).
 - $n$: **Path Loss Exponent (PLE)**, quantifying the rate at which radio signal energy decays in the surrounding physical medium.
 - $d$: Euclidean distance in meters between the beacon and client antenna.
 - $X_\sigma$: Zero-mean Gaussian random variable modeling shadow fading and multipath interference ($X_\sigma \sim \mathcal{N}(0, \sigma^2)$ with shadow deviation $\sigma \approx 3\text{--}6\text{ dB}$).
@@ -49,7 +49,7 @@ Solving for Euclidean distance $d$ yields:
 
 $$d = 10^{\frac{\text{txPower} - \text{RSSI}}{10 \cdot n}}$$
 
-As implemented in [`src/workers/bleScanningWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/bleScanningWorker.ts#L36-L37):
+As implemented in [`src/workers/bleScanningWorker.ts`](../../src/workers/bleScanningWorker.ts#L36-L37):
 
 ```typescript
 // Convert RSSI to approximate distance via log-distance path loss
@@ -112,7 +112,7 @@ To achieve sub-meter desk proximity accuracy, venue managers must calibrate $\te
 
 ## 5. Environmental Jitter Smoothing: WebAssembly 2D Kalman Filter
 
-Raw RSSI samples fluctuate due to human movement and multipath wave interference. Rather than simple moving averages (which introduce lag), [`src/wasm/spatial/ble_kalman.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/spatial/ble_kalman.c) runs a discrete two-dimensional Kalman filter.
+Raw RSSI samples fluctuate due to human movement and multipath wave interference. Rather than simple moving averages (which introduce lag), [`src/wasm/spatial/ble_kalman.c`](../../src/wasm/spatial/ble_kalman.c) runs a discrete two-dimensional Kalman filter.
 
 ### State Estimation Equations
 

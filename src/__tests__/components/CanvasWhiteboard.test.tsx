@@ -1,12 +1,17 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CanvasWhiteboard } from "@/components/whiteboard/CanvasWhiteboard";
 
 const mockUseCanvasWhiteboard = jest.fn();
+const mockUseUser = jest.fn();
 
 jest.mock("@/hooks/useMeshCanvasWhiteboard", () => ({
   useMeshCanvasWhiteboard: (...args: unknown[]) =>
     mockUseCanvasWhiteboard(...args),
+}));
+
+jest.mock("@clerk/nextjs", () => ({
+  useUser: () => mockUseUser(),
 }));
 
 const mockGetContext = jest.fn();
@@ -27,6 +32,11 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUseUser.mockReturnValue({
+    user: null,
+    isLoaded: true,
+    isSignedIn: false,
+  });
 
   mockGetContext.mockReturnValue({
     clearRect: jest.fn(),
@@ -90,6 +100,150 @@ describe("CanvasWhiteboard", () => {
     const { container } = render(<CanvasWhiteboard canvasId="test-2" />);
     const canvas = container.querySelector("canvas");
     expect(canvas).toBeInTheDocument();
+  });
+
+  it("shows the expiration banner for an unauthenticated read-only guest session", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(0));
+
+    render(
+      <CanvasWhiteboard
+        canvasId="guest-session"
+        readOnlyGuestSession={{ expiresAtMs: 65_000 }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("complementary", {
+        name: "Read-only guest session expiration",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 minute, 5 seconds")).toBeInTheDocument();
+
+    jest.useRealTimers();
+  });
+
+  it("updates the countdown as the guest session approaches expiration", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(0));
+
+    render(
+      <CanvasWhiteboard
+        canvasId="guest-countdown"
+        readOnlyGuestSession={{ expiresAtMs: 65_000 }}
+      />,
+    );
+    expect(screen.getByText("1 minute, 5 seconds")).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText("1 minute, 4 seconds")).toBeInTheDocument();
+    jest.useRealTimers();
+  });
+
+  it("shows an expired status at zero and stops the countdown timer", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(0));
+
+    render(
+      <CanvasWhiteboard
+        canvasId="guest-expired"
+        readOnlyGuestSession={{ expiresAtMs: 1000 }}
+      />,
+    );
+    expect(screen.getByText("1 second")).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Guest session expired");
+    expect(jest.getTimerCount()).toBe(0);
+    jest.useRealTimers();
+  });
+
+  it("does not show the banner for authenticated or non-guest sessions", () => {
+    mockUseUser.mockReturnValue({
+      user: { id: "signed-in-user" },
+      isLoaded: true,
+      isSignedIn: true,
+    });
+    const { rerender } = render(
+      <CanvasWhiteboard
+        canvasId="authenticated-session"
+        readOnlyGuestSession={{ expiresAtMs: Date.now() + 60_000 }}
+      />,
+    );
+    expect(
+      screen.queryByRole("complementary", {
+        name: "Read-only guest session expiration",
+      }),
+    ).not.toBeInTheDocument();
+
+    mockUseUser.mockReturnValue({
+      user: null,
+      isLoaded: true,
+      isSignedIn: false,
+    });
+    rerender(<CanvasWhiteboard canvasId="ordinary-session" />);
+    expect(
+      screen.queryByRole("complementary", {
+        name: "Read-only guest session expiration",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("omits the banner when the guest expiry timestamp is missing or invalid", () => {
+    const { rerender } = render(
+      <CanvasWhiteboard
+        canvasId="guest-missing-expiry"
+        readOnlyGuestSession={{}}
+      />,
+    );
+
+    for (const readOnlyGuestSession of [
+      null,
+      {},
+      { expiresAtMs: null },
+      { expiresAtMs: NaN },
+      { expiresAtMs: Infinity },
+      { expiresAtMs: Number.MAX_VALUE },
+    ]) {
+      rerender(
+        <CanvasWhiteboard
+          canvasId="guest-invalid-expiry"
+          readOnlyGuestSession={readOnlyGuestSession}
+        />,
+      );
+      expect(
+        screen.queryByRole("complementary", {
+          name: "Read-only guest session expiration",
+        }),
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it("cleans up the countdown interval when the whiteboard unmounts", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(0));
+    const clearIntervalSpy = jest.spyOn(global, "clearInterval");
+
+    const { unmount } = render(
+      <CanvasWhiteboard
+        canvasId="guest-cleanup"
+        readOnlyGuestSession={{ expiresAtMs: 5000 }}
+      />,
+    );
+    expect(jest.getTimerCount()).toBe(1);
+
+    unmount();
+
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+    clearIntervalSpy.mockRestore();
+    jest.useRealTimers();
   });
 
   it("calls setTool when a tool button is clicked", () => {

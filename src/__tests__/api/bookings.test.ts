@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { GET, POST } from "@/app/api/bookings/route";
 import { prisma } from "@/lib/prisma";
-import { currentUser } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -21,6 +21,7 @@ jest.mock("@/lib/prisma", () => ({
 }));
 
 jest.mock("@clerk/nextjs/server", () => ({
+  auth: jest.fn(),
   currentUser: jest.fn(),
 }));
 
@@ -34,10 +35,12 @@ describe("API: /api/bookings", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (auth as jest.Mock).mockResolvedValue({ userId: mockUser.id });
   });
 
   describe("GET /api/bookings", () => {
     it("returns 401 if user is not authenticated", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: null });
       (currentUser as jest.Mock).mockResolvedValue(null);
 
       const request = new NextRequest("http://localhost:3000/api/bookings");
@@ -94,6 +97,20 @@ describe("API: /api/bookings", () => {
   });
 
   describe("POST /api/bookings", () => {
+    beforeEach(() => {
+      jest.spyOn(Date, "now").mockReturnValue(
+        new Date("2026-09-01T12:00:00.000Z").getTime(),
+      );
+      (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
+        id: "v_1",
+        maxCapacity: 10,
+      });
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it("returns 401 if user is not authenticated", async () => {
       (currentUser as jest.Mock).mockResolvedValue(null);
 
@@ -170,6 +187,116 @@ describe("API: /api/bookings", () => {
         mockUser.primaryEmailAddress.emailAddress,
       );
       expect(data.data[0].confirmationId).toMatch(/^WS-[0-9A-F]{6}$/);
+    });
+
+    it("rejects a booking date from yesterday before creating records", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-08-31",
+          time: "14:00",
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe("You can't book a time in the past.");
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an earlier time on the current date before creating records", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-09-01",
+          time: "11:59",
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe("You can't book a time in the past.");
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it.each(["11:45", "11:59"])(
+      "does not apply the confirmation endpoint's grace period to a %s start",
+      async (time) => {
+        (currentUser as jest.Mock).mockResolvedValue(mockUser);
+        const request = new NextRequest("http://localhost:3000/api/bookings", {
+          method: "POST",
+          body: JSON.stringify({
+            venueId: "v_1",
+            date: "2026-09-01",
+            time,
+          }),
+        });
+
+        const response = await POST(request);
+
+        expect(response.status).toBe(400);
+        expect(prisma.booking.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it("compares booking time in the supplied timezone", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (promises: Promise<any>[]) => Promise.all(promises),
+      );
+      (prisma.booking.create as jest.Mock).mockImplementation(
+        async ({ data }: any) => ({ id: "b_tz", ...data, venue: {} }),
+      );
+
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-09-01",
+          time: "08:30",
+          timeZone: "America/New_York",
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.data[0]).toMatchObject({
+        date: "2026-09-01",
+        time: "08:30",
+        timeZone: "America/New_York",
+      });
+    });
+
+    it("rejects a nonexistent local time in a daylight-saving transition", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-03-08",
+          time: "02:30",
+          timeZone: "America/New_York",
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toContain("does not exist");
+      expect(prisma.booking.create).not.toHaveBeenCalled();
     });
 
     it("creates multiple bookings with distinct, unique confirmationIds in a multi-date reservation", async () => {

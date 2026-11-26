@@ -84,28 +84,14 @@ export async function POST(req: Request) {
       "zkp",
       "student_access_pass_vkey.json",
     );
-    const membershipVKeyPath = path.join(
-      process.cwd(),
-      "public",
-      "zkp",
-      "student_membership_vkey.json",
-    );
-    const fallbackVKeyPath = path.join(
-      process.cwd(),
-      "public",
-      "zkp",
-      "verification_key.json",
-    );
-
-    const vKeyPath = fs.existsSync(accessPassVKeyPath)
-      ? accessPassVKeyPath
-      : fs.existsSync(membershipVKeyPath)
-        ? membershipVKeyPath
-        : fallbackVKeyPath;
+    // The access-pass circuit publishes [root, epoch, nullifierHash]. Its
+    // matching three-public-input key is mandatory; other membership keys
+    // must never be used as a fallback for this circuit.
+    const vKeyPath = accessPassVKeyPath;
 
     if (!fs.existsSync(vKeyPath)) {
       return NextResponse.json(
-        { error: "Verification key not found" },
+        { error: "Student access pass verification key not found; run the student access-pass circuit build" },
         { status: 500 },
       );
     }

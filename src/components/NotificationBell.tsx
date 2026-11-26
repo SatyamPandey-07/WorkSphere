@@ -282,13 +282,38 @@ export function NotificationBell() {
     }
 
     try {
-      await fetch("/api/user/notifications", {
+      const res = await fetch("/api/user/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "dismiss", id }),
       });
+      if (!res.ok) {
+        if (target) {
+          setNotifications((prev) =>
+            [...prev, target].sort(
+              (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime(),
+            ),
+          );
+        }
+        if (wasUnread) {
+          setUnreadCount((prev) => prev + 1);
+        }
+      }
     } catch (err) {
       console.error("Failed to dismiss notification:", err);
+      if (target) {
+        setNotifications((prev) =>
+          [...prev, target].sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          ),
+        );
+      }
+      if (wasUnread) {
+        setUnreadCount((prev) => prev + 1);
+      }
     }
   };
 

@@ -1,5 +1,7 @@
 # API Rate Limiting
 
+> For Redis token-bucket TTL normalization, distributed-store failures, and the in-memory fallback path, see the [token-bucket Redis fallback guide](../architecture/TOKEN_BUCKET_REDIS_FALLBACK.md).
+
 This page documents the limits currently present in WorkSphere's code. It distinguishes the token-bucket middleware used on matched API routes from the separate tiered sliding-window configuration exposed by the shared rate-limit library. These are not interchangeable quotas.
 
 ## 1. Limits enforced by the API middleware

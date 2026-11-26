@@ -32,11 +32,22 @@ jest.mock("@/lib/waitlist", () => ({
   notifyNextInWaitlist: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { PATCH } from "@/app/api/bookings/[bookingId]/route";
+jest.mock("@/lib/cache/venueAvailabilityCache", () => ({
+  invalidateVenueAvailability: jest.fn().mockResolvedValue(true),
+  venueAvailabilityCacheKey: (venueId: string) =>
+    `venue:availability:${venueId}`,
+}));
+
+import { DELETE, PATCH } from "@/app/api/bookings/[bookingId]/route";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import { invalidateVenueAvailability } from "@/lib/cache/venueAvailabilityCache";
+
+const futureDate = new Date(Date.now() + 10 * 86_400_000)
+  .toISOString()
+  .slice(0, 10);
 
 describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
   const mockUserId = "user_123";
@@ -125,7 +136,9 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
 
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toContain("Duration must be an integer between 30 and 480 minutes");
+    expect(data.error).toContain(
+      "Duration must be an integer between 30 and 480 minutes",
+    );
   });
 
   it("returns 409 if requested desk slot conflicts with another reservation", async () => {
@@ -150,7 +163,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
     // Existing conflicting booking on seat_99 from 14:00 to 16:00
     (prisma.booking.findMany as jest.Mock).mockResolvedValue([
       {
-        date: "2026-10-15",
+        date: futureDate,
         time: "14:00",
         duration: 120,
         timeZone: "UTC",
@@ -160,7 +173,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
     const req = new NextRequest("http://localhost/api/bookings/booking_abc", {
       method: "PATCH",
       body: JSON.stringify({
-        date: "2026-10-15",
+        date: futureDate,
         time: "14:30",
         duration: 60,
       }),
@@ -172,7 +185,9 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
 
     expect(res.status).toBe(409);
     const data = await res.json();
-    expect(data.error).toContain("The requested time slot or desk is not available");
+    expect(data.error).toContain(
+      "The requested time slot or desk is not available",
+    );
   });
 
   it("successfully reschedules and extends an active booking when slot is available", async () => {
@@ -187,7 +202,12 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
       venueId: "venue_1",
       seatId: "seat_99",
       seatNumber: "A1",
-      venue: { id: "venue_1", name: "Desk Hub", address: "123 St", category: "coworking" },
+      venue: {
+        id: "venue_1",
+        name: "Desk Hub",
+        address: "123 St",
+        category: "coworking",
+      },
     });
 
     (prisma.venueSeat.findFirst as jest.Mock).mockResolvedValue({
@@ -203,7 +223,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
       confirmationId: "WS-CONF-123",
       userId: mockUserId,
       status: "CONFIRMED",
-      date: "2026-10-15",
+      date: futureDate,
       time: "11:00",
       duration: 120,
       seatId: "seat_99",
@@ -214,7 +234,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
     const req = new NextRequest("http://localhost/api/bookings/booking_abc", {
       method: "PATCH",
       body: JSON.stringify({
-        date: "2026-10-15",
+        date: futureDate,
         time: "11:00",
         duration: 120,
       }),
@@ -229,6 +249,9 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
     expect(data.success).toBe(true);
     expect(data.message).toBe("Booking rescheduled successfully.");
     expect(data.booking).toEqual(mockUpdated);
+    expect(invalidateVenueAvailability).toHaveBeenCalledWith(
+      "venue:availability:venue_1",
+    );
   });
 
   describe("concurrency safety", () => {
@@ -243,13 +266,18 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
       venueId: "venue_1",
       seatId: "seat_99",
       seatNumber: "A1",
-      venue: { id: "venue_1", name: "Desk Hub", address: "123 St", category: "coworking" },
+      venue: {
+        id: "venue_1",
+        name: "Desk Hub",
+        address: "123 St",
+        category: "coworking",
+      },
     };
 
     const rescheduleRequest = () =>
       new NextRequest("http://localhost/api/bookings/booking_abc", {
         method: "PATCH",
-        body: JSON.stringify({ date: "2026-10-15", time: "11:00", duration: 60 }),
+        body: JSON.stringify({ date: futureDate, time: "11:00", duration: 60 }),
       });
 
     const callPatch = () =>
@@ -271,7 +299,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
       (prisma.booking.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.booking.update as jest.Mock).mockResolvedValue({
         ...activeBooking,
-        date: "2026-10-15",
+        date: futureDate,
         time: "11:00",
       });
     });
@@ -346,7 +374,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
         Object.assign(new Error("serialization failure"), { code: "40001" }),
       );
       (prisma.booking.findMany as jest.Mock).mockResolvedValue([
-        { date: "2026-10-15", time: "11:00", duration: 60, timeZone: "UTC" },
+        { date: futureDate, time: "11:00", duration: 60, timeZone: "UTC" },
       ]);
 
       const res = await callPatch();
@@ -369,6 +397,7 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
 
       expect(res.status).toBe(500);
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(invalidateVenueAvailability).not.toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
 
@@ -383,6 +412,88 @@ describe("PATCH /api/bookings/[bookingId] - Reschedule & Extend Flow", () => {
       expect(res.status).toBe(500);
       expect(prisma.$transaction).toHaveBeenCalledTimes(4); // 1 try + 3 retries
       consoleSpy.mockRestore();
+    });
+
+    describe("DELETE cancellation availability invalidation", () => {
+      beforeEach(() => {
+        (prisma.booking.findFirst as jest.Mock).mockResolvedValue({
+          id: mockBookingId,
+          confirmationId: "WS-CONF-123",
+          venueId: "venue_1",
+          date: new Date(Date.now() + 5 * 86_400_000)
+            .toISOString()
+            .slice(0, 10),
+          time: "10:00",
+          timeZone: "UTC",
+          status: "CONFIRMED",
+          duration: 60,
+          seatId: "seat_99",
+          user: { timezone: "UTC" },
+        });
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (callback) =>
+            callback({
+              booking: {
+                updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              },
+              bookingGuest: {
+                updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+              },
+            }),
+        );
+      });
+
+      it("invalidates availability after cancellation commits", async () => {
+        let transactionCommitted = false;
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (callback) => {
+            const result = await callback({
+              booking: {
+                updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              },
+              bookingGuest: {
+                updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+              },
+            });
+            transactionCommitted = true;
+            return result;
+          },
+        );
+        (invalidateVenueAvailability as jest.Mock).mockImplementation(() => {
+          expect(transactionCommitted).toBe(true);
+          return Promise.resolve(true);
+        });
+
+        const response = await DELETE(new Request("http://localhost"), {
+          params: Promise.resolve({ bookingId: mockBookingId }),
+        });
+
+        expect(response.status).toBe(200);
+        expect(invalidateVenueAvailability).toHaveBeenCalledWith(
+          "venue:availability:venue_1",
+        );
+      });
+
+      it("does not invalidate when cancellation loses a concurrent update", async () => {
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (callback) =>
+            callback({
+              booking: {
+                updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+              },
+              bookingGuest: {
+                updateMany: jest.fn(),
+              },
+            }),
+        );
+
+        const response = await DELETE(new Request("http://localhost"), {
+          params: Promise.resolve({ bookingId: mockBookingId }),
+        });
+
+        expect(response.status).toBe(409);
+        expect(invalidateVenueAvailability).not.toHaveBeenCalled();
+      });
     });
   });
 });

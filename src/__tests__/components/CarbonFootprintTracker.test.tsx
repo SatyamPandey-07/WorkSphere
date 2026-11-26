@@ -1,12 +1,22 @@
 import React from "react";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
-import CarbonFootprintTracker from "@/components/analytics/CarbonFootprintTracker";
+import CarbonFootprintTracker, {
+  formatLocalIsoDate,
+  getCarbonDatePresetRange,
+} from "@/components/analytics/CarbonFootprintTracker";
 import type { CarbonFootprintSummary } from "@/lib/sustainability/carbonEngine";
 
 describe("CarbonFootprintTracker - Missing Commute Distance Handling", () => {
   const createMockSummary = (
-    overrides: Partial<CarbonFootprintSummary> = {}
+    overrides: Partial<CarbonFootprintSummary> = {},
   ): CarbonFootprintSummary => ({
     periodMonth: "October 2026",
     totalDistanceKm: 25.4,
@@ -69,12 +79,12 @@ describe("CarbonFootprintTracker - Missing Commute Distance Handling", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByTestId("missing-commute-distance-prompt")
+        screen.getByTestId("missing-commute-distance-prompt"),
       ).toBeInTheDocument();
     });
 
     expect(
-      screen.getByText("No home location or commute distance recorded")
+      screen.getByText("No home location or commute distance recorded"),
     ).toBeInTheDocument();
   });
 
@@ -114,12 +124,12 @@ describe("CarbonFootprintTracker - Missing Commute Distance Handling", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByTestId("partial-missing-commute-distance-prompt")
+        screen.getByTestId("partial-missing-commute-distance-prompt"),
       ).toBeInTheDocument();
     });
 
     expect(
-      screen.getByText(/1 commute record has uncalculated distance/i)
+      screen.getByText(/1 commute record has uncalculated distance/i),
     ).toBeInTheDocument();
   });
 
@@ -133,10 +143,10 @@ describe("CarbonFootprintTracker - Missing Commute Distance Handling", () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByTestId("missing-commute-distance-prompt")
+        screen.queryByTestId("missing-commute-distance-prompt"),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByTestId("partial-missing-commute-distance-prompt")
+        screen.queryByTestId("partial-missing-commute-distance-prompt"),
       ).not.toBeInTheDocument();
     });
   });
@@ -154,7 +164,7 @@ describe("CarbonFootprintTracker - Missing Commute Distance Handling", () => {
     });
 
     expect(
-      screen.queryByTestId("missing-commute-distance-prompt")
+      screen.queryByTestId("missing-commute-distance-prompt"),
     ).not.toBeInTheDocument();
   });
 });
@@ -249,29 +259,31 @@ describe("CarbonFootprintTracker - Team Carbon Savings Leaderboard & Ranking Pod
   it("renders team carbon savings leaderboard and podium container", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, summary: createMockSummaryWithTeams() }),
+      json: async () => ({
+        success: true,
+        summary: createMockSummaryWithTeams(),
+      }),
     } as Response);
 
     render(<CarbonFootprintTracker />);
 
     await waitFor(() => {
-      expect(
-        screen.getByTestId("team-carbon-leaderboard")
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId("carbon-ranking-podium")
-      ).toBeInTheDocument();
+      expect(screen.getByTestId("team-carbon-leaderboard")).toBeInTheDocument();
+      expect(screen.getByTestId("carbon-ranking-podium")).toBeInTheDocument();
     });
 
     expect(
-      screen.getByText("Team & Organization Carbon Savings Leaderboard")
+      screen.getByText("Team & Organization Carbon Savings Leaderboard"),
     ).toBeInTheDocument();
   });
 
   it("renders all 3 visual ranking podium positions with team names and regional hubs", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, summary: createMockSummaryWithTeams() }),
+      json: async () => ({
+        success: true,
+        summary: createMockSummaryWithTeams(),
+      }),
     } as Response);
 
     render(<CarbonFootprintTracker />);
@@ -287,23 +299,38 @@ describe("CarbonFootprintTracker - Team Carbon Savings Leaderboard & Ranking Pod
     const podiumRank3 = screen.getByTestId("podium-rank-3");
 
     // 1st place
-    expect(within(podiumRank1).getByText("Frontend & Mobile Engineering")).toBeInTheDocument();
-    expect(within(podiumRank1).getByText("Berlin Mitte Eco-Hub")).toBeInTheDocument();
+    expect(
+      within(podiumRank1).getByText("Frontend & Mobile Engineering"),
+    ).toBeInTheDocument();
+    expect(
+      within(podiumRank1).getByText("Berlin Mitte Eco-Hub"),
+    ).toBeInTheDocument();
     expect(within(podiumRank1).getByText("1920.4")).toBeInTheDocument();
 
     // 2nd place
-    expect(within(podiumRank2).getByText("Cloud Infrastructure & SRE")).toBeInTheDocument();
-    expect(within(podiumRank2).getByText("Tokyo Shibuya Green Hub")).toBeInTheDocument();
+    expect(
+      within(podiumRank2).getByText("Cloud Infrastructure & SRE"),
+    ).toBeInTheDocument();
+    expect(
+      within(podiumRank2).getByText("Tokyo Shibuya Green Hub"),
+    ).toBeInTheDocument();
 
     // 3rd place
-    expect(within(podiumRank3).getByText("Product & UX Design Guild")).toBeInTheDocument();
-    expect(within(podiumRank3).getByText("London Shoreditch Workspace")).toBeInTheDocument();
+    expect(
+      within(podiumRank3).getByText("Product & UX Design Guild"),
+    ).toBeInTheDocument();
+    expect(
+      within(podiumRank3).getByText("London Shoreditch Workspace"),
+    ).toBeInTheDocument();
   });
 
   it("renders exportable team badge preview and allows selecting different teams", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, summary: createMockSummaryWithTeams() }),
+      json: async () => ({
+        success: true,
+        summary: createMockSummaryWithTeams(),
+      }),
     } as Response);
 
     render(<CarbonFootprintTracker />);
@@ -313,28 +340,29 @@ describe("CarbonFootprintTracker - Team Carbon Savings Leaderboard & Ranking Pod
     });
 
     // Default selected team is Rank 1
-    expect(
-      screen.getByText(/Rank #1 • EMERALD Badge/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Rank #1 • EMERALD Badge/i)).toBeInTheDocument();
 
     // Click 2nd place podium card
     const rank2Card = screen.getByTestId("podium-rank-2");
     fireEvent.click(rank2Card);
 
     // Badge preview updates to Rank 2
-    expect(
-      screen.getByText(/Rank #2 • GOLD Badge/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Rank #2 • GOLD Badge/i)).toBeInTheDocument();
   });
 
   it("triggers SVG badge download when Export Team Sustainability Badge is clicked", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, summary: createMockSummaryWithTeams() }),
+      json: async () => ({
+        success: true,
+        summary: createMockSummaryWithTeams(),
+      }),
     } as Response);
 
     // Mock URL.createObjectURL and revokeObjectURL
-    const mockCreateObjectURL = jest.fn().mockReturnValue("blob:mock-badge-url");
+    const mockCreateObjectURL = jest
+      .fn()
+      .mockReturnValue("blob:mock-badge-url");
     const mockRevokeObjectURL = jest.fn();
     window.URL.createObjectURL = mockCreateObjectURL;
     window.URL.revokeObjectURL = mockRevokeObjectURL;
@@ -353,3 +381,175 @@ describe("CarbonFootprintTracker - Team Carbon Savings Leaderboard & Ranking Pod
   });
 });
 
+describe("CarbonFootprintTracker date range presets", () => {
+  const summary = {
+    periodMonth: "November 2026",
+    totalDistanceKm: 10,
+    totalEmissionsKgCo2: 1,
+    totalAvoidedKgCo2: 2,
+    treesEquivalentOffset: 1,
+    greenVenuesVisitedCount: 1,
+    modeBreakdown: [],
+    ecoBadgesEarned: [],
+    records: [],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("renders all four preset buttons", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, summary }),
+    } as Response);
+
+    render(<CarbonFootprintTracker />);
+
+    expect(screen.getByRole("button", { name: "7 Days" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "30 Days" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "This Month" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Year to Date" }),
+    ).toBeInTheDocument();
+  });
+
+  it("calculates 7 Days as yesterday-to-seven-days-ago", () => {
+    const now = new Date(2026, 10, 21, 12, 0, 0);
+    expect(getCarbonDatePresetRange("7-days", now)).toEqual({
+      startDate: "2026-11-14",
+      endDate: "2026-11-20",
+    });
+  });
+
+  it("calculates 30 Days including today", () => {
+    const now = new Date(2026, 10, 21, 12, 0, 0);
+    expect(getCarbonDatePresetRange("30-days", now)).toEqual({
+      startDate: "2026-10-23",
+      endDate: "2026-11-21",
+    });
+  });
+
+  it("calculates This Month from the first local calendar day", () => {
+    const now = new Date(2026, 10, 21, 12, 0, 0);
+    expect(getCarbonDatePresetRange("this-month", now)).toEqual({
+      startDate: "2026-11-01",
+      endDate: "2026-11-21",
+    });
+  });
+
+  it("calculates YTD from January 1", () => {
+    const now = new Date(2026, 11, 31, 12, 0, 0);
+    expect(getCarbonDatePresetRange("ytd", now)).toEqual({
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+    });
+  });
+
+  it("handles month boundaries for 7 Days", () => {
+    expect(
+      getCarbonDatePresetRange("7-days", new Date(2026, 0, 3, 12)),
+    ).toEqual({
+      startDate: "2025-12-27",
+      endDate: "2026-01-02",
+    });
+  });
+
+  it("handles December to January transitions for YTD", () => {
+    expect(getCarbonDatePresetRange("ytd", new Date(2027, 11, 15, 12))).toEqual(
+      {
+        startDate: "2027-01-01",
+        endDate: "2027-12-15",
+      },
+    );
+  });
+
+  it("handles March 1 in a leap year", () => {
+    expect(
+      getCarbonDatePresetRange("7-days", new Date(2024, 2, 1, 12)),
+    ).toEqual({
+      startDate: "2024-02-23",
+      endDate: "2024-02-29",
+    });
+  });
+
+  it("updates date inputs and highlights only the selected preset", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 10, 21, 12, 0, 0));
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, summary }),
+    } as Response);
+
+    render(<CarbonFootprintTracker />);
+
+    const thirtyDays = screen.getByRole("button", { name: "30 Days" });
+    fireEvent.click(thirtyDays);
+
+    expect(screen.getByLabelText("Start date")).toHaveValue("2026-10-23");
+    expect(screen.getByLabelText("End date")).toHaveValue("2026-11-21");
+    expect(thirtyDays).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "7 Days" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    await act(async () => {});
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/analytics/carbon-footprint?startDate=2026-10-23&endDate=2026-11-21",
+    );
+  });
+
+  it("clears preset selection when the start date is changed manually", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 10, 21, 12, 0, 0));
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, summary }),
+    } as Response);
+
+    render(<CarbonFootprintTracker />);
+
+    fireEvent.click(screen.getByRole("button", { name: "This Month" }));
+    fireEvent.change(screen.getByLabelText("Start date"), {
+      target: { value: "2026-11-10" },
+    });
+
+    expect(screen.getByRole("button", { name: "This Month" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByLabelText("Start date")).toHaveValue("2026-11-10");
+  });
+
+  it("clears preset selection when the end date is changed manually", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 10, 21, 12, 0, 0));
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, summary }),
+    } as Response);
+
+    render(<CarbonFootprintTracker />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Year to Date" }));
+    fireEvent.change(screen.getByLabelText("End date"), {
+      target: { value: "2026-10-31" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Year to Date" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByLabelText("End date")).toHaveValue("2026-10-31");
+  });
+
+  it("formats local dates without UTC shifts", () => {
+    expect(formatLocalIsoDate(new Date(2026, 0, 1, 23, 59))).toBe("2026-01-01");
+  });
+});

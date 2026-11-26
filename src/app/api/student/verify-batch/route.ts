@@ -74,46 +74,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Standard JSON response behavior when NDJSON is not requested
-    if (!isNdjsonPreferred(req)) {
-      const verification = await verifyBatchStudentDiscountProofs(body);
-      return NextResponse.json(verification, {
-        status: verification.valid ? 200 : 207,
-      });
+    const verification = await verifyBatchStudentDiscountProofs(
+      body,
+      req.signal,
+    );
+
+    if (req.signal.aborted) {
+      return new Response(null, { status: 499 });
     }
-
-    // NDJSON streaming response
-    const encoder = new TextEncoder();
-    const totalCount = items.length;
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        let isClosed = false;
-
-        const safeClose = () => {
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.close();
-            } catch {
-              // Ignore close error if stream is already closed/errored
-            }
-          }
-        };
-
-        const safeEnqueue = (payload: any) => {
-          if (isClosed || req.signal.aborted) return;
-          try {
-            const line = JSON.stringify(payload) + "\n";
-            controller.enqueue(encoder.encode(line));
-          } catch (enqueueErr) {
-            if (isAbortOrDisconnectError(enqueueErr, req.signal)) {
-              safeClose();
-            } else {
-              throw enqueueErr;
-            }
-          }
-        };
 
         const abortHandler = () => {
           safeClose();

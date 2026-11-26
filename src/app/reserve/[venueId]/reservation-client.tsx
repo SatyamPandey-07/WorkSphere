@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { getSseReconnectDelay } from "@/lib/sseReconnect";
 import {
   CalendarDays,
   Check,
@@ -153,7 +154,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const {
     activeHolds,
     myHeldSeatId,
-    remainingSeconds,
+    remainingSeconds: _remainingSeconds,
     acquireHold,
     releaseHold,
     confirmCheckout,
@@ -228,27 +229,71 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
 
   useEffect(() => {
     let events: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let disposed = false;
+
+    const scheduleReconnect = (source?: EventSource) => {
+      if (disposed || (source && events !== source)) return;
+
+      if (source) {
+        source.close();
+        events = null;
+      }
+
+      if (retryTimer !== null) return;
+
+      const delay = getSseReconnectDelay(retryAttempt);
+      retryAttempt += 1;
+
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect();
+      }, delay);
+    };
 
     const connect = () => {
+      if (disposed) return;
+
       if (events) {
         events.close();
+        events = null;
       }
-      events = new EventSource(
-        `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
-      );
 
-      events.addEventListener("availability", () => {
-        loadAvailability();
-      });
+      try {
+        const source = new EventSource(
+          `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
+        );
 
-      events.onerror = () => {
-        // EventSource reconnects automatically.
-      };
+        events = source;
+
+        source.onopen = () => {
+          if (disposed || events !== source) return;
+          retryAttempt = 0;
+        };
+
+        source.addEventListener("availability", () => {
+          loadAvailability();
+        });
+
+        source.onerror = () => {
+          scheduleReconnect(source);
+        };
+      } catch {
+        scheduleReconnect();
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         console.log("[Reservation] Tab visible, resetting connection");
+
+        if (retryTimer !== null) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+
+        retryAttempt = 0;
         connect();
       }
     };
@@ -257,9 +302,18 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     connect();
 
     return () => {
+      disposed = true;
+
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+
       if (events) {
         events.close();
+        events = null;
       }
+
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [venue.id, loadAvailability]);
@@ -1005,6 +1059,12 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   !isDurationValid
                 }
                 aria-busy={booking}
+                onClick={(e) => {
+                  if (submittingRef.current || booking) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
                 className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
                 data-testid="confirm-booking-btn"
               >

@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useVenueSearch } from "@/hooks/useVenueSearch";
+import { clearVenueSearchCache } from "@/lib/search/venueSearchCache";
 
 describe("useVenueSearch (#3513)", () => {
   const originalFetch = global.fetch;
@@ -7,6 +8,7 @@ describe("useVenueSearch (#3513)", () => {
   let mockFetch: jest.Mock;
 
   beforeEach(() => {
+    clearVenueSearchCache();
     jest.useFakeTimers();
     mockFetch = jest.fn();
     global.fetch = mockFetch;

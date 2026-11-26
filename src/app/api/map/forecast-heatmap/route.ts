@@ -36,9 +36,12 @@ function addDays(dateString: string, amount: number) {
   return formatDate(date);
 }
 
-function parseTime(time: string) {
-  const match = time.match(/^(\d{1,2}):(\d{2})/);
-
+export function parseBookingInterval(booking: BookingData): {
+  startMs: number;
+  endMs: number;
+} | null {
+  if (!booking.date || !booking.time) return null;
+  const match = booking.time.match(/^(\d{1,2}):(\d{2})/);
   if (!match) return null;
 
   const hour = Number(match[1]);
@@ -55,31 +58,33 @@ function parseTime(time: string) {
     return null;
   }
 
-  return hour * 60 + minute;
+  const hourStr = String(hour).padStart(2, "0");
+  const minuteStr = String(minute).padStart(2, "0");
+  const isoString = `${booking.date}T${hourStr}:${minuteStr}:00Z`;
+  const startMs = Date.parse(isoString);
+  if (isNaN(startMs)) return null;
+
+  const durationMinutes = Number(booking.duration ?? 60);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+
+  const endMs = startMs + durationMinutes * 60 * 1000;
+  return { startMs, endMs };
 }
 
-function isBookingActiveAtHour(
+export function isBookingActiveAtHour(
   booking: BookingData,
   date: string,
   hour: number,
-) {
-  if (booking.date !== date) return false;
+): boolean {
+  const interval = parseBookingInterval(booking);
+  if (!interval) return false;
 
-  const start = parseTime(booking.time);
+  const slotHour = String(hour).padStart(2, "0");
+  const slotStartMs = Date.parse(`${date}T${slotHour}:00:00Z`);
+  if (isNaN(slotStartMs)) return false;
+  const slotEndMs = slotStartMs + 60 * 60 * 1000;
 
-  if (start === null) return false;
-
-  const duration = Number(booking.duration ?? 60);
-
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return false;
-  }
-
-  const bookingEnd = start + duration;
-  const hourStart = hour * 60;
-  const hourEnd = hourStart + 60;
-
-  return start < hourEnd && bookingEnd > hourStart;
+  return interval.startMs < slotEndMs && interval.endMs > slotStartMs;
 }
 
 export async function GET(request: Request) {
@@ -154,10 +159,7 @@ export async function GET(request: Request) {
           noiseScore += loudCount * 0.4 + moderateCount * 0.2;
         }
 
-        const weight = Math.min(
-          0.1 + bookingCount * 0.2 + noiseScore,
-          1.0,
-        );
+        const weight = Math.min(0.1 + bookingCount * 0.2 + noiseScore, 1.0);
 
         return [venue.latitude, venue.longitude, weight];
       });
@@ -197,7 +199,7 @@ export async function GET(request: Request) {
         where: {
           venueId,
           date: {
-            gte: startDate,
+            gte: addDays(startDate, -1),
             lte: endDate,
           },
           status: {
@@ -236,19 +238,14 @@ export async function GET(request: Request) {
       for (let hour = 0; hour < 24; hour++) {
         const occupiedSeatIds = new Set(
           (bookings as BookingData[])
-            .filter((booking) =>
-              isBookingActiveAtHour(booking, date, hour),
-            )
+            .filter((booking) => isBookingActiveAtHour(booking, date, hour))
             .map((booking) => booking.seatId)
             .filter((seatId): seatId is string => Boolean(seatId)),
         );
 
         const occupancy =
           capacity > 0
-            ? Math.min(
-                100,
-                Math.round((occupiedSeatIds.size / capacity) * 100),
-              )
+            ? Math.min(100, Math.round((occupiedSeatIds.size / capacity) * 100))
             : 0;
 
         data.push({

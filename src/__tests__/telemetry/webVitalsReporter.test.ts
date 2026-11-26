@@ -11,13 +11,17 @@ const mockOnTTFB = jest.fn<void, [MetricCallback]>();
 const mockTrackEvent = jest.fn();
 const mockCheckRateLimit = jest.fn();
 
-jest.mock("web-vitals", () => ({
-  onCLS: (callback: (metric: Metric) => void) => mockOnCLS(callback),
-  onINP: (callback: (metric: Metric) => void) => mockOnINP(callback),
-  onLCP: (callback: (metric: Metric) => void) => mockOnLCP(callback),
-  onFCP: (callback: (metric: Metric) => void) => mockOnFCP(callback),
-  onTTFB: (callback: (metric: Metric) => void) => mockOnTTFB(callback),
-}));
+jest.mock(
+  "web-vitals",
+  () => ({
+    onCLS: (callback: (metric: Metric) => void) => mockOnCLS(callback),
+    onINP: (callback: (metric: Metric) => void) => mockOnINP(callback),
+    onLCP: (callback: (metric: Metric) => void) => mockOnLCP(callback),
+    onFCP: (callback: (metric: Metric) => void) => mockOnFCP(callback),
+    onTTFB: (callback: (metric: Metric) => void) => mockOnTTFB(callback),
+  }),
+  { virtual: true },
+);
 
 jest.mock("@/lib/analytics", () => ({
   trackEvent: (...args: unknown[]) => mockTrackEvent(...args),
@@ -385,6 +389,26 @@ describe("client Web Vitals reporter", () => {
 
     expect(mockSendBeacon).not.toHaveBeenCalled();
   });
+
+  it("clamps negative metric values to zero and rounds floating values", () => {
+    const negativePayload = createWebVitalsPayload(
+      makeMetric({ value: -12.4 }),
+    );
+    expect(negativePayload).not.toBeNull();
+    expect(negativePayload?.value).toBe(0);
+
+    const precisionPayload = createWebVitalsPayload(
+      makeMetric({ value: 123.4567 }),
+    );
+    expect(precisionPayload).not.toBeNull();
+    expect(precisionPayload?.value).toBe(123.46);
+  });
+
+  it("rejects non-finite values such as NaN, Infinity, and -Infinity", () => {
+    expect(createWebVitalsPayload(makeMetric({ value: NaN }))).toBeNull();
+    expect(createWebVitalsPayload(makeMetric({ value: Infinity }))).toBeNull();
+    expect(createWebVitalsPayload(makeMetric({ value: -Infinity }))).toBeNull();
+  });
 });
 
 describe("POST /api/telemetry/vitals", () => {
@@ -473,5 +497,57 @@ describe("POST /api/telemetry/vitals", () => {
     expect(wrongType.status).toBe(415);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("20");
+  });
+
+  it("rejects negative metric values with HTTP 400 and a descriptive error", async () => {
+    const negativePayload = {
+      ...validPayload,
+      value: -5.2,
+    };
+
+    const response = await POST(makeRequest(JSON.stringify(negativePayload)));
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe(
+      "Invalid metric value: value must be a non-negative finite number",
+    );
+    expect(mockTrackEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-numeric and NaN metric values with HTTP 400", async () => {
+    const stringValuePayload = {
+      ...validPayload,
+      value: "invalid-number" as unknown as number,
+    };
+
+    const response = await POST(
+      makeRequest(JSON.stringify(stringValuePayload)),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe(
+      "Invalid metric value: value must be a non-negative finite number",
+    );
+    expect(mockTrackEvent).not.toHaveBeenCalled();
+  });
+
+  it("accepts valid zero and positive metric values with HTTP 202", async () => {
+    const zeroPayload = {
+      ...validPayload,
+      value: 0,
+    };
+
+    const response = await POST(makeRequest(JSON.stringify(zeroPayload)));
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ accepted: true });
+    expect(mockTrackEvent).toHaveBeenCalledWith(
+      "web_vital_reported",
+      expect.objectContaining({
+        value: 0,
+      }),
+    );
   });
 });

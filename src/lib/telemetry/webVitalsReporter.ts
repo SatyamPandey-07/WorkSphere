@@ -148,7 +148,7 @@ export function createWebVitalsPayload(
     !METRIC_NAMES.has(candidate.name) ||
     typeof candidate.value !== "number" ||
     !Number.isFinite(candidate.value) ||
-    candidate.value < 0 ||
+    Number.isNaN(candidate.value) ||
     typeof candidate.rating !== "string" ||
     !RATINGS.has(candidate.rating)
   ) {
@@ -160,9 +160,11 @@ export function createWebVitalsPayload(
       ? candidate.id.slice(0, 128)
       : undefined;
 
+  const clampedValue = Math.max(0, Math.round(candidate.value * 100) / 100);
+
   return {
     name: candidate.name as WebVitalsMetricName,
-    value: candidate.value,
+    value: clampedValue,
     rating: candidate.rating as WebVitalsRating,
     navigationType: getNavigationType(candidate.navigationType),
     deviceType: getDeviceType(),
@@ -177,7 +179,20 @@ export function sendWebVitalsPayload(
 ): void {
   if (typeof window === "undefined") return;
 
-  const body = JSON.stringify(payload);
+  if (
+    typeof payload.value !== "number" ||
+    !Number.isFinite(payload.value) ||
+    Number.isNaN(payload.value)
+  ) {
+    return;
+  }
+
+  const clampedPayload: WebVitalsPayload = {
+    ...payload,
+    value: Math.max(0, Math.round(payload.value * 100) / 100),
+  };
+
+  const body = JSON.stringify(clampedPayload);
   const browserNavigator = typeof navigator === "undefined" ? null : navigator;
 
   try {

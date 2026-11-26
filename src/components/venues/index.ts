@@ -75,3 +75,8 @@ export type {
 export { StarRating } from "./StarRating";
 export type { StarRatingProps } from "./StarRating";
 
+export { NoiseMetricsPanel } from "./NoiseMetricsPanel";
+export type { NoiseMetricsPanelProps } from "./NoiseMetricsPanel";
+
+export { VenueHoursBadge } from "./VenueHoursBadge";
+export type { VenueHoursBadgeProps } from "./VenueHoursBadge";

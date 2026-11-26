@@ -10,18 +10,35 @@ import { MultiModalDijkstra } from "@/core/routing/MultiModalDijkstra";
 import {
   calculateEcoRoute,
   areValidCoordinates,
+  generateMultiModalRouteCards,
 } from "@/lib/routing/ecoRoutingEngine";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { startLat, startLng, endLat, endLng, radiusMeters = 1000 } = body;
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const {
+      startLat,
+      startLng,
+      endLat,
+      endLng,
+      radiusMeters = 1000,
+      elevationProfile,
+      elevationGainMeters,
+      weightKg,
+      unitPreference = "metric",
+    } = body || {};
 
     if (
-      startLat === undefined ||
-      startLng === undefined ||
-      endLat === undefined ||
-      endLng === undefined ||
+      typeof startLat !== "number" ||
+      typeof startLng !== "number" ||
+      typeof endLat !== "number" ||
+      typeof endLng !== "number" ||
       !areValidCoordinates({ lat: startLat, lng: startLng }) ||
       !areValidCoordinates({ lat: endLat, lng: endLng })
     ) {
@@ -62,7 +79,7 @@ export async function POST(request: NextRequest) {
       longitude: endLng,
     });
 
-    if (vehicles.length > 0) {
+    if (vehicles && vehicles.length > 0) {
       graph.mergeMicroMobilityData(vehicles, "end");
     }
 
@@ -73,12 +90,15 @@ export async function POST(request: NextRequest) {
       { profile: "walking" },
     );
 
+    const walkingDistanceMeters = ecoRoute?.distanceMeters || 1200;
+    const walkingDurationSeconds = ecoRoute?.durationSeconds || 900;
+
     graph.addEdge({
       fromId: "start",
       toId: "end",
       mode: "walking",
-      distanceMeters: ecoRoute.distanceMeters,
-      durationSeconds: ecoRoute.durationSeconds,
+      distanceMeters: walkingDistanceMeters,
+      durationSeconds: walkingDurationSeconds,
       cost: 0,
     });
 
@@ -86,40 +106,43 @@ export async function POST(request: NextRequest) {
     const dijkstra = new MultiModalDijkstra(graph, 1.0, 0.5);
     const route = dijkstra.findOptimalRoute("start", "end");
 
-    if (!route) {
-      // Even if graph traversal yielded no path, fall back to direct eco route estimate
-      return NextResponse.json(
-        {
-          success: true,
-          route: {
-            path: ["start", "end"],
-            totalDurationSeconds: ecoRoute.durationSeconds,
-            totalCost: 0,
-            modes: ["walking"],
-            isEstimated: true,
-            fallbackReason: "NO_GRAPH_PATH",
-          },
-          isEstimated: true,
-          availableVehicles: vehicles,
-        },
-        { status: 200 },
-      );
-    }
+    // 4. Generate eco-commute route recommendation cards with elevation badges & calorie chips
+    const hasMicroMobility = vehicles && vehicles.length > 0;
+    const routeCards = generateMultiModalRouteCards({
+      walkingDistanceMeters,
+      walkingDurationSeconds,
+      hasMicroMobility,
+      microMobilityVehicleCount: vehicles.length,
+      microMobilityDistanceMeters: 1500,
+      microMobilityDurationSeconds: 360,
+      microMobilityCost: vehicles[0]?.pricePerMinute
+        ? vehicles[0].pricePerMinute * 6
+        : 2.5,
+      elevationProfile,
+      elevationGainMeters,
+      weightKg,
+      unitPreference,
+    });
 
     return NextResponse.json(
       {
         success: true,
-        route: {
-          ...route,
-          isEstimated: ecoRoute.isEstimated,
-          fallbackReason: ecoRoute.fallbackReason,
+        route: route || {
+          path: ["start", "end"],
+          totalDurationSeconds: ecoRoute.durationSeconds,
+          totalCost: 0,
+          modes: ["walking"],
+          isEstimated: true,
+          fallbackReason: "NO_GRAPH_PATH",
         },
-        isEstimated: ecoRoute.isEstimated,
         availableVehicles: vehicles,
+        routeCards,
+        recommendationCards: routeCards,
       },
       { status: 200 },
     );
   } catch (error: any) {
+    console.error("Multi-modal routing error:", error);
     return NextResponse.json(
       { error: error?.message || "Internal server error" },
       { status: 500 },

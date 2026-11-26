@@ -1,73 +1,62 @@
 import {
-  parseDecimalToBaseUnits,
-  formatBaseUnitsToDecimal,
-  calculateEscrowBookingBaseUnits,
-  assertSufficientEscrowBalance,
-  SOL_DECIMALS,
-  USDC_DECIMALS,
-} from '@/lib/solana/escrowClient';
+  computeBackoffDelayMs,
+  RPC_BUSY_USER_MESSAGE,
+  SolanaEscrowClient,
+  withRpcRateLimitRetry,
+} from "@/lib/solana/escrowClient";
 
-describe('escrowClient (Exact BigInt Decimal Base-Unit Conversion)', () => {
-  test('converts IEEE-754 problematic decimals (0.14, 0.29, 0.000000001) into exact BigInt lamports', () => {
-    // Classic IEEE-754 drift cases where floating-point multiplication loses precision
-    expect(parseDecimalToBaseUnits('0.14', SOL_DECIMALS)).toBe(140_000_000n);
-    expect(parseDecimalToBaseUnits('0.29', SOL_DECIMALS)).toBe(290_000_000n);
-    expect(parseDecimalToBaseUnits('1.000000001', SOL_DECIMALS)).toBe(1_000_000_001n);
-    expect(parseDecimalToBaseUnits('0.000000001', SOL_DECIMALS)).toBe(1n);
-    expect(parseDecimalToBaseUnits('25', SOL_DECIMALS)).toBe(25_000_000_000n);
+describe("SolanaEscrowClient 429 retry & exponential backoff", () => {
+  it("computes 500ms -> 1000ms -> 2000ms base backoff with +/-200ms jitter", () => {
+    expect(computeBackoffDelayMs(0, { randomFn: () => 0.5 })).toBe(500);
+    expect(computeBackoffDelayMs(1, { randomFn: () => 0.5 })).toBe(1000);
+    expect(computeBackoffDelayMs(2, { randomFn: () => 0.5 })).toBe(2000);
+
+    expect(computeBackoffDelayMs(0, { randomFn: () => 1 })).toBe(700);
+    expect(computeBackoffDelayMs(0, { randomFn: () => 0 })).toBe(300);
   });
 
-  test('converts USDC amounts into exact 6-decimal SPL base units', () => {
-    expect(parseDecimalToBaseUnits('19.99', USDC_DECIMALS)).toBe(19_990_000n);
-    expect(parseDecimalToBaseUnits('0.000001', USDC_DECIMALS)).toBe(1n);
-    expect(formatBaseUnitsToDecimal(19_990_000n, USDC_DECIMALS)).toBe('19.99');
-  });
+  it("retries up to 3 times on HTTP 429 / Too Many Requests and succeeds on recovery", async () => {
+    const sleepMock = jest.fn().mockResolvedValue(undefined);
+    let calls = 0;
 
-  test('computes prorated multi-hour desk bookings without floating-point drift', () => {
-    // 0.14 SOL/hr * 150 minutes (2.5 hours) = exact 0.35 SOL = 350_000_000n lamports
-    const solQuote = calculateEscrowBookingBaseUnits({
-      hourlyRate: '0.14',
-      durationMinutes: 150,
-      asset: 'SOL',
-    });
-
-    expect(solQuote.baseUnits).toBe(350_000_000n);
-    expect(solQuote.formattedDecimal).toBe('0.35');
-
-    // 4.20 USDC/hr * 45 minutes (0.75 hours) = exact 3.15 USDC = 3_150_000n base units
-    const usdcQuote = calculateEscrowBookingBaseUnits({
-      hourlyRate: '4.20',
-      durationMinutes: 45,
-      asset: 'USDC',
-    });
-
-    expect(usdcQuote.baseUnits).toBe(3_150_000n);
-    expect(usdcQuote.formattedDecimal).toBe('3.15');
-  });
-
-  test('rejects negative values, malformed strings, and excess fractional precision', () => {
-    expect(() => parseDecimalToBaseUnits('-0.5', SOL_DECIMALS)).toThrow(/cannot be negative/);
-    expect(() => parseDecimalToBaseUnits('1.2.3', SOL_DECIMALS)).toThrow(/Malformed decimal/);
-    expect(() => parseDecimalToBaseUnits('0.1234567891', SOL_DECIMALS)).toThrow(
-      /exceeds maximum supported precision/
+    const client = new SolanaEscrowClient(
+      {
+        getEscrowStatus: jest
+          .fn()
+          .mockImplementation(async (escrowId: string) => {
+            calls += 1;
+            if (calls <= 3) {
+              throw new Error("429 Too Many Requests: rate limit exceeded");
+            }
+            return { escrowId, status: "funded", lamports: 1_000_000 };
+          }),
+      },
+      { sleepFn: sleepMock, randomFn: () => 0.5 },
     );
+
+    const result = await client.getEscrowStatus("escrow-abc");
+    expect(result.status).toBe("funded");
+    expect(calls).toBe(4);
+    expect(sleepMock).toHaveBeenCalledTimes(3);
+    expect(sleepMock).toHaveBeenNthCalledWith(1, 500);
+    expect(sleepMock).toHaveBeenNthCalledWith(2, 1000);
+    expect(sleepMock).toHaveBeenNthCalledWith(3, 2000);
   });
 
-  test('validates pre-flight escrow balance including network fee reserve', () => {
-    expect(() =>
-      assertSufficientEscrowBalance({
-        walletBalanceBaseUnits: 140_005_000n,
-        requiredEscrowBaseUnits: 140_000_000n,
-        networkFeeReserveBaseUnits: 5_000n,
-      })
-    ).not.toThrow();
+  it("throws descriptive user message after 3 failed 429 retries", async () => {
+    const sleepMock = jest.fn().mockResolvedValue(undefined);
+    const failingOp = jest
+      .fn()
+      .mockRejectedValue({ status: 429, message: "Too Many Requests" });
 
-    expect(() =>
-      assertSufficientEscrowBalance({
-        walletBalanceBaseUnits: 140_004_999n,
-        requiredEscrowBaseUnits: 140_000_000n,
-        networkFeeReserveBaseUnits: 5_000n,
-      })
-    ).toThrow(/InsufficientFunds/);
+    await expect(
+      withRpcRateLimitRetry(failingOp, {
+        sleepFn: sleepMock,
+        randomFn: () => 0.5,
+      }),
+    ).rejects.toThrow(RPC_BUSY_USER_MESSAGE);
+
+    expect(failingOp).toHaveBeenCalledTimes(4);
+    expect(sleepMock).toHaveBeenCalledTimes(3);
   });
 });

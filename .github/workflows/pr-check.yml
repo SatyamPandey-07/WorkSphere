@@ -19,7 +19,7 @@ jobs:
             try {
               const pr = context.payload.pull_request;
               const prAuthor = (pr.user?.login || '').toLowerCase();
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
 
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor)) {
                 core.setFailed(`🚫 Contributions from @${pr.user?.login} are blocked on this repository.`);
@@ -32,7 +32,7 @@ jobs:
                 .replace(/<!--[\s\S]*?-->/g, '')
                 .replace(/```[\s\S]*?```/g, '')
                 .replace(/`[^`]*`/g, '');
-              
+
               // Check for keywords like Fixes #123, Closes #123, Resolves #123, etc.
               const issueLinkRegex = /(?:closes|closed|fixes|fixed|resolves|resolved)\s*#(\d+)/gi;
               let match;
@@ -44,11 +44,11 @@ jobs:
                   break;
                 }
               }
-              
-              const skipLinking = pr.title.toLowerCase().includes('typo') || 
-                                  pr.title.toLowerCase().includes('chore') || 
+
+              const skipLinking = pr.title.toLowerCase().includes('typo') ||
+                                  pr.title.toLowerCase().includes('chore') ||
                                   pr.title.toLowerCase().includes('[skip-issue]');
-                                  
+
               if (!hasIssueLink && !skipLinking) {
                 const noticeMsg = "💡 **Tip for contributor:** Please ensure your PR description links an issue (e.g. `Fixes #<issue-number>`). If no issue exists, add `[skip-issue]` or `chore` to your PR title!";
                 core.warning(noticeMsg);

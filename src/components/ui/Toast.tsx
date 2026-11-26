@@ -501,7 +501,7 @@ function ToastItem({
     countdown !== undefined
       ? toast.message
           .replace("{countdown}", String(countdown))
-          // Singular only for exactly 1 — "11 seconds" must stay plural.
+          // Singular only for exactly 1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "11 seconds" must stay plural.
           .replace(/(^|\D)1 seconds\b/, (_, before) => `${before}1 second`)
       : toast.message;
 
@@ -532,32 +532,32 @@ function ToastItem({
         }
       }}
     >
-      {/* Tactical corner brackets for HUD appearance (⌜ ⌝ ⌞ ⌟) */}
+      {/* Tactical corner brackets for HUD appearance (ÃƒÂ¢Ã…â€™Ã…â€œ ÃƒÂ¢Ã…â€™Ã‚Â ÃƒÂ¢Ã…â€™Ã…Â¾ ÃƒÂ¢Ã…â€™Ã…Â¸) */}
       {isHud && (
         <>
           <span
             className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌜
+            ÃƒÂ¢Ã…â€™Ã…â€œ
           </span>
           <span
             className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌝
+            ÃƒÂ¢Ã…â€™Ã‚Â
           </span>
           <span
             className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌞
+            ÃƒÂ¢Ã…â€™Ã…Â¾
           </span>
           <span
             className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
             aria-hidden="true"
           >
-            ⌟
+            ÃƒÂ¢Ã…â€™Ã…Â¸
           </span>
         </>
       )}
@@ -643,11 +643,12 @@ export interface TacticalHUDToastProps {
 
 /**
  * TacticalHUDToast: Dedicated collimated fighter jet HUD advisory notification component
- * with tactical corner brackets (⌜ ⌝ ⌞ ⌟), glowing emerald power dot, and telemetry timestamp.
+ * with tactical corner brackets (ÃƒÂ¢Ã…â€™Ã…â€œ ÃƒÂ¢Ã…â€™Ã‚Â ÃƒÂ¢Ã…â€™Ã…Â¾ ÃƒÂ¢Ã…â€™Ã…Â¸), glowing emerald power dot, and telemetry timestamp.
  */
 export function TacticalHUDToast({
   message,
   timestamp,
+  type: _type = "info",
   action,
   onDismiss,
   className = "",
@@ -679,25 +680,25 @@ export function TacticalHUDToast({
         className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌜
+        âŒœ
       </span>
       <span
         className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌝
+        âŒ
       </span>
       <span
         className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌞
+        âŒž
       </span>
       <span
         className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
         aria-hidden="true"
       >
-        ⌟
+        âŒŸ
       </span>
 
       {/* Emerald status dot */}
@@ -745,3 +746,59 @@ export function TacticalHUDToast({
     </div>
   );
 }
+
+export interface ToastProps {
+  message: string | null;
+  onClose: () => void;
+  durationMs?: number;
+  variant?: "success" | "info" | "error";
+}
+
+export const Toast: React.FC<ToastProps> = ({
+  message,
+  onClose,
+  durationMs = 3000,
+  variant = "success",
+}) => {
+  useEffect(() => {
+    if (!message || durationMs <= 0) return;
+    const timer = window.setTimeout(() => {
+      onClose();
+    }, durationMs);
+    return () => window.clearTimeout(timer);
+  }, [message, durationMs, onClose]);
+
+  if (!message) return null;
+
+  const variantClasses =
+    variant === "error"
+      ? "border-rose-300 bg-rose-950 text-rose-100"
+      : variant === "info"
+        ? "border-indigo-300 bg-slate-900 text-slate-100"
+        : "border-emerald-400/50 bg-slate-900 text-white";
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="toast-notification"
+      className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border px-4 py-3 text-xs font-semibold shadow-xl sm:text-sm ${variantClasses}`}
+    >
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 rounded-full bg-emerald-400"
+      />
+      <span data-testid="toast-message">{message}</span>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Dismiss notification"
+        className="ml-1 rounded-md px-1.5 py-0.5 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white"
+      >
+        ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢
+      </button>
+    </div>
+  );
+};
+
+export default Toast;

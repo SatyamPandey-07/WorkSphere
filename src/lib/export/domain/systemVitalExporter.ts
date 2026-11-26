@@ -2,6 +2,11 @@ import {
   getCompressionTelemetry,
   type CompressionTelemetrySnapshot,
 } from "../../crdt/compressionTelemetry";
+import {
+  getFallbackTelemetrySnapshot,
+  getFallbackMetricsSnapshot,
+  type FallbackTelemetrySnapshot,
+} from "../../rateLimit/tokenBucketFallback";
 
 export interface LatencySample {
   route?: string;
@@ -27,6 +32,8 @@ export interface RouteVitalsSummary extends LatencyPercentiles {
 export interface SystemVitalsSnapshot {
   /** CRDT differential snapshot compression telemetry (#8015) */
   crdtSnapshotCompression?: CompressionTelemetrySnapshot;
+  /** In-memory rate-limit fallback telemetry (#10302, #10539) */
+  rateLimitFallback?: FallbackTelemetrySnapshot;
   generatedAt: string;
   windowSeconds: number;
   uptimeSeconds: number;
@@ -183,33 +190,84 @@ if (!globalForVitals.__worksphereVitalsBuffer) {
 }
 
 /**
- * Builds a complete SystemVitalsSnapshot containing overall and per-route p50, p95, and p99 percentiles.
+ * Resolves the rate-limiter fallback snapshot safely from tokenBucketFallback.
+ * Supports getFallbackTelemetrySnapshot and falls back to getFallbackMetricsSnapshot.
+ */
+function resolveFallbackTelemetry(): FallbackTelemetrySnapshot | undefined {
+  try {
+    if (typeof getFallbackTelemetrySnapshot === "function") {
+      const snap = getFallbackTelemetrySnapshot();
+      if (snap) return snap;
+    }
+    if (typeof getFallbackMetricsSnapshot === "function") {
+      const m = getFallbackMetricsSnapshot();
+      if (m) {
+        return {
+          active: m.active,
+          activationCount: m.activationCount,
+          requestCount: m.totalRequests,
+          allowedCount: m.allowedRequests,
+          rejectedCount: m.rejectedRequests,
+          totalDurationMs: m.totalFallbackDurationMs,
+          currentEpisodeDurationMs: m.activeFallbackDurationMs,
+          activeBuckets: m.activeBucketCount,
+          lastActivatedAtMs: m.lastActivatedAtMs,
+          lastFallbackTimestamp:
+            m.lastActivatedAtMs !== null
+              ? new Date(m.lastActivatedAtMs).toISOString()
+              : null,
+          byTier: m.tiers
+            ? Object.fromEntries(
+                Object.entries(m.tiers).map(([k, v]) => [
+                  k,
+                  {
+                    activationCount: v.totalRequests ? 1 : 0,
+                    requestCount: v.totalRequests,
+                    allowedCount: v.allowedRequests,
+                    rejectedCount: v.rejectedRequests,
+                    activeBuckets: v.activeBuckets,
+                  },
+                ]),
+              )
+            : {},
+        };
+      }
+    }
+  } catch {
+    // Return undefined safely on telemetry retrieval failure
+  }
+  return undefined;
+}
+
+/**
+ * Builds a point-in-time SystemVitalsSnapshot combining process-level memory,
+ * rolling window response latencies, CRDT snapshot compression telemetry,
+ * and rate-limiter fallback diagnostics (#10539).
  */
 export function buildSystemVitalsSnapshot(
   buffer: RollingTelemetryBuffer = sharedVitalsBuffer,
   nowMs: number = Date.now(),
 ): SystemVitalsSnapshot {
   const samples = buffer.getActiveSamples(nowMs);
-  const allDurations = samples.map((s) => s.durationMs);
-  const overall = calculateLatencyPercentiles(allDurations);
+  const overall = calculateLatencyPercentiles(samples.map((s) => s.durationMs));
 
-  const groupedByRoute = new Map<string, number[]>();
+  const routeGroups = new Map<string, number[]>();
   for (const sample of samples) {
-    const routeKey = sample.route ?? "unknown";
-    const bucket = groupedByRoute.get(routeKey);
-    if (bucket) {
-      bucket.push(sample.durationMs);
+    const route = sample.route ?? "unknown";
+    const existing = routeGroups.get(route);
+    if (existing) {
+      existing.push(sample.durationMs);
     } else {
-      groupedByRoute.set(routeKey, [sample.durationMs]);
+      routeGroups.set(route, [sample.durationMs]);
     }
   }
 
-  const byRoute: RouteVitalsSummary[] = Array.from(groupedByRoute.entries())
-    .map(([route, durations]) => ({
+  const byRoute: RouteVitalsSummary[] = Array.from(routeGroups.entries()).map(
+    ([route, durations]) => ({
       route,
       ...calculateLatencyPercentiles(durations),
-    }))
-    .sort((a, b) => b.p95Ms - a.p95Ms);
+    }),
+  );
 
   const mem =
     typeof process !== "undefined" && typeof process.memoryUsage === "function"
@@ -236,6 +294,7 @@ export function buildSystemVitalsSnapshot(
       byRoute,
     },
     crdtSnapshotCompression: getCompressionTelemetry(),
+    rateLimitFallback: resolveFallbackTelemetry(),
   };
 }
 
@@ -323,6 +382,42 @@ export function formatSystemVitalsPrometheus(
       "# TYPE worksphere_crdt_snapshot_compression_ratio gauge",
       `worksphere_crdt_snapshot_compression_ratio ${crdt.compressionRatio}`,
     );
+  }
+
+  const fb = snapshot.rateLimitFallback;
+  if (fb) {
+    lines.push(
+      "",
+      "# HELP worksphere_rate_limit_fallback_active Whether in-memory rate-limit fallback mode is currently active (1=active, 0=inactive)",
+      "# TYPE worksphere_rate_limit_fallback_active gauge",
+      `worksphere_rate_limit_fallback_active ${fb.active ? 1 : 0}`,
+      "# HELP worksphere_rate_limit_fallback_activations_total Number of Redis outage fallback episodes activated",
+      "# TYPE worksphere_rate_limit_fallback_activations_total counter",
+      `worksphere_rate_limit_fallback_activations_total ${fb.activationCount}`,
+      "# HELP worksphere_rate_limit_fallback_requests_total Total requests evaluated by the in-memory fallback rate limiter",
+      "# TYPE worksphere_rate_limit_fallback_requests_total counter",
+      `worksphere_rate_limit_fallback_requests_total ${fb.requestCount}`,
+      "# HELP worksphere_rate_limit_fallback_allowed_total Total requests allowed by the in-memory fallback rate limiter",
+      "# TYPE worksphere_rate_limit_fallback_allowed_total counter",
+      `worksphere_rate_limit_fallback_allowed_total ${fb.allowedCount}`,
+      "# HELP worksphere_rate_limit_fallback_rejected_total Total requests rejected (429) by the in-memory fallback rate limiter",
+      "# TYPE worksphere_rate_limit_fallback_rejected_total counter",
+      `worksphere_rate_limit_fallback_rejected_total ${fb.rejectedCount}`,
+      "# HELP worksphere_rate_limit_fallback_duration_ms_total Total cumulative duration spent in fallback mode in milliseconds",
+      "# TYPE worksphere_rate_limit_fallback_duration_ms_total counter",
+      `worksphere_rate_limit_fallback_duration_ms_total ${Math.round(fb.totalDurationMs)}`,
+      "# HELP worksphere_rate_limit_fallback_active_buckets Current number of in-memory rate-limit fallback buckets",
+      "# TYPE worksphere_rate_limit_fallback_active_buckets gauge",
+      `worksphere_rate_limit_fallback_active_buckets ${fb.activeBuckets}`,
+    );
+
+    if (fb.lastActivatedAtMs !== null && fb.lastActivatedAtMs !== undefined) {
+      lines.push(
+        "# HELP worksphere_rate_limit_fallback_last_activated_timestamp_ms Millisecond epoch timestamp of the most recent rate-limit fallback activation",
+        "# TYPE worksphere_rate_limit_fallback_last_activated_timestamp_ms gauge",
+        `worksphere_rate_limit_fallback_last_activated_timestamp_ms ${fb.lastActivatedAtMs}`,
+      );
+    }
   }
 
   return `${lines.join("\n")}\n`;

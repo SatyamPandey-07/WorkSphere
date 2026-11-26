@@ -144,3 +144,22 @@ export function isValidBookingDate(value: string): boolean {
     date.getUTCDate() === day
   );
 }
+
+/**
+ * Calculates the next upcoming Monday strictly following a given reference date.
+ */
+export function getNextMonday(referenceDate: Date = new Date()): Date {
+  const ref =
+    referenceDate instanceof Date && !isNaN(referenceDate.getTime())
+      ? referenceDate
+      : new Date();
+
+  const dayOfWeek = ref.getDay();
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+
+  return new Date(
+    ref.getFullYear(),
+    ref.getMonth(),
+    ref.getDate() + daysUntilMonday,
+  );
+}

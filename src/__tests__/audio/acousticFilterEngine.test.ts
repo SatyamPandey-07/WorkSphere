@@ -44,7 +44,9 @@ function createMockAudioContext(sampleRate = 48000): AudioContext {
       ...createMockAudioNode(),
       stream: {
         id: "mock-dest-stream",
-        getAudioTracks: jest.fn(() => [{ id: "mock-dest-track", enabled: true }]),
+        getAudioTracks: jest.fn(() => [
+          { id: "mock-dest-track", enabled: true },
+        ]),
       },
     })),
   } as unknown as AudioContext;
@@ -68,23 +70,33 @@ describe("AcousticFilterEngine", () => {
     });
 
     it("creates voice-focus filter with bandpass type, 1850 Hz center frequency and Q=1.0", () => {
-      const engine = new AcousticFilterEngine(mockContext, { initialPreset: "voice-focus" });
+      const engine = new AcousticFilterEngine(mockContext, {
+        initialPreset: "voice-focus",
+      });
       expect(engine.getPreset()).toBe("voice-focus");
 
       expect(engine.voiceFocusNode.type).toBe("bandpass");
-      expect(engine.voiceFocusNode.frequency.setValueAtTime).toHaveBeenCalledWith(1850, 0);
+      expect(
+        engine.voiceFocusNode.frequency.setValueAtTime,
+      ).toHaveBeenCalledWith(1850, 0);
       expect(engine.voiceFocusNode.Q.setValueAtTime).toHaveBeenCalledWith(1, 0);
     });
 
     it("creates cafe-suppress filter with 120 Hz and 240 Hz notch filters", () => {
-      const engine = new AcousticFilterEngine(mockContext, { initialPreset: "cafe-suppress" });
+      const engine = new AcousticFilterEngine(mockContext, {
+        initialPreset: "cafe-suppress",
+      });
       expect(engine.getPreset()).toBe("cafe-suppress");
 
       expect(engine.cafeNotch120Node.type).toBe("notch");
-      expect(engine.cafeNotch120Node.frequency.setValueAtTime).toHaveBeenCalledWith(120, 0);
+      expect(
+        engine.cafeNotch120Node.frequency.setValueAtTime,
+      ).toHaveBeenCalledWith(120, 0);
 
       expect(engine.cafeNotch240Node.type).toBe("notch");
-      expect(engine.cafeNotch240Node.frequency.setValueAtTime).toHaveBeenCalledWith(240, 0);
+      expect(
+        engine.cafeNotch240Node.frequency.setValueAtTime,
+      ).toHaveBeenCalledWith(240, 0);
     });
   });
 
@@ -98,7 +110,9 @@ describe("AcousticFilterEngine", () => {
       } as unknown as MediaStream;
 
       const sourceNode = engine.connectSourceStream(mockStream);
-      expect(mockContext.createMediaStreamSource).toHaveBeenCalledWith(mockStream);
+      expect(mockContext.createMediaStreamSource).toHaveBeenCalledWith(
+        mockStream,
+      );
       expect(sourceNode.connect).toHaveBeenCalledWith(engine.inputNode);
       expect(mockStop).not.toHaveBeenCalled();
     });
@@ -189,7 +203,9 @@ describe("AcousticFilterEngine", () => {
     });
 
     it("falls back to 'off' when setting an invalid preset", () => {
-      const engine = new AcousticFilterEngine(mockContext, { initialPreset: "voice-focus" });
+      const engine = new AcousticFilterEngine(mockContext, {
+        initialPreset: "voice-focus",
+      });
       expect(engine.getPreset()).toBe("voice-focus");
 
       engine.setPreset("unknown-noise-filter" as any);
@@ -229,6 +245,90 @@ describe("AcousticFilterEngine", () => {
       }).not.toThrow();
     });
 
+    it("resumes suspended AudioContext when the document becomes visible", () => {
+      const mockContext = createMockAudioContext();
+      const resume = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(mockContext, "state", {
+        configurable: true,
+        value: "suspended",
+      });
+      Object.defineProperty(mockContext, "resume", {
+        configurable: true,
+        value: resume,
+      });
+      const visibilitySpy = jest
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+
+      const engine = new AcousticFilterEngine(mockContext);
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      expect(resume).toHaveBeenCalledTimes(1);
+
+      engine.dispose();
+      visibilitySpy.mockRestore();
+    });
+
+    it("does not resume AudioContext when hidden or already running", () => {
+      const mockContext = createMockAudioContext();
+      const resume = jest.fn().mockResolvedValue(undefined);
+      let state: AudioContextState = "suspended";
+
+      Object.defineProperty(mockContext, "state", {
+        configurable: true,
+        get: () => state,
+      });
+      Object.defineProperty(mockContext, "resume", {
+        configurable: true,
+        value: resume,
+      });
+
+      const visibilitySpy = jest
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("hidden");
+      const engine = new AcousticFilterEngine(mockContext);
+
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(resume).not.toHaveBeenCalled();
+
+      visibilitySpy.mockReturnValue("visible");
+      state = "running";
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(resume).not.toHaveBeenCalled();
+
+      engine.dispose();
+      visibilitySpy.mockRestore();
+    });
+
+    it("handles rejected AudioContext resume promises", async () => {
+      const mockContext = createMockAudioContext();
+      const resume = jest
+        .fn()
+        .mockRejectedValue(new Error("User gesture required"));
+      Object.defineProperty(mockContext, "state", {
+        configurable: true,
+        value: "suspended",
+      });
+      Object.defineProperty(mockContext, "resume", {
+        configurable: true,
+        value: resume,
+      });
+      const visibilitySpy = jest
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+
+      const engine = new AcousticFilterEngine(mockContext);
+
+      expect(() =>
+        document.dispatchEvent(new Event("visibilitychange")),
+      ).not.toThrow();
+      await Promise.resolve();
+
+      expect(resume).toHaveBeenCalledTimes(1);
+
+      engine.dispose();
+      visibilitySpy.mockRestore();
+    });
     it("ignores operations after disposal", () => {
       const engine = new AcousticFilterEngine(mockContext);
       engine.dispose();

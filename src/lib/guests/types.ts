@@ -27,6 +27,7 @@ export interface BookingInfo {
   date: string;
   time: string;
   durationMinutes: number;
+  timeZone?: string | null;
 }
 
 /**
@@ -58,8 +59,8 @@ export interface IcsEventData {
   description: string;
   location: string;
   locationAddress: string;
-  startDate: string; // YYYYMMDDTHHmmSS format
-  endDate: string; // YYYYMMDDTHHmmSS format
+  startDate: string; // YYYYMMDDTHHmmSS format or YYYYMMDDTHHmmSSZ UTC
+  endDate: string; // YYYYMMDDTHHmmSS format or YYYYMMDDTHHmmSSZ UTC
   organizerName: string;
   organizerEmail: string;
   attendeeEmail: string;
@@ -68,6 +69,7 @@ export interface IcsEventData {
   venueLatitude: number;
   venueLongitude: number;
   venuePhotoUrl?: string;
+  timeZone?: string;
 }
 
 /**

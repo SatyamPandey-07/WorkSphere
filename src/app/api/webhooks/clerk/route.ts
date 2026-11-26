@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   verifyClerkWebhook,
-  resolveUserProfile,
+  handleUserUpdated,
   WebhookVerificationError,
   type ClerkUserData,
 } from "@/lib/auth/clerkWebhook";
@@ -48,30 +48,19 @@ export async function POST(req: Request) {
     switch (eventType) {
       case "user.created":
       case "user.updated": {
-        const profile = resolveUserProfile(evt.data as unknown as ClerkUserData);
+        const profile = await handleUserUpdated(
+          evt.data as unknown as ClerkUserData,
+          prisma,
+        );
 
-        await prisma.user.upsert({
-          where: { id: profile.id },
-          update: {
-            email: profile.email,
-            firstName: profile.firstName,
-            lastName: profile.lastName,
-            imageUrl: profile.imageUrl,
+        return NextResponse.json(
+          {
+            success: true,
+            action: eventType === "user.created" ? "created" : "updated",
+            userId: profile.id,
           },
-          create: {
-            id: profile.id,
-            email: profile.email,
-            firstName: profile.firstName,
-            lastName: profile.lastName,
-            imageUrl: profile.imageUrl,
-          },
-        });
-
-        return NextResponse.json({
-          success: true,
-          action: eventType === "user.created" ? "created" : "updated",
-          userId: profile.id,
-        });
+          { status: 200 },
+        );
       }
 
       case "user.deleted": {

@@ -122,6 +122,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const bodyRecord =
+      body && typeof body === "object"
+        ? (body as Record<string, unknown>)
+        : null;
+    const value = bodyRecord?.value;
+
+    if (
+      typeof value !== "number" ||
+      Number.isNaN(value) ||
+      !Number.isFinite(value) ||
+      value < 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid metric value: value must be a non-negative finite number",
+        },
+        { status: 400 },
+      );
+    }
+
     const parsed = webVitalsPayloadSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -137,8 +158,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { metricId, ...metric } = parsed.data;
+    const sanitizedValue = Math.max(0, Math.round(metric.value * 100) / 100);
     trackEvent("web_vital_reported", {
       ...metric,
+      value: sanitizedValue,
       ...(metricId ? { metricId } : {}),
     });
 

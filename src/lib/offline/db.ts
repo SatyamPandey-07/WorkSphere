@@ -1,3 +1,10 @@
+import {
+  openDatabaseWithMigration,
+  isConnectionValid,
+  clearMigrationCheckpoint,
+} from "./migrationCoordinator";
+import { MigrationError } from "./migrations/types";
+
 export const OFFLINE_DB_NAME = "WorkSphereOfflineDB";
 export const OFFLINE_DB_VERSION = 3;
 export const DEFAULT_DB_OPEN_TIMEOUT_MS = 4000;
@@ -35,9 +42,10 @@ export async function initOfflineDB(
     );
   }
 
-  if (dbInstance !== null) {
+  if (dbInstance !== null && isConnectionValid(dbInstance)) {
     return Promise.resolve(dbInstance);
   }
+  dbInstance = null;
 
   if (dbPromise !== null) {
     return dbPromise;
@@ -46,263 +54,33 @@ export async function initOfflineDB(
   const timeoutMs = options.timeoutMs ?? DEFAULT_DB_OPEN_TIMEOUT_MS;
   const targetVersion = options.version ?? OFFLINE_DB_VERSION;
 
-  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    let settled = false;
-
-    const cleanupPending = () => {
+  dbPromise = openDatabaseWithMigration(OFFLINE_DB_NAME, {
+    context: "page",
+    targetVersion,
+    timeoutMs,
+    onVersionChange: () => {
       dbInstance = null;
       dbPromise = null;
-    };
-
-    const timeoutId = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        cleanupPending();
-        const timeoutErr = new DOMException(
-          `IndexedDB open timed out after ${timeoutMs}ms`,
-          "TimeoutError",
-        );
-        console.warn("[OfflineDB] IndexedDB open timed out:", timeoutErr);
-        reject(timeoutErr);
-      }
-    }, timeoutMs);
-
-    try {
-      const request = indexedDB.open(OFFLINE_DB_NAME, targetVersion);
-
-      request.onblocked = () => {
-        console.warn(
-          "[OfflineDB] Database version upgrade blocked by open connection, closing stale handle",
-        );
-        if (dbInstance) {
-          try {
-            dbInstance.close();
-          } catch {
-            // ignore close error
-          }
-        }
-        cleanupPending();
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeoutId);
-          reject(
-            new DOMException(
-              "IndexedDB upgrade blocked by another open connection",
-              "VersionError",
-            ),
-          );
-        }
-      };
-
-      request.onerror = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        if (dbInstance) {
-          try {
-            dbInstance.close();
-          } catch {
-            // ignore
-          }
-        }
-        cleanupPending();
-        const err = request.error || new Error("Unknown IndexedDB open error");
-        if (err.name === "SecurityError") {
-          showPrivateBrowsingAlert();
-        } else if (err.name === "VersionError") {
-          console.warn(
-            "[OfflineDB] Schema VersionError detected; falling back gracefully",
-            err,
-          );
-        }
-        reject(err);
-      };
-
-      request.onsuccess = () => {
-        if (settled) {
-          try {
-            request.result.close();
-          } catch {
-            // ignore
-          }
-          return;
-        }
-        settled = true;
-        clearTimeout(timeoutId);
-        dbInstance = request.result;
-        dbPromise = null;
-
-        dbInstance.onversionchange = () => {
-          try {
-            dbInstance?.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-          dbPromise = null;
-        };
-
-        resolve(dbInstance);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const database = (event.target as IDBOpenDBRequest).result;
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-
-        if (transaction) {
-          transaction.onabort = (e) => {
-            console.warn(
-              "[OfflineDB] Upgrade transaction aborted",
-              transaction.error || e,
-            );
-          };
-          transaction.onerror = (e) => {
-            console.warn(
-              "[OfflineDB] Upgrade transaction error",
-              transaction.error || e,
-            );
-          };
-        }
-
-        database.onversionchange = () => {
-          console.warn(
-            "[OfflineDB] Database version change during upgrade, closing connection gracefully",
-          );
-          try {
-            database.close();
-          } catch {
-            // ignore
-          }
-          if (dbInstance === database) {
-            dbInstance = null;
-          }
-        };
-
-        // Venues store
-        if (!database.objectStoreNames.contains("venues")) {
-          const venuesStore = database.createObjectStore("venues", {
-            keyPath: "id",
-          });
-          venuesStore.createIndex("type", "type", { unique: false });
-          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
-
-        // Favorites store
-        if (!database.objectStoreNames.contains("favorites")) {
-          const favoritesStore = database.createObjectStore("favorites", {
-            keyPath: "id",
-          });
-          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
-
-        // Search history store
-        if (!database.objectStoreNames.contains("searches")) {
-          const searchesStore = database.createObjectStore("searches", {
-            keyPath: "query",
-          });
-          searchesStore.createIndex("timestamp", "timestamp", {
-            unique: false,
-          });
-        }
-
-        // Generic pending sync queue
-        if (!database.objectStoreNames.contains("pending_sync_queue")) {
-          const syncStore = database.createObjectStore("pending_sync_queue", {
-            keyPath: "id",
-          });
-          syncStore.createIndex("domain", "domain", { unique: false });
-          syncStore.createIndex("status", "status", { unique: false });
-          syncStore.createIndex("timestamp", "timestamp", { unique: false });
-        }
-
-        // Pending actions store
-        if (!database.objectStoreNames.contains("pendingActions")) {
-          database.createObjectStore("pendingActions", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Receipts store
-        if (!database.objectStoreNames.contains("receiptExports")) {
-          const receiptStore = database.createObjectStore("receiptExports", {
-            keyPath: "bookingId",
-          });
-          receiptStore.createIndex("status", "status", { unique: false });
-          receiptStore.createIndex("createdAt", "createdAt", {
-            unique: false,
-          });
-        }
-
-        // Pending favorites store
-        if (!database.objectStoreNames.contains("pendingFavorites")) {
-          database.createObjectStore("pendingFavorites", { keyPath: "id" });
-        }
-
-        // Preference reranking store
-        if (!database.objectStoreNames.contains("preference_rankings")) {
-          database.createObjectStore("preference_rankings", { keyPath: "id" });
-        }
-
-        // Recently viewed venues store
-        if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
-          const recentStore = database.createObjectStore(
-            "recentlyViewedVenues",
-            {
-              keyPath: "id",
-            },
-          );
-          recentStore.createIndex("viewedAt", "viewedAt", { unique: false });
-        }
-
-        // Pending reviews store
-        if (!database.objectStoreNames.contains("pendingReviews")) {
-          const reviewStore = database.createObjectStore("pendingReviews", {
-            keyPath: "id",
-          });
-          reviewStore.createIndex("venueId", "venueId", { unique: false });
-          reviewStore.createIndex("status", "status", { unique: false });
-          reviewStore.createIndex("createdAt", "createdAt", {
-            unique: false,
-          });
-        }
-
-        // Collaborative notes stores
-        if (!database.objectStoreNames.contains("pending_notes_queue")) {
-          const notesQueue = database.createObjectStore("pending_notes_queue", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-          notesQueue.createIndex("by-folder", "folderId");
-        }
-
-        if (!database.objectStoreNames.contains("notes_cache")) {
-          database.createObjectStore("notes_cache", { keyPath: "folderId" });
-        }
-
-        // Favorite tags store
-        if (!database.objectStoreNames.contains("favorite_tags")) {
-          database.createObjectStore("favorite_tags", { keyPath: "id" });
-        }
-
-        // CRDT state vector records and tombstones store (#6488)
-        if (!database.objectStoreNames.contains("crdt_tombstones")) {
-          const tombstoneStore = database.createObjectStore("crdt_tombstones", { keyPath: "id" });
-          tombstoneStore.createIndex("deletedAt", "deletedAt", { unique: false });
-          tombstoneStore.createIndex("isMerged", "isMerged", { unique: false });
-        }
-      };
-    } catch (err: unknown) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      cleanupPending();
-      if (err instanceof Error && err.name === "SecurityError") {
+    },
+  })
+    .then((db) => {
+      dbInstance = db;
+      dbPromise = null;
+      return db;
+    })
+    .catch((err: unknown) => {
+      dbInstance = null;
+      dbPromise = null;
+      const cause = err instanceof MigrationError ? err.cause : err;
+      const errName = (cause as { name?: string } | null)?.name;
+      if (
+        errName === "SecurityError" ||
+        (err instanceof Error && err.message.includes("SecurityError"))
+      ) {
         showPrivateBrowsingAlert();
       }
-      reject(err);
-    }
-  });
+      throw err;
+    });
 
   return dbPromise;
 }
@@ -395,6 +173,7 @@ export async function resetOfflineDBNonDestructive(
   const itemsToRestore = [...byId.values(), ...withoutId];
 
   if (typeof indexedDB !== "undefined") {
+    await clearMigrationCheckpoint(OFFLINE_DB_NAME);
     await new Promise<void>((resolve) => {
       const delReq = indexedDB.deleteDatabase(OFFLINE_DB_NAME);
       delReq.onsuccess = () => resolve();

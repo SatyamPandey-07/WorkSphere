@@ -559,7 +559,7 @@ function parseLockValue(raw: unknown): SeatLockData | null {
   return null;
 }
 
-function getLockKey(venueId: string, seatId: string): string {
+export function getLockKey(venueId: string, seatId: string): string {
   return `seat:hold:${venueId}:${seatId}`;
 }
 
@@ -744,7 +744,6 @@ export async function acquireSeatWebLock(
   };
 }
 
-
 export const SEAT_LOCK_EXTEND_LUA = `
 local current = redis.call('GET', KEYS[1])
 if not current then return { 0, 'NOT_FOUND' } end
@@ -754,10 +753,10 @@ if not (ok and type(decoded) == 'table') then
   return { 0, 'INVALID_LOCK' }
 end
 
-if decoded.userId ~= ARGV[1] or decoded.fencingToken ~= ARGV[2] then
+if decoded.userId ~= ARGV[1] or tostring(decoded.fencingToken) ~= tostring(ARGV[2]) then
   return { 0, 'UNAUTHORIZED' }
 end
-if decoded.extensionUsed == true then
+if decoded.extensionUsed == true or decoded.extensionUsed == 1 or decoded.extensionUsed == 'true' then
   return { 0, 'ALREADY_EXTENDED' }
 end
 
@@ -819,13 +818,7 @@ export async function extendSeatHold(
       const rawResult = await redis.eval(
         SEAT_LOCK_EXTEND_LUA,
         [key],
-        [
-          userId,
-          fencingToken,
-          "60000",
-          "300000",
-          String(now),
-        ],
+        [userId, fencingToken, "60000", "300000", String(now)],
       );
       const [flag, rawLock, rawRemaining] = Array.isArray(rawResult)
         ? rawResult
@@ -840,7 +833,9 @@ export async function extendSeatHold(
             "ALREADY_EXTENDED",
             "TOO_CLOSE_TO_EXPIRY",
             "INVALID_LOCK",
-          ].includes(reason) ? reason : "ERROR",
+          ].includes(reason)
+            ? reason
+            : "ERROR",
           remainingSeconds:
             Number.isFinite(Number(rawRemaining)) && Number(rawRemaining) > 0
               ? Math.ceil(Number(rawRemaining) / 1000)
@@ -850,7 +845,11 @@ export async function extendSeatHold(
 
       const lock = parseLockValue(rawLock);
       if (!lock) return { success: false, reason: "INVALID_LOCK" };
-      getRedisKeyspaceManager().registerDeskTimer(venueId, seatId, lock.expiresAt);
+      getRedisKeyspaceManager().registerDeskTimer(
+        venueId,
+        seatId,
+        lock.expiresAt,
+      );
       return {
         success: true,
         lock,
@@ -870,7 +869,7 @@ export async function extendSeatHold(
   if (
     current.userId !== userId ||
     !current.fencingToken ||
-    current.fencingToken !== fencingToken
+    String(current.fencingToken) !== String(fencingToken)
   ) {
     return { success: false, reason: "UNAUTHORIZED" };
   }
@@ -894,7 +893,11 @@ export async function extendSeatHold(
     version: current.version + 1,
   };
   memoryLocks.set(key, updated);
-  getRedisKeyspaceManager().registerDeskTimer(venueId, seatId, updated.expiresAt);
+  getRedisKeyspaceManager().registerDeskTimer(
+    venueId,
+    seatId,
+    updated.expiresAt,
+  );
   return {
     success: true,
     lock: { ...updated },

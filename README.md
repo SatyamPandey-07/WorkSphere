@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-150%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-149%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-150-active-rockstars"><b>👥 Contributors (150)</b></a> •
+  <a href="#-contributors-149-active-rockstars"><b>👥 Contributors (149)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (150 Active Rockstars)
+### 🚀 Contributors (149 Active Rockstars)
 
-A massive thank you to all **150 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **149 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -1000,14 +1000,6 @@ A massive thank you to all **150 brilliant contributors and bots** building Work
       <a href="https://github.com/Pruthviraj-patil20">
         <img src="https://avatars.githubusercontent.com/u/260050545?v=4" width="55px;" height="55px;" alt="Pruthviraj-patil20" style="border-radius: 50%; object-fit: cover;"/><br />
         <sub><b>Pruthviraj-patil20</b></sub>
-      </a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="14.28%">
-      <a href="https://github.com/jerittajancy08-eng">
-        <img src="https://avatars.githubusercontent.com/u/228553216?v=4" width="55px;" height="55px;" alt="jerittajancy08-eng" style="border-radius: 50%; object-fit: cover;"/><br />
-        <sub><b>jerittajancy08-eng</b></sub>
       </a>
     </td>
   </tr>

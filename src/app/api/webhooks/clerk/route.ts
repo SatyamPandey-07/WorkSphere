@@ -6,6 +6,11 @@ import {
   WebhookVerificationError,
   type ClerkUserData,
 } from "@/lib/auth/clerkWebhook";
+import {
+  defaultClerkWebhookInbox,
+  extractClerkEventTimestampMs,
+  hashWebhookPayload,
+} from "@/lib/auth/clerkWebhookInbox";
 
 export async function POST(req: Request) {
   let rawBody: string;
@@ -43,57 +48,122 @@ export async function POST(req: Request) {
   }
 
   const eventType = evt.type;
+  const eventData = (evt.data ?? {}) as Record<string, unknown>;
+  const subjectId = typeof eventData.id === "string" ? eventData.id : undefined;
+  const eventTs = extractClerkEventTimestampMs(eventData, svixTimestamp);
+  const payloadHash = hashWebhookPayload(rawBody);
+
+  if (svixId) {
+    const claim = defaultClerkWebhookInbox.claim({
+      svixId,
+      eventType,
+      subjectId,
+      eventTimestampMs: eventTs,
+      payloadHash,
+      allowDifferentPayloadSameId: true,
+    });
+
+    if (claim.kind === "DUPLICATE" && claim.record.result) {
+      return NextResponse.json({
+        success: true,
+        ...claim.record.result,
+        idempotent: true,
+      });
+    }
+
+    if (claim.kind === "IN_FLIGHT") {
+      return NextResponse.json(
+        { error: "Webhook event is currently being processed" },
+        { status: 409 },
+      );
+    }
+
+    if (claim.kind === "QUARANTINED") {
+      return NextResponse.json(
+        {
+          success: true,
+          action: "quarantined",
+          reason: "max_retries_exceeded",
+          userId: subjectId,
+        },
+        { status: 202 },
+      );
+    }
+  }
 
   try {
     switch (eventType) {
       case "user.created":
       case "user.updated": {
-        const profile = await handleUserUpdated(
-          evt.data as unknown as ClerkUserData,
-          prisma,
+        const userData = evt.data as unknown as ClerkUserData;
+        const guardResult = defaultClerkWebhookInbox.checkUserLifecycleOrder({
+          eventType,
+          userId: userData.id,
+          eventTimestampMs: eventTs,
+        });
+
+        if (guardResult) {
+          if (svixId) {
+            defaultClerkWebhookInbox.markCompleted(svixId, guardResult, "IGNORED");
+          }
+          return NextResponse.json({ success: true, ...guardResult });
+        }
+
+        const profile = await handleUserUpdated(userData, prisma);
+        defaultClerkWebhookInbox.recordUserUpsertCommitted(
+          eventType,
+          userData.id,
+          eventTs,
         );
 
-        return NextResponse.json(
-          {
-            success: true,
-            action: eventType === "user.created" ? "created" : "updated",
-            userId: profile.id,
-          },
-          { status: 200 },
-        );
+        const result = {
+          action: eventType === "user.created" ? "created" : "updated",
+          userId: profile.id,
+        };
+        if (svixId) {
+          defaultClerkWebhookInbox.markCompleted(svixId, result, "PROCESSED");
+        }
+
+        return NextResponse.json({ success: true, ...result }, { status: 200 });
       }
 
       case "user.deleted": {
-        const userId = evt.data.id;
+        const userId = evt.data.id as string | undefined;
         if (!userId) {
-          return NextResponse.json({
-            success: true,
-            action: "ignored",
-            reason: "missing_id",
-          });
+          const result = { action: "ignored", reason: "missing_id" };
+          if (svixId) {
+            defaultClerkWebhookInbox.markCompleted(svixId, result, "IGNORED");
+          }
+          return NextResponse.json({ success: true, ...result });
         }
 
         // Safe, idempotent deletion consistent with existing WorkSphere deletion strategy
         await prisma.user.deleteMany({
           where: { id: userId },
         });
+        defaultClerkWebhookInbox.recordUserDeletionCommitted(userId, eventTs);
 
-        return NextResponse.json({
-          success: true,
-          action: "deleted",
-          userId,
-        });
+        const result = { action: "deleted", userId };
+        if (svixId) {
+          defaultClerkWebhookInbox.markCompleted(svixId, result, "PROCESSED");
+        }
+
+        return NextResponse.json({ success: true, ...result });
       }
 
       default: {
-        return NextResponse.json({
-          success: true,
-          action: "ignored",
-          eventType,
-        });
+        const result = { action: "ignored", eventType };
+        if (svixId) {
+          defaultClerkWebhookInbox.markCompleted(svixId, result, "IGNORED");
+        }
+        return NextResponse.json({ success: true, ...result });
       }
     }
   } catch (error) {
+    if (svixId) {
+      const msg = error instanceof Error ? error.message : "Database error";
+      defaultClerkWebhookInbox.markFailed(svixId, msg);
+    }
     console.error(`Clerk webhook database error for event ${eventType}:`, error);
     return NextResponse.json(
       { error: "Failed to process user synchronization" },

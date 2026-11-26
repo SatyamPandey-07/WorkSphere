@@ -3,6 +3,7 @@ import { z } from "zod";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
+import { defaultGatewayRegistry } from "@/lib/telemetry/gatewayAuthRegistry";
 
 export const dynamic = "force-dynamic";
 
@@ -147,12 +148,7 @@ export async function validateTelemetryBatchParallel(readings: unknown[]) {
  *
  * See docs/api/TELEMETRY_GATEWAY_AUTH.md for the full decision table.
  */
-export function verifyGatewayToken(req: NextRequest): boolean {
-  const configuredToken =
-    process.env.GATEWAY_API_TOKEN ||
-    process.env.TELEMETRY_GATEWAY_TOKEN ||
-    process.env.WORKER_SECRET;
-
+function extractPresentedGatewayToken(req: NextRequest): string | null {
   const authHeader = req.headers.get("authorization");
   const customHeader =
     req.headers.get("x-gateway-token") || req.headers.get("x-api-key");
@@ -161,7 +157,16 @@ export function verifyGatewayToken(req: NextRequest): boolean {
     : authHeader?.startsWith("bearer ")
       ? authHeader.slice(7).trim()
       : null;
-  const provided = bearerToken || customHeader;
+  return bearerToken || customHeader;
+}
+
+export function verifyGatewayToken(req: NextRequest): boolean {
+  const configuredToken =
+    process.env.GATEWAY_API_TOKEN ||
+    process.env.TELEMETRY_GATEWAY_TOKEN ||
+    process.env.WORKER_SECRET;
+
+  const provided = extractPresentedGatewayToken(req);
 
   // If gateway token is configured in environment, require and validate it
   if (configuredToken) {
@@ -212,7 +217,16 @@ export async function POST(req: NextRequest) {
       process.env.TELEMETRY_GATEWAY_TOKEN ||
       process.env.WORKER_SECRET;
 
-    if (!configuredToken && process.env.NODE_ENV === "production") {
+    const presentedToken = extractPresentedGatewayToken(req);
+    const gatewayAuth = presentedToken
+      ? defaultGatewayRegistry.authenticateToken(presentedToken)
+      : { authenticated: false };
+
+    if (
+      !configuredToken &&
+      !defaultGatewayRegistry.hasEnrolledGateways() &&
+      process.env.NODE_ENV === "production"
+    ) {
       return NextResponse.json(
         {
           error:
@@ -222,8 +236,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Gateway API Token Authentication
-    if (!verifyGatewayToken(req)) {
+    // 1. Gateway API Token Authentication (per-gateway credential first, then shared-token fallback)
+    if (!gatewayAuth.authenticated && !verifyGatewayToken(req)) {
       return NextResponse.json(
         { error: "Unauthorized: Invalid or missing gateway API token" },
         { status: 401 },
@@ -370,6 +384,24 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 },
       );
+    }
+
+    if (gatewayAuth.authenticated && gatewayAuth.gatewayId) {
+      const unauthorizedReading = validRecords.find(
+        (rec) =>
+          !defaultGatewayRegistry.isVenueAuthorized(
+            gatewayAuth.gatewayId!,
+            rec.venueId,
+          ),
+      );
+      if (unauthorizedReading) {
+        return NextResponse.json(
+          {
+            error: "Forbidden: Gateway credential is not authorized for target venue",
+          },
+          { status: 403 },
+        );
+      }
     }
 
     // 6. Execute Single prisma.venueTelemetry.createMany({ data: [...] }) Batch Call

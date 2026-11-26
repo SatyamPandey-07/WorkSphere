@@ -1,4 +1,4 @@
-﻿/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -126,7 +126,12 @@ export default async function RootLayout({
             <IdleSessionDialog />
             <StorageQuotaWarningBanner />
             <I18nProvider>
-              <main id="main-content" tabIndex={-1} className="outline-none">
+              <main
+                id="main-content"
+                tabIndex={-1}
+                data-testid="main-content"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950"
+              >
                 {children}
               </main>
             </I18nProvider>
@@ -172,6 +177,7 @@ export default async function RootLayout({
           nonce={nonce}
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
         />
+        <SkipToContent targetId="main-content" />
         {bodyContent}
       </body>
     </html>

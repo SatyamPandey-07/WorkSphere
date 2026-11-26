@@ -388,8 +388,14 @@ export function SearchBar({
               start: e.target.selectionStart,
               end: e.target.selectionEnd,
             };
-            setQuery(e.target.value);
+            const newQuery = e.target.value;
+            setQuery(newQuery);
             setIsOpen(true);
+
+            if (!newQuery.trim() && query.trim()) {
+              onSearch?.("");
+              updateUrlQuery("");
+            }
           }}
           onFocus={() => {
             setActiveHistoryIndex(-1);

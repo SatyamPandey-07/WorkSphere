@@ -6,12 +6,12 @@ Comprehensive API documentation for the WorkSphere guest split-payment token lif
 
 ## 1. Overview
 
-The Guest Split Payment API enables guests invited to a workspace booking to review their allocated share of the booking cost and record payment state in WorkSphere's database using the verified token claims.
+The Guest Split Payment API enables guests invited to a workspace booking to review their allocated share of the booking cost and record payment state in WorkSphere's database using verified token claims.
 
-When a host reserves a workspace and adds guests, the billing system computes individual shares (via `calculateSplitBill`) and generates a signed payment token for each participant. Guests receive a payment link (e.g. `/pay/split/{token}`) containing this token. Access to the split-payment endpoints requires both an authenticated Clerk session and a valid, unexpired signed token; a valid token alone is not sufficient for an unauthenticated request. Once authenticated, the token provides the claims necessary to inspect checkout details and record payment state in WorkSphere's database.
+When a host reserves a workspace and adds guests, the billing system computes individual shares (via `calculateSplitBill`) and generates a signed payment token for each participant. Guests receive a payment link (e.g. `/pay/split/{token}`) containing this token. The endpoint operates under a cryptographically verified Bearer Token Capability model: external guests can access checkout and complete payment without requiring a prior Clerk account, while authenticated users are seamlessly supported in dual mode. Security is strictly enforced through HMAC-SHA256 signatures, bounded token lifetime, resource scoping, IP rate limiting, and database-level idempotency.
 
 > [!IMPORTANT]
-> **Internal State Recording vs. External Settlement:**  
+> **Internal State Recording vs. External Settlement:**
 > The guest split-payment endpoint records payment status directly within the WorkSphere database (`BookingGuest` table). The endpoint **does not** integrate with an external payment gateway (such as Stripe, PayPal, or Adyen), does not process credit cards, does not collect payment method tokens, and does not verify third-party settlement webhooks.
 >
 > The endpoint verifies only the token signature and expiration timestamp. The amount and currency in the token are used to record internal WorkSphere payment state (`paidAt`, `paidAmountCents`, `paidCurrency`). No money transfer, card charge, or external payment-provider settlement is verified by the system, and a valid token is not evidence of external funds transfer.
@@ -20,25 +20,29 @@ When a host reserves a workspace and adds guests, the billing system computes in
 
 ## 2. Endpoint Summary
 
-| Method | Endpoint                      | Description                                                                                                                   |
-| :----- | :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/api/payments/split/{token}` | Verifies the split payment token and returns checkout details, venue information, host name, and current payment status.      |
-| `POST` | `/api/payments/split/{token}` | Idempotently records payment state in WorkSphere's database using the verified token claims and unlocks a digital guest pass. |
+| Method | Endpoint                               | Description                                                                                                                   |
+| :----- | :------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/payments/split/{token}`          | Verifies the split payment token and returns checkout details, venue information, host name, and current payment status.      |
+| `POST` | `/api/payments/split/{token}`          | Idempotently records payment state in WorkSphere's database using the verified token claims and unlocks a digital guest pass. |
+| `POST` | `/api/payments/split/{token}/checkout` | Creates an external payment-provider checkout session (e.g. Stripe Checkout) using server-side canonical amounts.             |
+| `POST` | `/api/webhooks/payment`                | Dedicated payment-provider webhook endpoint that validates signatures and confirms external payment settlement.               |
 
 ---
 
-## 3. Authentication and Middleware Behavior
+## 3. Authorization Architecture: Bearer Capability & Dual-Mode Contract
 
-WorkSphere protects split-payment routes using Clerk authentication at the edge middleware layer:
+WorkSphere protects split-payment routes using a defense-in-depth Bearer Token Capability model designed specifically for external workspace guests:
 
-- **Dual-Requirement Access Contract:**  
-  A valid token alone is not sufficient to access the endpoint. Successful access requires both:
-  - An **authenticated Clerk session** at the edge middleware layer, and
-  - A **valid, unexpired signed token** verified by the route handler.
-- **Edge Middleware Boundary (`src/middleware.ts`):**  
-  The path `/api/payments/split/*` is not registered in `isPublicRoute`. All incoming requests matching `/(api|trpc)(.*)` are intercepted by Clerk middleware if no active session is present. Unauthenticated requests are issued an **HTTP 307 Temporary Redirect** to `/sign-in` with an encoded `redirect_url` parameter preserving the target checkout URL.
-- **Route Handler Execution:**  
-  The route handlers in `src/app/api/payments/split/[token]/route.ts` do not invoke Clerk's `auth()` helper and do not return an HTTP `401 Unauthorized` JSON response. Once the request passes the edge middleware boundary with an authenticated session, the endpoint authorizes operations based on the cryptographic validity of the path `{token}`.
+- **Bearer Capability Model:**
+  Workspace guests often do not possess a registered WorkSphere / Clerk user account. Requiring account registration would disrupt frictionless guest attendance. Consequently, the signed token (`{token}`) serves as a self-authenticating, cryptographically signed bearer capability token.
+- **Dual-Mode Session Support:**
+  The route handlers inspect optional Clerk authentication via `auth()`. If the visitor is an authenticated WorkSphere user, their session identity is acknowledged in dual mode; unauthenticated guest attendees presenting a valid signed token are fully authorized to view details and execute payment.
+- **Sliding-Window Rate Limiting:**
+  Both `GET` and `POST` handlers enforce sliding-window IP rate limiting (30 requests per 60 seconds per client IP via `@/lib/rateLimit`). Automated token guessing, enumeration, or signature brute-forcing requests receive an immediate **HTTP 429 Too Many Requests** response.
+- **Cryptographic Token Verification:**
+  Tokens are verified using HMAC-SHA256 with constant-time equality checks (`crypto.timingSafeEqual`) against `SPLIT_PAYMENT_SECRET`. Tokens are bounded by strict expiration timestamps (`expiresAt`, default 72 hours).
+- **Atomic Compare-and-Set Replay Protection:**
+  Database modifications in `POST` use an atomic compare-and-set transition (`WHERE id = guestId AND paidAt IS NULL`). Repeated or concurrent submissions can only ever record one payment, preventing replay and double-spending vulnerabilities.
 
 ---
 
@@ -117,13 +121,13 @@ const SPLIT_SECRET = process.env.SPLIT_PAYMENT_SECRET || "<in-source-fallback>";
 ```
 
 > [!WARNING]
-> **Production Secret Requirement:**  
-> The current implementation falls back to an in-source default key when `SPLIT_PAYMENT_SECRET` is absent from environment variables, rather than failing closed. Production deployments **must** explicitly configure a unique, high-entropy `SPLIT_PAYMENT_SECRET` in their environment configuration to protect token signatures against tampering.
+> **Production Secret Requirement:**
+> The system enforces a fail-closed policy when `SPLIT_PAYMENT_SECRET` is absent, weak (under 32 characters), or configured to known insecure defaults in production environments (`NODE_ENV === "production"`). Production deployments must configure a unique, high-entropy `SPLIT_PAYMENT_SECRET` of at least 32 characters in their environment configuration.
 
 ### Operational Considerations
 
 - **Secret Rotation Invalidation:** Modifying or rotating `SPLIT_PAYMENT_SECRET` immediately invalidates all active, unredeemed split payment tokens issued under the prior secret.
-- **Token Sensitivity & Dual-Requirement Security:** Access requires both an active Clerk authentication session and a valid signed token; presenting a signed token without an authenticated session results in an HTTP 307 redirect to `/sign-in`. However, for any authenticated user, presenting a valid signed token allows viewing checkout details and recording payment state in WorkSphere's database using the verified token claims. Tokens must therefore be treated as sensitive credentials, transmitted only via secure direct channels (e.g., email or WhatsApp deep links), and never logged in plain text or indexed publicly.
+- **Token Sensitivity & Bearer Capability Security:** Access is granted by possession of a valid, cryptographically signed bearer token, enabling invited external guests without WorkSphere accounts to complete payments. The endpoint also inspects optional Clerk authentication in dual mode. Because presenting a valid token permits viewing checkout details and recording payment state, tokens must be treated as sensitive credentials, transmitted only via direct channels (e.g. email or WhatsApp deep links), protected by IP rate limiting, and never logged in plain text or indexed publicly.
 
 ---
 
@@ -352,13 +356,56 @@ The split-payment recording flow enforces strict idempotency:
 1. **Compare-and-Swap Filter:** The update requires `paidAt: null` and active status (`status: { notIn: ["CANCELLED", "DECLINED"] }`) in the `updateMany` criteria.
 2. **Conditional Update Outcome (`marked.count !== 1`):** When `marked.count !== 1`, the route returns `{ "success": true, "message": "Already paid" }`. As documented in the implementation, this occurs either because:
    - Another concurrent request recorded payment, OR
-   - The guest was cancelled between the initial lookup and conditional update.  
+   - The guest was cancelled between the initial lookup and conditional update.
      A failed conditional update does not prove that payment was already recorded; it indicates that the guest record no longer satisfied the atomic update criteria.
 3. **Event Emission Handling:** Only the request that successfully records the payment attempts to emit `booking:guest-rsvp`. Already-paid and losing concurrent requests do not emit it. Event emission happens after the database transaction commits, and any failures are caught and logged without affecting the committed payment. The system does not implement a transactional outbox or provide guaranteed delivery or retry mechanics for the event.
 
 ---
 
-## 11. Guest Pass Response
+## 11. External Payment-Provider Integration & Settlement Lifecycle
+
+WorkSphere supports verified external settlement for guest split bills via an extensible provider abstraction (`src/lib/billing/paymentProvider.ts`):
+
+### Architecture & Provider Abstraction
+
+Instead of coupling booking and billing logic directly to one vendor, WorkSphere defines the `PaymentProvider` interface:
+
+1. **Checkout Session Creation (`POST /api/payments/split/{token}/checkout`):**
+   - Receives the verified split payment token.
+   - Derives amount, currency, booking ID, and guest ID from trusted server-side data (the client cannot tamper with financial values).
+   - Verifies the booking is active and the guest has not already paid.
+   - Creates a checkout session via the configured provider (`StripePaymentProvider`).
+   - Returns the hosted checkout URL (`checkoutUrl`) and session identifier (`sessionId`).
+
+2. **Verified Payment Confirmation (`POST /api/webhooks/payment`):**
+   - Webhook notifications from the external payment provider (e.g. Stripe or custom gateway) are delivered to `/api/webhooks/payment`.
+   - The endpoint strictly verifies signatures using constant-time comparison (`crypto.timingSafeEqual`) against `STRIPE_WEBHOOK_SECRET` or `PAYMENT_WEBHOOK_SECRET`.
+   - Unsigned, forged, or invalid webhook notifications are rejected with HTTP 401.
+
+3. **Settlement Lifecycle States:**
+   - `PENDING`: Checkout initiated; awaiting provider confirmation.
+   - `COMPLETED`: Provider confirmed successful payment (`checkout.session.completed` / `payment_intent.succeeded`). The guest record is updated with `paidAt`, `paidAmountCents`, `paidCurrency`, and `paymentReference`. RSVP status transitions to `ACCEPTED`.
+   - `FAILED`: Payment intent failed or was declined. `paymentStatus` is marked `FAILED`; `paidAt` remains `null`.
+   - `CANCELLED`: Checkout session expired or was aborted by the guest.
+   - `REFUNDED`: External refund confirmed (`charge.refunded`). `paidAt` is cleared.
+
+4. **Idempotency & Replay Protection:**
+   - Duplicate webhook delivery events are checked against `guest.paidAt != null`. If an event for an already-paid guest is re-delivered, the handler acknowledges the event idempotently (`alreadyProcessed: true`) without updating timestamps or creating duplicate passes.
+
+5. **Environment Configuration:**
+
+```env
+# Stripe Payment Provider Keys
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# General Payment Webhook Secret
+PAYMENT_WEBHOOK_SECRET=your_payment_webhook_hmac_secret
+```
+
+---
+
+## 12. Guest Pass Response
 
 The `guestPass` object returned upon successful payment provides the guest with access credentials:
 
@@ -378,7 +425,7 @@ The `guestPass` object returned upon successful payment provides the guest with 
 
 ## 12. Security and Operational Notes
 
-- **Access Control & Token Protection:** Access requires both an authenticated Clerk session and a valid, unexpired signed token; presenting a token alone is not sufficient to bypass edge authentication. Once authenticated, any user possessing a valid token can view checkout details and record payment state in WorkSphere's database using the verified token claims. Never expose split payment tokens in shared communication channels or public logs.
+- **Access Control & Bearer Token Protection:** Access is authorized by a valid, unexpired signed bearer token or dual-mode Clerk session, defended by IP-based rate limiting (HTTP 429). Possession of a valid token allows viewing checkout details and recording payment state in WorkSphere's database using the verified token claims. Never expose split payment tokens in shared communication channels or public logs.
 - **Production Secret Configuration:** Ensure `SPLIT_PAYMENT_SECRET` is set to a secure, randomly generated secret of at least 256 bits in production environments.
 - **Signature Comparison:** The implementation checks signature-buffer lengths and uses `crypto.timingSafeEqual` to compare equal-length signature buffers.
 - **Live Booking Synchronization:** Generating the guest pass from database records rather than token parameters ensures that host booking modifications (e.g. date changes or venue renames) are reflected immediately on the issued pass.

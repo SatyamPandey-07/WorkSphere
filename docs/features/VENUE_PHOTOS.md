@@ -78,12 +78,12 @@ Pexels photo route, which reads and writes a venue photo record.
    response body is proxied, so the browser's image URL is the WorkSphere API
    route rather than the original `images.pexels.com` URL.
 
-**Attribution check:** The current Pexels path does not provide a successful
-photographer-name or photographer-link check in the UI. The helper keeps only
-the image URL from Pexels, and the detail dialog does not receive photographer
-metadata. See [Attribution requirements](#7-attribution-requirements) for the
-current behavior and limitation. Do not mistake a missing attribution label
-for an invalid API key.
+**Attribution check:** The Pexels path provides photographer and source attribution.
+The helper retains the photographer name, photographer profile URL, and photo page
+URL, and the photo API route returns them in HTTP response headers (`X-Photo-Photographer`,
+`X-Photo-Photographer-Url`, `X-Photo-Page-Url`, `X-Photo-Source`) as well as in the
+`?metadata=true` JSON endpoint. The venue detail dialog displays a photo attribution
+badge over the cover image crediting the photographer with links to their profile and Pexels.
 
 ## 5. Test without a Pexels API key
 
@@ -154,27 +154,21 @@ credit cannot be provided, Pexels asks for a text link such as
 [official API guidelines](https://www.pexels.com/api/documentation/#guidelines)
 and [Pexels API FAQ](https://www.pexels.com/api/).
 
-The current UI has generic attribution support, but it is not connected to the
-Pexels lookup:
+WorkSphere provides end-to-end Pexels attribution:
 
-- `VenueCard` and `VenueGallery` can render a supplied photographer name and
-  `photographerUrl`. A provided link opens in a new tab with
-  `noopener noreferrer`.
-- Those components show attribution only when their caller passes an
-  `attribution` object. If a link is absent, they render the name as plain
-  text; if the name is blank, the generic fallback label is “Verified
-  Contributor.” That label is not a Pexels credit.
-- `getVenuePhotoUrl` parses only the Pexels image `src` URL and returns a
-  string. It does not retain `photographer`, `photographer_url`, or the photo
-  page URL. The photo route then returns image bytes, not attribution data.
-- The `/ai` detail dialog does not display a Pexels photographer name or a
-  Pexels link.
-
-Therefore a contributor can verify whether the image request succeeded, but
-cannot currently verify Pexels photographer attribution in that UI. The
-generic component behavior is not evidence that the Pexels flow meets Pexels'
-attribution guidance; wiring attribution through the provider and UI would
-require a separate application change.
+- `searchPhotoDetails` and `getVenuePhotoDetails` in `src/lib/googlePlaces.ts`
+  parse and preserve `photographer`, `photographerUrl`, and `photoPageUrl` from
+  the Pexels API response alongside the image URL.
+- The photo API route (`/api/venues/[venueId]/photo`) emits attribution headers
+  (`X-Photo-Source: pexels`, `X-Photo-Photographer`, `X-Photo-Photographer-Url`,
+  `X-Photo-Page-Url`, and `Access-Control-Expose-Headers`).
+- The photo API route also supports `?metadata=true` or `Accept: application/json`
+  to return the photo metadata and attribution details directly as JSON.
+- `VenueDetailDialog` and `VenueHeaderSection` render an attribution badge in the
+  bottom-left of the cover photo with links to the photographer profile and Pexels.
+  The badge handles event bubbling to avoid inadvertently opening the photo lightbox.
+- `VenueCard` and `VenueGallery` can also render a supplied photographer name and
+  `photographerUrl` with `noopener noreferrer`.
 
 ## 8. Troubleshooting
 
@@ -194,10 +188,9 @@ require a separate application change.
   is not successful, or `500` for an unexpected server error. The dialog's
   image error handler switches to its static category fallback. Check the
   server log and the request's status in developer tools.
-- **Missing photographer attribution:** This is a current integration
-  limitation, not a Pexels key setting. The helper discards Pexels photographer
-  metadata and the detail dialog has no attribution display. See the previous
-  section.
+- **Missing photographer attribution:** If the venue photo was retrieved from a
+  fallback provider or before attribution caching was active, the attribution
+  headers may be omitted. Fresh lookups populate photographer and source metadata.
 - **Stale photo:** A non-empty `Venue.photoReference` is reused without a
   database TTL. Test with an uncached development venue or inspect that
   development row. The route's shared-cache headers and production service

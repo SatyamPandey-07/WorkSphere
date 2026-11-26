@@ -1,3 +1,8 @@
+import {
+  getSeatWebLock,
+  releaseSeatWebLock,
+} from "@/lib/locks/seatHoldLock";
+
 /**
  * Converts an explicit UTC/offset timestamp into epoch milliseconds.
  *
@@ -22,13 +27,14 @@ function toSeatHoldEpochMs(
     epochMs = Date.parse(value);
   } else {
     throw new TypeError(
-      `${fieldName} must be a Date, epoch-millisecond number, or ISO timestamp with an explicit timezone.`,
+      `${fieldName} must be a Date, epoch millisecond number, or ISO timestamp with an explicit timezone.`,
     );
   }
 
   if (!Number.isFinite(epochMs)) {
     throw new RangeError(`${fieldName} is not a valid timestamp.`);
   }
+
   return epochMs;
 }
 
@@ -45,9 +51,10 @@ export function calculateSeatHoldDurationMs(
   const endEpochMs = toSeatHoldEpochMs(endAt, "endAt");
   const durationMs = endEpochMs - startEpochMs;
 
-  if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
+  if (!Number.isInteger(durationMs) || durationMs <= 0) {
     throw new RangeError("Seat-hold end time must be after its start time.");
   }
+
   return durationMs;
 }
 
@@ -64,16 +71,439 @@ export function calculateSeatHoldExpiryMs(
   return toSeatHoldEpochMs(endAt, "endAt");
 }
 
-export async function confirmSeatPayment(seatId: string) {
-  // Optimistic concurrency check: ensure status is PENDING and not expired before confirming
-  const query = `
-    UPDATE seat_holds 
-    SET status = 'CONFIRMED' 
-    WHERE seat_id = '${seatId}' AND status = 'PENDING' AND expires_at > NOW()
-    RETURNING *;
-  `;
-  console.log(
-    `🔒 [Seat Service] Executing atomic confirmation check for seat ${seatId}`,
-  );
-  return query;
+/**
+ * How long a claimed checkout protects the hold from expiring. The hold key
+ * TTL is raised to at least this value for the duration of the claim.
+ */
+export const SEAT_CHECKOUT_GRACE_MS = 30_000;
+
+export const SEAT_CHECKOUT_TRANSACTION_TIMEOUT_MS = 10_000;
+
+/**
+ * Atomically claims a seat hold for checkout.
+ *
+ * KEYS[1] = hold lock key, KEYS[2] = checkout marker key
+ * ARGV[1] = userId, ARGV[2] = grace period in milliseconds
+ *
+ * Returns 1 when claimed, 0 when the hold is missing, -1 when another user
+ * owns it, and -2 when this user already has a checkout in progress. A claim
+ * raises the hold TTL to at least the grace period, so expiry cannot remove
+ * the hold while the reservation is being persisted.
+ */
+export const SEAT_HOLD_CHECKOUT_CLAIM_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then return 0 end
+local ok, decoded = pcall(cjson.decode, current)
+if not ok or type(decoded) ~= 'table' or decoded.userId ~= ARGV[1] then
+  return -1
+end
+local claimed = redis.call('SET', KEYS[2], ARGV[1], 'NX', 'PX', tonumber(ARGV[2]))
+if not claimed then return -2 end
+local pttl = redis.call('PTTL', KEYS[1])
+if pttl >= 0 and pttl < tonumber(ARGV[2]) then
+  redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
+end
+return 1
+`;
+
+/**
+ * Atomic compare-and-delete of the hold and its checkout marker. Only the
+ * recorded holder can remove the hold. Returns 1 when the hold was deleted.
+ *
+ * KEYS[1] = hold lock key, KEYS[2] = checkout marker key, ARGV[1] = userId
+ */
+export const SEAT_HOLD_FINALIZE_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then
+  redis.call('DEL', KEYS[2])
+  return 0
+end
+local ok, decoded = pcall(cjson.decode, current)
+if ok and type(decoded) == 'table' and decoded.userId == ARGV[1] then
+  redis.call('DEL', KEYS[1], KEYS[2])
+  return 1
+end
+return 0
+`;
+
+/** Clears the checkout marker after a failed attempt so the user can retry. */
+export const SEAT_HOLD_CHECKOUT_ABORT_LUA = `
+local marker = redis.call('GET', KEYS[2])
+if marker == ARGV[1] then
+  redis.call('DEL', KEYS[2])
+  return 1
+end
+return 0
+`;
+
+/**
+ * Atomically extends a seat hold lock ONLY when the incoming fence token is strictly
+ * greater than the currently stored fencingToken (monotonic fence enforcement).
+ *
+ * KEYS[1] = hold lock key
+ * ARGV[1] = userId
+ * ARGV[2] = incomingFenceToken (positive integer string)
+ * ARGV[3] = newExpiresAt (epoch ms)
+ * ARGV[4] = ttlSeconds
+ *
+ * Returns:
+ *   { 1, updatedJson }                   -> Extended successfully
+ *   { 0, "MISSING" }                     -> Lock does not exist or expired
+ *   { -1, "NOT_OWNER" }                  -> Lock held by another user
+ *   { -2, "STALE_TOKEN", currentToken }  -> incomingFenceToken <= current stored token
+ *   { -3, "INVALID_TOKEN" }              -> Malformed incoming fence token
+ */
+export const SEAT_HOLD_EXTEND_FENCE_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then
+  return { 0, "MISSING" }
+end
+
+local ok, decoded = pcall(cjson.decode, current)
+if not ok or type(decoded) ~= 'table' then
+  return { 0, "MISSING" }
+end
+
+if decoded.userId ~= ARGV[1] then
+  return { -1, "NOT_OWNER" }
+end
+
+local incomingToken = tonumber(ARGV[2])
+if not incomingToken or incomingToken <= 0 then
+  return { -3, "INVALID_TOKEN" }
+end
+
+local currentToken = tonumber(decoded.fencingToken) or 0
+if incomingToken <= currentToken then
+  return { -2, "STALE_TOKEN", tostring(currentToken) }
+end
+
+decoded.fencingToken = tostring(incomingToken)
+decoded.expiresAt = tonumber(ARGV[3])
+decoded.version = (tonumber(decoded.version) or 1) + 1
+
+local updated = cjson.encode(decoded)
+redis.call('SET', KEYS[1], updated, 'EX', tonumber(ARGV[4]))
+return { 1, updated }
+`;
+
+export function getSeatCheckoutMarkerKey(
+  venueId: string,
+  seatId: string,
+): string {
+  return `seat:checkout:${venueId}:${seatId}`;
+}
+function buildSeatHoldLockKey(venueId: string, seatId: string): string {
+  return `seat:hold:${venueId}:${seatId}`;
+}
+
+export interface SeatHoldRedis {
+  eval(
+    script: string,
+    keys: string[],
+    args: (string | number)[],
+  ): Promise<unknown>;
+}
+
+export interface SeatHoldTransactionRunner<Tx> {
+  $transaction<R>(
+    fn: (tx: Tx) => Promise<R>,
+    options?: {
+      isolationLevel?: "Serializable";
+      maxWait?: number;
+      timeout?: number;
+    },
+  ): Promise<R>;
+}
+
+export interface ConfirmSeatPaymentDeps<Tx> {
+  /** Defaults to the shared Redis client. `null` uses the in-memory fallback. */
+  redis?: SeatHoldRedis | null;
+  /** Defaults to the shared Prisma client. */
+  db?: SeatHoldTransactionRunner<Tx>;
+  checkoutGraceMs?: number;
+}
+
+export interface ConfirmSeatPaymentInput<Tx, T> {
+  venueId: string;
+  seatId: string;
+  userId: string;
+  /**
+   * Creates the permanent reservation. Runs inside the interactive
+   * transaction, so everything it writes commits or rolls back together.
+   */
+  persistReservation: (tx: Tx) => Promise<T>;
+}
+
+export type ConfirmSeatPaymentResult<T> =
+  | {
+      status: "CONFIRMED";
+      reservation: T;
+      /** False when the hold key was already gone. The reservation still stands. */
+      holdReleased: boolean;
+    }
+  | { status: "HOLD_LOST"; reason: "MISSING" | "NOT_OWNER" }
+  | { status: "IN_PROGRESS" };
+
+async function resolveDefaultRedis(): Promise<SeatHoldRedis | null> {
+  const { getRedis } = await import("@/lib/redis");
+  const client = getRedis();
+  if (!client) return null;
+  return {
+    eval: (script, keys, args) => client.eval(script, keys, args),
+  };
+}
+
+async function resolveDefaultDb<Tx>(): Promise<SeatHoldTransactionRunner<Tx>> {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma as unknown as SeatHoldTransactionRunner<Tx>;
+}
+
+/**
+ * Converts a paid seat hold into a permanent reservation without racing the
+ * hold expiry.
+ *
+ * 1. Claim the hold with an atomic Redis script that checks ownership and
+ *    extends the hold TTL, so expiry cannot sweep it mid checkout.
+ * 2. Persist the reservation in one serializable interactive transaction.
+ * 3. Release the hold with an atomic compare-and-delete that only the holder
+ *    can pass. The booking is already committed at this point, so a hold that
+ *    expired in the meantime is reported through `holdReleased` and never
+ *    thrown as an expiration error.
+ *
+ * A hold that is gone or owned by someone else returns `HOLD_LOST` without
+ * writing anything, so the caller can refund the payment.
+ */
+export async function confirmSeatPayment<Tx = unknown, T = unknown>(
+  input: ConfirmSeatPaymentInput<Tx, T>,
+  deps: ConfirmSeatPaymentDeps<Tx> = {},
+): Promise<ConfirmSeatPaymentResult<T>> {
+  const { venueId, seatId, userId, persistReservation } = input;
+  if (!venueId || !seatId || !userId) {
+    throw new TypeError("venueId, seatId and userId are required.");
+  }
+
+  const redis =
+    deps.redis === undefined ? await resolveDefaultRedis() : deps.redis;
+  const graceMs = deps.checkoutGraceMs ?? SEAT_CHECKOUT_GRACE_MS;
+  const lockKey = buildSeatHoldLockKey(venueId, seatId);
+  const markerKey = getSeatCheckoutMarkerKey(venueId, seatId);
+
+  // 1. Claim
+  if (redis) {
+    const claim = Number(
+      await redis.eval(
+        SEAT_HOLD_CHECKOUT_CLAIM_LUA,
+        [lockKey, markerKey],
+        [userId, graceMs],
+      ),
+    );
+    if (claim === 0) return { status: "HOLD_LOST", reason: "MISSING" };
+    if (claim === -1) return { status: "HOLD_LOST", reason: "NOT_OWNER" };
+    if (claim === -2) return { status: "IN_PROGRESS" };
+  } else {
+    // In-memory fallback for environments without Redis (local development).
+    const lock = await getSeatWebLock(venueId, seatId);
+    if (!lock) return { status: "HOLD_LOST", reason: "MISSING" };
+    if (lock.userId !== userId) {
+      return { status: "HOLD_LOST", reason: "NOT_OWNER" };
+    }
+  }
+
+  // 2. Persist
+  const db = deps.db ?? (await resolveDefaultDb<Tx>());
+  let reservation: T;
+  try {
+    reservation = await db.$transaction((tx) => persistReservation(tx), {
+      isolationLevel: "Serializable",
+      timeout: SEAT_CHECKOUT_TRANSACTION_TIMEOUT_MS,
+    });
+  } catch (error) {
+    if (redis) {
+      // Let the holder retry. The hold keeps its extended TTL.
+      await redis
+        .eval(SEAT_HOLD_CHECKOUT_ABORT_LUA, [lockKey, markerKey], [userId])
+        .catch(() => undefined);
+    }
+    throw error;
+  }
+
+  // 3. Release. The reservation is committed, so nothing below may fail the call.
+  let holdReleased = false;
+  try {
+    if (redis) {
+      holdReleased =
+        Number(
+          await redis.eval(
+            SEAT_HOLD_FINALIZE_LUA,
+            [lockKey, markerKey],
+            [userId],
+          ),
+        ) === 1;
+    } else {
+      holdReleased = await releaseSeatWebLock(venueId, seatId, userId);
+    }
+  } catch (error) {
+    console.warn("[SeatHold] Hold release failed after commit:", error);
+  }
+
+  return { status: "CONFIRMED", reservation, holdReleased };
+}
+
+export interface ExtendSeatHoldFenceInput {
+  venueId: string;
+  seatId: string;
+  userId: string;
+  fenceToken: number | string | bigint;
+  ttlSeconds?: number;
+}
+
+export interface ExtendSeatHoldFenceDeps {
+  redis?: SeatHoldRedis | null;
+}
+
+export type ExtendSeatHoldFenceResult =
+  | {
+      status: "EXTENDED";
+      lock: Record<string, unknown>;
+      fencingToken: string;
+      expiresAt: number;
+    }
+  | {
+      status: "REJECTED";
+      reason: "MISSING" | "NOT_OWNER" | "STALE_TOKEN" | "INVALID_TOKEN";
+      currentFencingToken?: string;
+    };
+
+function parsePositiveFenceToken(
+  token: number | string | bigint,
+): bigint | null {
+  try {
+    if (typeof token === "bigint") {
+      return token > BigInt(0) ? token : null;
+    }
+    if (typeof token === "number") {
+      if (!Number.isInteger(token) || token <= 0) return null;
+      return BigInt(token);
+    }
+    if (typeof token === "string" && /^\d+$/.test(token.trim())) {
+      const parsed = BigInt(token.trim());
+      return parsed > BigInt(0) ? parsed : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extends an active seat hold lease while enforcing strictly monotonically
+ * increasing fencing tokens via an atomic Redis Lua script.
+ */
+export async function extendSeatHoldWithFenceToken(
+  input: ExtendSeatHoldFenceInput,
+  deps: ExtendSeatHoldFenceDeps = {},
+): Promise<ExtendSeatHoldFenceResult> {
+  const { venueId, seatId, userId, fenceToken, ttlSeconds = 300 } = input;
+
+  if (!venueId || !seatId || !userId) {
+    throw new TypeError("venueId, seatId, and userId are required.");
+  }
+
+  const parsedIncoming = parsePositiveFenceToken(fenceToken);
+  if (parsedIncoming === null) {
+    return { status: "REJECTED", reason: "INVALID_TOKEN" };
+  }
+
+  const validTtl = Number.isFinite(ttlSeconds) ? ttlSeconds : 300;
+  const clampedTtl = Math.min(Math.max(Math.floor(validTtl), 10), 600);
+  const newExpiresAt = Date.now() + clampedTtl * 1000;
+  const lockKey = buildSeatHoldLockKey(venueId, seatId);
+
+  const redis =
+    deps.redis === undefined ? await resolveDefaultRedis() : deps.redis;
+
+  if (redis) {
+    const rawResult = await redis.eval(
+      SEAT_HOLD_EXTEND_FENCE_LUA,
+      [lockKey],
+      [
+        userId,
+        parsedIncoming.toString(),
+        String(newExpiresAt),
+        String(clampedTtl),
+      ],
+    );
+
+    const [code, payload, currentToken] = Array.isArray(rawResult)
+      ? rawResult
+      : [0, "MISSING"];
+    const numericCode = Number(code);
+
+    if (numericCode === 1) {
+      const updatedLock =
+        typeof payload === "string"
+          ? (JSON.parse(payload) as Record<string, unknown>)
+          : ((payload as Record<string, unknown>) ?? {});
+      return {
+        status: "EXTENDED",
+        lock: updatedLock,
+        fencingToken: String(
+          updatedLock.fencingToken ?? parsedIncoming.toString(),
+        ),
+        expiresAt: Number(updatedLock.expiresAt ?? newExpiresAt),
+      };
+    }
+
+    if (numericCode === -1) {
+      return { status: "REJECTED", reason: "NOT_OWNER" };
+    }
+    if (numericCode === -2) {
+      return {
+        status: "REJECTED",
+        reason: "STALE_TOKEN",
+        currentFencingToken:
+          currentToken !== undefined ? String(currentToken) : undefined,
+      };
+    }
+    if (numericCode === -3) {
+      return { status: "REJECTED", reason: "INVALID_TOKEN" };
+    }
+    return { status: "REJECTED", reason: "MISSING" };
+  }
+
+  // In-memory fallback when Redis is unavailable
+  const existing = await getSeatWebLock(venueId, seatId);
+  if (!existing) {
+    return { status: "REJECTED", reason: "MISSING" };
+  }
+  if (existing.userId !== userId) {
+    return { status: "REJECTED", reason: "NOT_OWNER" };
+  }
+
+  const currentToken = existing.fencingToken
+    ? BigInt(existing.fencingToken)
+    : BigInt(0);
+
+  if (parsedIncoming <= currentToken) {
+    return {
+      status: "REJECTED",
+      reason: "STALE_TOKEN",
+      currentFencingToken: currentToken.toString(),
+    };
+  }
+
+  const updatedLock = {
+    ...existing,
+    fencingToken: parsedIncoming.toString(),
+    expiresAt: newExpiresAt,
+    version: (existing.version ?? 1) + 1,
+  };
+
+  return {
+    status: "EXTENDED",
+    lock: updatedLock,
+    fencingToken: parsedIncoming.toString(),
+    expiresAt: newExpiresAt,
+  };
 }

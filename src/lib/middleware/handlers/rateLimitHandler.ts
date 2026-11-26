@@ -14,7 +14,9 @@ import {
 import {
   getOrCreateFallbackLimiter,
   isRecoverableRedisError,
-} from "@/lib/ratelimit/tokenBucketFallback";
+  recordFallbackActivation,
+  recordFallbackRecovery,
+} from "@/lib/rateLimit/tokenBucketFallback";
 import type { MiddlewareHandler } from "../types";
 
 export const REDIS_TIMEOUT_MS = 1500;
@@ -74,12 +76,17 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
           ),
           timeoutPromise,
         ]);
+        recordFallbackRecovery();
       } catch (err: unknown) {
         if (isRecoverableRedisError(err)) {
           // Activate in-memory token bucket fallback limiter to prevent unbounded traffic during outages
-          const refillRate = sensitiveRule.limit / (sensitiveRule.windowMs / 1000);
+          const tierKey = `sensitive:${sensitiveRule.namespace}`;
+          const reason = err instanceof Error ? err.message : String(err);
+          recordFallbackActivation(reason, tierKey);
+          const refillRate =
+            sensitiveRule.limit / (sensitiveRule.windowMs / 1000);
           const fallbackLimiter = getOrCreateFallbackLimiter(
-            `sensitive:${sensitiveRule.name}`,
+            tierKey,
             sensitiveRule.limit,
             refillRate,
             0,
@@ -128,7 +135,9 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
         try {
           const timeoutPromise = new Promise<RateLimitResult>((_, reject) => {
             const timer = setTimeout(() => {
-              reject(new Error("Redis token bucket rate-limit check timed out"));
+              reject(
+                new Error("Redis token bucket rate-limit check timed out"),
+              );
             }, REDIS_TIMEOUT_MS);
             timer.unref?.();
           });
@@ -137,12 +146,16 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
             checkTokenBucketRateLimit(tier, identifier),
             timeoutPromise,
           ]);
+          recordFallbackRecovery();
         } catch (err: unknown) {
           if (isRecoverableRedisError(err)) {
             // Activate client-side / edge token bucket fallback when Redis experiences transient failure
+            const tierKey = `tier:${tier.name}`;
+            const reason = err instanceof Error ? err.message : String(err);
+            recordFallbackActivation(reason, tierKey);
             const refillRate = tier.limit / (tier.windowMs / 1000);
             const fallbackLimiter = getOrCreateFallbackLimiter(
-              `tier:${tier.name}`,
+              tierKey,
               tier.limit,
               refillRate,
               0,

@@ -14,7 +14,9 @@ import {
   ChevronRight,
   Copy,
   Check,
+  Clock,
 } from "lucide-react";
+import { getVenueOpeningStatus } from "@/lib/utils/openingHours";
 
 export interface VenueDetail {
   id: string;
@@ -31,6 +33,11 @@ export interface VenueDetail {
   description?: string | null;
   amenities?: string[] | null;
   tags?: string[] | null;
+  openingHours?: string | null;
+  opening_hours?: string | null;
+  hours?: string | null;
+  timezone?: string | null;
+  timeZone?: string | null;
 }
 
 export interface VenueDetailModalProps {
@@ -61,6 +68,8 @@ export function VenueDetailModal({
   const [copyFeedback, setCopyFeedback] = useState<
     "idle" | "success" | "error"
   >("idle");
+  const [statusReferenceTime, setStatusReferenceTime] = useState<Date | null>(null);
+  const hasVenue = Boolean(venue);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
@@ -91,6 +100,20 @@ export function VenueDetailModal({
     setCopyFeedback("idle");
   }, [venue?.id, isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !hasVenue) {
+      setStatusReferenceTime(null);
+      return;
+    }
+
+    setStatusReferenceTime(new Date());
+    const interval = window.setInterval(() => {
+      setStatusReferenceTime(new Date());
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, [hasVenue, isOpen]);
+
   // Close modal on Escape key
   useEffect(() => {
     if (!isOpen) return;
@@ -114,6 +137,21 @@ export function VenueDetailModal({
   const isCurrentErrored = currentPhotoUrl
     ? Boolean(erroredUrls[currentPhotoUrl])
     : false;
+  const openingHours =
+    venue.openingHours ||
+    venue.opening_hours ||
+    venue.hours ||
+    null;
+  const openingStatus =
+    statusReferenceTime && openingHours
+      ? getVenueOpeningStatus(
+          openingHours,
+          statusReferenceTime,
+          venue.timezone || venue.timeZone,
+        )
+      : openingHours
+        ? null
+        : getVenueOpeningStatus(null);
 
   const handleImageLoad = (url: string) => {
     setLoadedUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
@@ -346,6 +384,44 @@ export function VenueDetailModal({
                   <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                   <span>{venue.address}</span>
                 </p>
+              )}
+              {openingStatus && (
+                <div
+                  data-testid="venue-opening-hours-status"
+                  aria-label={`Venue operating status: ${openingStatus.text}`}
+                  aria-live="off"
+                  className={`mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                    openingStatus.kind === "open"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                      : openingStatus.kind === "closing-soon"
+                        ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                        : openingStatus.kind === "24-7"
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : openingStatus.kind === "closed"
+                            ? "border-zinc-700 bg-zinc-800/80 text-zinc-300"
+                            : "border-zinc-700 bg-zinc-900 text-zinc-400"
+                  }`}
+                >
+                  {openingStatus.kind === "closing-soon" ? (
+                    <Clock
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 animate-pulse motion-reduce:animate-none"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        openingStatus.kind === "open" ||
+                        openingStatus.kind === "24-7"
+                          ? "bg-emerald-400"
+                          : openingStatus.kind === "closed"
+                            ? "bg-zinc-400"
+                            : "bg-zinc-500"
+                      }`}
+                    />
+                  )}
+                  <span className="break-words">{openingStatus.text}</span>
+                </div>
               )}
             </div>
 

@@ -2,12 +2,24 @@ import {
   BFTConsensusCoordinator,
   QuorumCertificate,
   ViewChangeMessage,
+  createTestValidatorKeySet,
 } from "../../core/consensus/BFTConsensusCoordinator";
 
 const validators = ["node-0", "node-1", "node-2", "node-3"];
+const testKeys = createTestValidatorKeySet(validators);
 
-function vcMsg(from: string, newView: number): ViewChangeMessage {
-  return { fromNodeId: from, newView, signature: "sig", timestamp: Date.now() };
+function vcMsg(
+  from: string,
+  newView: number,
+  lastCommitQC?: QuorumCertificate,
+): ViewChangeMessage {
+  const payload = BFTConsensusCoordinator.formatViewChangePayload(
+    from,
+    newView,
+    lastCommitQC,
+  );
+  const signature = testKeys.signers[from].sign(payload);
+  return { fromNodeId: from, newView, signature, timestamp: Date.now() };
 }
 
 describe("BFTConsensusCoordinator view-change timeout and leader rotation", () => {
@@ -15,7 +27,12 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
   afterEach(() => jest.useRealTimers());
 
   it("uses 5s base timeout and 30s ceiling by default", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-1", validators });
+    const c = new BFTConsensusCoordinator({
+      nodeId: "node-1",
+      validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
+    });
     expect(c.getCurrentViewTimeoutMs()).toBe(5000);
     expect(c.maxViewChangeTimeoutMs).toBe(30000);
   });
@@ -25,6 +42,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const c = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       onViewChangeBroadcast,
     });
     c.startViewTimer();
@@ -37,7 +56,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const msg = onViewChangeBroadcast.mock.calls[0][0] as ViewChangeMessage;
     expect(msg.fromNodeId).toBe("node-1");
     expect(msg.newView).toBe(1);
-    expect(msg.signature).toHaveLength(64);
+    expect(msg.signature).toHaveLength(128); // 64-byte Ed25519 signature in hex
+    expect(c.verifyViewChangeSignature(msg)).toBe(true);
     c.dispose();
   });
 
@@ -45,6 +65,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const c = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       onViewChangeBroadcast: jest.fn(),
     });
     c.startViewTimer();
@@ -66,6 +88,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const c = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       viewChangeTimeoutMs: 1000,
       onViewChangeBroadcast,
     });
@@ -88,6 +112,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const c = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       viewChangeTimeoutMs: 10000,
       onViewChangeBroadcast: jest.fn(),
     });
@@ -106,6 +132,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const c = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       viewChangeTimeoutMs: 1000,
       onViewChangeBroadcast: jest.fn(),
     });
@@ -120,6 +148,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
       signatures[id] = new BFTConsensusCoordinator({
         nodeId: id,
         validators,
+        validatorPublicKeys: testKeys.publicKeys,
+        signer: testKeys.signers[id],
       }).createVote("COMMIT", hash).signature;
     }
     const qc: QuorumCertificate = {
@@ -144,6 +174,8 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     const c = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       onViewChangeBroadcast,
     });
     c.startViewTimer();
@@ -158,11 +190,12 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
   });
 
   it("does not restart a timer when the timeout callback stops it", () => {
-    let coordinator: BFTConsensusCoordinator;
     const onViewChangeBroadcast = jest.fn(() => coordinator.stopViewTimer());
-    coordinator = new BFTConsensusCoordinator({
+    const coordinator: BFTConsensusCoordinator = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       viewChangeTimeoutMs: 1000,
       onViewChangeBroadcast,
     });
@@ -176,11 +209,12 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
   });
 
   it("does not resurrect a timer when the timeout callback disposes the coordinator", () => {
-    let coordinator: BFTConsensusCoordinator;
     const onViewChangeBroadcast = jest.fn(() => coordinator.dispose());
-    coordinator = new BFTConsensusCoordinator({
+    const coordinator: BFTConsensusCoordinator = new BFTConsensusCoordinator({
       nodeId: "node-1",
       validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-1"],
       viewChangeTimeoutMs: 1000,
       onViewChangeBroadcast,
     });
@@ -192,4 +226,70 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     expect(onViewChangeBroadcast).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects uncertified future-view proposals from rotated leader after timeout", () => {
+    const c = new BFTConsensusCoordinator({
+      nodeId: "node-2",
+      validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-2"],
+    });
+
+    // Node-1 is leader for view 1
+    const uncertifiedProposal = {
+      view: 1,
+      sequence: 1,
+      proposerId: "node-1",
+      payload: { tx: "rotated-leader-proposal" },
+      parentHash:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      timestamp: Date.now(),
+    };
+    const blockHash = BFTConsensusCoordinator.hashPayload(uncertifiedProposal);
+
+    // Node-2 is still on view 0, receives proposal without viewChangeEvidence
+    const vote = c.handleProposal({
+      ...uncertifiedProposal,
+      blockHash,
+    });
+
+    expect(vote).toBeNull();
+    expect(c.getCurrentView()).toBe(0);
+    c.dispose();
+  });
+
+  it("accepts certified proposals from rotated leader after pacemaker view change", () => {
+    const c = new BFTConsensusCoordinator({
+      nodeId: "node-2",
+      validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-2"],
+    });
+
+    // Certified with 3 ViewChangeMessages for view 1
+    const vcMsgs = [vcMsg("node-0", 1), vcMsg("node-1", 1), vcMsg("node-2", 1)];
+
+    const certifiedProposal = {
+      view: 1,
+      sequence: 1,
+      proposerId: "node-1",
+      payload: { tx: "certified-rotated-leader-proposal" },
+      parentHash:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      timestamp: Date.now(),
+    };
+    const blockHash = BFTConsensusCoordinator.hashPayload(certifiedProposal);
+
+    const vote = c.handleProposal({
+      ...certifiedProposal,
+      blockHash,
+      viewChangeEvidence: vcMsgs,
+    });
+
+    expect(vote).not.toBeNull();
+    expect(vote?.phase).toBe("PREPARE");
+    expect(vote?.view).toBe(1);
+    expect(c.getCurrentView()).toBe(1);
+    expect(c.getCurrentLeader()).toBe("node-1");
+    c.dispose();
+  });
 });

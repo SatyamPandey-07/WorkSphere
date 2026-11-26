@@ -11,6 +11,7 @@ Architecture decisions, implementation notes, and system-level design references
 - [Seat hold lock architecture](./seat-hold-lock-architecture.md)
 - [Seat hold Redlock architecture](./seat-hold-lock-redlock-architecture.md)
 - [Token-bucket Redis TTL fallback and recovery](./TOKEN_BUCKET_REDIS_FALLBACK.md)
+- [Solana Cluster RPC Pool Failover, Health Scoring & Cooldown Windows](./SOLANA_CLUSTER_RPC_POOL.md)
 - [Rate limiting strategies](./rate-limiting-strategies.md)
 - [Sliding-window rate limiting](./sliding-window-rate-limiting.md)
 
@@ -20,6 +21,7 @@ Architecture decisions, implementation notes, and system-level design references
 
 - [ADR-004: Dual PostGIS spatial and trigram venue search](./ADR-004-spatial-phonetic-venue-search.md)
 - [Distributed WebRTC mesh signaling and STUN/TURN fallback](./WEBRTC_MESH_SIGNALING.md)
+- [WebRTC TURN Relay Bandwidth Throttle & Backpressure Specification](./WEBRTC_TURN_RELAY_THROTTLE.md)
 - [Middleware routing](./middleware-routing.md)
 - [Multi-region sync](./multi-region-sync.md)
 - [Causal vector-clock specification](./CAUSAL_VECTOR_CLOCK_SPEC.md)

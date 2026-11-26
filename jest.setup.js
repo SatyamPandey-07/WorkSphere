@@ -229,6 +229,25 @@ global.fetch = jest.fn(() =>
   }),
 );
 
+// Mock svix for Jest CommonJS test runner
+jest.mock("svix", () => ({
+  Webhook: class {
+    constructor(secret) {
+      this.secret = secret;
+    }
+    verify(payload) {
+      try {
+        return typeof payload === "string" ? JSON.parse(payload) : payload;
+      } catch {
+        return payload;
+      }
+    }
+    sign() {
+      return "mock_signature";
+    }
+  },
+}));
+
 // Mock groq-sdk
 jest.mock("groq-sdk", () => {
   const GroqMock = jest.fn().mockImplementation(() => ({
@@ -282,4 +301,3 @@ if (typeof global.window !== "undefined") {
     return style;
   };
 }
-

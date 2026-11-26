@@ -153,7 +153,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const {
     activeHolds,
     myHeldSeatId,
-    remainingSeconds,
+    remainingSeconds: _remainingSeconds,
     acquireHold,
     releaseHold,
     confirmCheckout,
@@ -1005,6 +1005,12 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   !isDurationValid
                 }
                 aria-busy={booking}
+                onClick={(e) => {
+                  if (submittingRef.current || booking) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
                 className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
                 data-testid="confirm-booking-btn"
               >

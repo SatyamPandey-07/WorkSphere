@@ -15,14 +15,42 @@ import {
   type SolanaPayEscrowManager,
   type ReserveSeatOptions,
   type SeatReservationState,
-  DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT,
-  fetchLatestBlockhashWithBackoff,
-  MAX_RPC_CLOCK_SKEW_SECONDS,
 } from "./solanaPayEscrow";
+
+export const MAX_RPC_CLOCK_SKEW_SECONDS = 300;
+export const DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT = 250_000;
+
+export async function fetchLatestBlockhashWithBackoff(
+  connection: Connection,
+  maxRetries = 3,
+  baseBackoffMs = 500,
+): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await connection.getLatestBlockhash("confirmed");
+    } catch (err) {
+      lastErr = err;
+      if (attempt + 1 < maxRetries) {
+        const delay = baseBackoffMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastErr;
+}
 import {
+  DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS,
   getPriorityFeeEstimator,
   type PriorityFeeEstimate,
 } from "./priorityFeeEstimator";
+import {
+  EscrowTransitionError,
+  isAutoRefundEligible,
+  transitionEscrowRecord,
+  type EscrowLifecycleState,
+  type EscrowRecord,
+} from "@/lib/solana/escrowStateMachine";
 
 export const TOKEN_PROGRAM_ID = new PublicKey(
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -262,6 +290,119 @@ export const USDC_MINT = new PublicKey(
 
 export type EscrowCurrency = "SOL" | "USDC";
 
+export interface PriorityFeeCapDiagnostics {
+  /** Raw computed or explicitly supplied fee before ceiling enforcement (null if none). */
+  estimatedMicroLamports: number | null;
+  /** Hard upper bound ceiling in micro-lamports. */
+  maxPriorityFeeMicroLamports: number;
+  /** Final priority fee applied to the transaction in micro-lamports. */
+  appliedMicroLamports: number;
+  /** True when the computed fee exceeded maxPriorityFeeMicroLamports and was clamped. */
+  wasCapped: boolean;
+}
+
+export function resolveCappedPriorityFee(options: {
+  explicitMicroLamports?: number | null;
+  estimatedMicroLamports?: number | null;
+  maxPriorityFeeMicroLamports?: number;
+}): PriorityFeeCapDiagnostics {
+  const ceiling =
+    typeof options.maxPriorityFeeMicroLamports === "number" &&
+    Number.isFinite(options.maxPriorityFeeMicroLamports) &&
+    options.maxPriorityFeeMicroLamports >= 0
+      ? Math.floor(options.maxPriorityFeeMicroLamports)
+      : DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS;
+
+  const rawFee =
+    typeof options.explicitMicroLamports === "number" &&
+    Number.isFinite(options.explicitMicroLamports) &&
+    options.explicitMicroLamports >= 0
+      ? Math.floor(options.explicitMicroLamports)
+      : typeof options.estimatedMicroLamports === "number" &&
+          Number.isFinite(options.estimatedMicroLamports) &&
+          options.estimatedMicroLamports >= 0
+        ? Math.floor(options.estimatedMicroLamports)
+        : null;
+
+  if (rawFee === null) {
+    return {
+      estimatedMicroLamports: null,
+      maxPriorityFeeMicroLamports: ceiling,
+      appliedMicroLamports: 0,
+      wasCapped: false,
+    };
+  }
+
+  const appliedMicroLamports = Math.min(rawFee, ceiling);
+  return {
+    estimatedMicroLamports: rawFee,
+    maxPriorityFeeMicroLamports: ceiling,
+    appliedMicroLamports,
+    wasCapped: rawFee > ceiling,
+  };
+}
+
+function upsertComputeUnitPriceInstruction(
+  transaction: Transaction,
+  microLamports: number,
+): void {
+  if (typeof microLamports !== "number" || microLamports <= 0) {
+    return;
+  }
+  const safeFee = Math.max(0, Math.floor(microLamports));
+  const existingIndex = transaction.instructions.findIndex(
+    (ix) =>
+      ix.programId.equals(ComputeBudgetProgram.programId) &&
+      ix.data.length > 0 &&
+      ix.data[0] === 3,
+  );
+  const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: safeFee,
+  });
+  if (existingIndex >= 0) {
+    transaction.instructions[existingIndex] = computeIx;
+  } else {
+    transaction.instructions.unshift(computeIx);
+  }
+}
+
+async function resolveAndApplyEscrowPriorityFee(options: {
+  transaction: Transaction;
+  estimateFee?: () => Promise<PriorityFeeEstimate>;
+  priorityFeeMicroLamports?: number | null;
+  maxPriorityFeeMicroLamports?: number;
+}): Promise<PriorityFeeCapDiagnostics> {
+  let estimatedMicroLamports: number | null = null;
+  if (
+    options.priorityFeeMicroLamports === undefined ||
+    options.priorityFeeMicroLamports === null
+  ) {
+    if (options.estimateFee) {
+      try {
+        const estimate = await options.estimateFee();
+        estimatedMicroLamports = estimate.microLamports;
+      } catch {
+        estimatedMicroLamports = null;
+      }
+    }
+  }
+
+  const diagnostics = resolveCappedPriorityFee({
+    explicitMicroLamports: options.priorityFeeMicroLamports,
+    estimatedMicroLamports,
+    maxPriorityFeeMicroLamports: options.maxPriorityFeeMicroLamports,
+  });
+
+  if (diagnostics.appliedMicroLamports > 0) {
+    upsertComputeUnitPriceInstruction(
+      options.transaction,
+      diagnostics.appliedMicroLamports,
+    );
+  }
+
+  return diagnostics;
+}
+
 export interface EscrowDepositParams {
   payerWallet: string;
   bookingId: string;
@@ -269,6 +410,7 @@ export interface EscrowDepositParams {
   currency: EscrowCurrency;
   rpcUrl: string;
   priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
   computeUnitLimit?: number;
 }
 
@@ -279,6 +421,7 @@ export interface EscrowDepositResult {
   amountBaseUnits: bigint;
   recentBlockhash: string;
   lastValidBlockHeight?: number;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 export interface EscrowValidationResult {
@@ -350,6 +493,210 @@ export function validateDepositParams(
   }
 }
 
+export const SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS = 5_000_000n;
+
+export type EscrowDepositPreflightErrorCode =
+  | "INSUFFICIENT_BALANCE"
+  | "BALANCE_CHECK_FAILED"
+  | "INVALID_TOKEN_ACCOUNT"
+  | "RPC_REQUEST_FAILED";
+
+export class EscrowDepositPreflightError extends Error {
+  public readonly rpcError?: unknown;
+
+  constructor(
+    message: string,
+    public readonly code: EscrowDepositPreflightErrorCode,
+    cause?: unknown,
+  ) {
+    super(message);
+    this.name = "EscrowDepositPreflightError";
+    this.rpcError = cause;
+  }
+}
+
+function formatBaseUnits(amount: bigint, decimals: number): string {
+  const scale = 10n ** BigInt(decimals);
+  const whole = amount / scale;
+  const fraction = (amount % scale)
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function getTokenAccountErrorReason(
+  error: unknown,
+): "missing" | "uninitialized" | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/could not find account|account not found/i.test(message)) {
+    return "missing";
+  }
+  if (/account not initialized/i.test(message)) return "uninitialized";
+  return null;
+}
+
+async function withEscrowRpcTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  operationDescription: string,
+  errorCode:
+    | "BALANCE_CHECK_FAILED"
+    | "RPC_REQUEST_FAILED" = "BALANCE_CHECK_FAILED",
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(`Solana RPC request timed out after ${timeoutMs}ms`),
+            ),
+          timeoutMs,
+        );
+        timer.unref?.();
+      }),
+    ]);
+  } catch (error: unknown) {
+    const timedOut =
+      error instanceof Error && error.message.includes("timed out");
+    throw new EscrowDepositPreflightError(
+      timedOut
+        ? `Could not ${operationDescription} because the Solana RPC request timed out. Please try again.`
+        : `Could not ${operationDescription} because the Solana RPC request failed. Please try again.`,
+      errorCode,
+      error,
+    );
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function getVerifiedLamportBalance(
+  connection: Connection,
+  payer: PublicKey,
+  timeoutMs: number,
+): Promise<bigint> {
+  const balance = await withEscrowRpcTimeout(
+    () => connection.getBalance(payer, "confirmed"),
+    timeoutMs,
+    "verify the wallet balance",
+  );
+
+  if (!Number.isSafeInteger(balance) || balance < 0) {
+    throw new EscrowDepositPreflightError(
+      "Could not verify wallet balance because Solana RPC returned invalid balance data. Please try again.",
+      "BALANCE_CHECK_FAILED",
+    );
+  }
+
+  return BigInt(balance);
+}
+
+export async function verifyEscrowDepositBalance(
+  connection: Connection,
+  params: Pick<EscrowDepositParams, "payerWallet" | "amount" | "currency">,
+  timeoutMs: number = ESCROW_RPC_REQUEST_TIMEOUT_MS,
+): Promise<void> {
+  const payer = new PublicKey(params.payerWallet);
+  const solBalance = await getVerifiedLamportBalance(
+    connection,
+    payer,
+    timeoutMs,
+  );
+
+  if (params.currency === "SOL") {
+    const requiredLamports =
+      toBaseUnits(params.amount, "SOL") + SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS;
+
+    if (solBalance < requiredLamports) {
+      throw new EscrowDepositPreflightError(
+        `Insufficient wallet balance (Required: ${formatBaseUnits(requiredLamports, 9)} SOL, Available: ${formatBaseUnits(solBalance, 9)} SOL)`,
+        "INSUFFICIENT_BALANCE",
+      );
+    }
+
+    return;
+  }
+
+  if (solBalance < SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient SOL balance for fees and rent (Required: 0.005 SOL, Available: ${formatBaseUnits(solBalance, 9)} SOL). The USDC deposit requires ${formatBaseUnits(toBaseUnits(params.amount, "USDC"), USDC_DECIMALS)} USDC.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+
+  const payerAta = getAssociatedTokenAddressSync(USDC_MINT, payer);
+  const requiredUsdcBaseUnits = toBaseUnits(params.amount, "USDC");
+  const tokenAccount = await withEscrowRpcTimeout(
+    () => connection.getAccountInfo(payerAta, "confirmed"),
+    timeoutMs,
+    "verify the USDC token account",
+  );
+
+  if (!tokenAccount) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: 0 USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+
+  if (!tokenAccount.owner.equals(TOKEN_PROGRAM_ID)) {
+    throw new EscrowDepositPreflightError(
+      "The USDC token account is invalid. Please verify the account and try again.",
+      "INVALID_TOKEN_ACCOUNT",
+    );
+  }
+
+  const tokenBalance = await withEscrowRpcTimeout(
+    () => connection.getTokenAccountBalance(payerAta, "confirmed"),
+    timeoutMs,
+    "verify the USDC token balance",
+  ).catch((error: unknown) => {
+    const tokenAccountError =
+      error instanceof EscrowDepositPreflightError
+        ? getTokenAccountErrorReason(error.rpcError)
+        : null;
+
+    if (tokenAccountError === "missing") {
+      throw new EscrowDepositPreflightError(
+        `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: 0 USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+        "INSUFFICIENT_BALANCE",
+        error,
+      );
+    }
+
+    if (tokenAccountError === "uninitialized") {
+      throw new EscrowDepositPreflightError(
+        "The USDC token account is not initialized. Initialize and fund it before retrying.",
+        "INVALID_TOKEN_ACCOUNT",
+        error,
+      );
+    }
+    throw error;
+  });
+
+  const { amount, decimals } = tokenBalance.value;
+  if (decimals !== USDC_DECIMALS || !/^\d+$/.test(amount)) {
+    throw new EscrowDepositPreflightError(
+      "Could not verify the USDC token balance because Solana RPC returned invalid token balance data. Please try again.",
+      "BALANCE_CHECK_FAILED",
+    );
+  }
+
+  const availableUsdcBaseUnits = BigInt(amount);
+  if (availableUsdcBaseUnits < requiredUsdcBaseUnits) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: ${formatBaseUnits(availableUsdcBaseUnits, USDC_DECIMALS)} USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+}
+
 export async function buildSolDepositTransaction(
   params: EscrowDepositParams,
 ): Promise<EscrowDepositResult> {
@@ -363,8 +710,13 @@ export async function buildSolDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "SOL");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash("confirmed");
+  await verifyEscrowDepositBalance(connection, params);
+  const { blockhash, lastValidBlockHeight } = await withEscrowRpcTimeout(
+    () => connection.getLatestBlockhash("confirmed"),
+    ESCROW_RPC_REQUEST_TIMEOUT_MS,
+    "prepare the escrow transaction",
+    "RPC_REQUEST_FAILED",
+  );
 
   const transaction = new Transaction({
     recentBlockhash: blockhash,
@@ -382,39 +734,17 @@ export async function buildSolDepositTransaction(
     );
   }
 
-  // Dynamic Priority Fee: estimate automatically if not explicitly provided
-  let priorityFee = params.priorityFeeMicroLamports;
-  if (priorityFee === undefined || priorityFee === null) {
-    try {
-      const estimator = getPriorityFeeEstimator();
-      const estimate = await estimator.estimatePriorityFee(connection, [
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+  const priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+    transaction,
+    estimateFee: () =>
+      getPriorityFeeEstimator().estimatePriorityFee(connection, [
         payer,
         escrowVault,
-      ]);
-      priorityFee = estimate.microLamports;
-    } catch {
-      priorityFee = undefined;
-    }
-  }
-
-  // SetComputeUnitPrice must be placed before business instructions
-  if (typeof priorityFee === "number" && priorityFee > 0) {
-    const safeFee = Math.max(0, Math.floor(priorityFee));
-    const existingIndex = transaction.instructions.findIndex(
-      (ix) =>
-        ix.programId.equals(ComputeBudgetProgram.programId) &&
-        ix.data.length > 0 &&
-        ix.data[0] === 3,
-    );
-    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: safeFee,
-    });
-    if (existingIndex >= 0) {
-      transaction.instructions[existingIndex] = computeIx;
-    } else {
-      transaction.instructions.unshift(computeIx);
-    }
-  }
+      ]),
+    priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+    maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+  });
 
   const memoData = Buffer.from(
     JSON.stringify({ bookingId: params.bookingId, type: "escrow_deposit" }),
@@ -444,6 +774,7 @@ export async function buildSolDepositTransaction(
     amountBaseUnits,
     recentBlockhash: blockhash,
     lastValidBlockHeight,
+    priorityFeeDiagnostics,
   };
 }
 
@@ -460,8 +791,13 @@ export async function buildUsdcDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "USDC");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash("confirmed");
+  await verifyEscrowDepositBalance(connection, params);
+  const { blockhash, lastValidBlockHeight } = await withEscrowRpcTimeout(
+    () => connection.getLatestBlockhash("confirmed"),
+    ESCROW_RPC_REQUEST_TIMEOUT_MS,
+    "prepare the escrow transaction",
+    "RPC_REQUEST_FAILED",
+  );
 
   const payerAta = getAssociatedTokenAddressSync(
     USDC_MINT,
@@ -494,40 +830,18 @@ export async function buildUsdcDepositTransaction(
     );
   }
 
-  // Dynamic Priority Fee: estimate automatically if not explicitly provided
-  let priorityFee = params.priorityFeeMicroLamports;
-  if (priorityFee === undefined || priorityFee === null) {
-    try {
-      const estimator = getPriorityFeeEstimator();
-      const estimate = await estimator.estimatePriorityFee(connection, [
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+  const priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+    transaction,
+    estimateFee: () =>
+      getPriorityFeeEstimator().estimatePriorityFee(connection, [
         payer,
         payerAta,
         vaultAta,
-      ]);
-      priorityFee = estimate.microLamports;
-    } catch {
-      priorityFee = undefined;
-    }
-  }
-
-  // SetComputeUnitPrice must be placed before business instructions
-  if (typeof priorityFee === "number" && priorityFee > 0) {
-    const safeFee = Math.max(0, Math.floor(priorityFee));
-    const existingIndex = transaction.instructions.findIndex(
-      (ix) =>
-        ix.programId.equals(ComputeBudgetProgram.programId) &&
-        ix.data.length > 0 &&
-        ix.data[0] === 3,
-    );
-    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: safeFee,
-    });
-    if (existingIndex >= 0) {
-      transaction.instructions[existingIndex] = computeIx;
-    } else {
-      transaction.instructions.unshift(computeIx);
-    }
-  }
+      ]),
+    priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+    maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+  });
 
   const memoData = Buffer.from(
     JSON.stringify({
@@ -563,6 +877,7 @@ export async function buildUsdcDepositTransaction(
     amountBaseUnits,
     recentBlockhash: blockhash,
     lastValidBlockHeight,
+    priorityFeeDiagnostics,
   };
 }
 
@@ -1353,10 +1668,13 @@ export async function buildReleaseTransaction(params: {
   authorityWallet: string;
   rpcUrl: string;
   programId?: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }): Promise<{
   transaction: Transaction;
   serializedTransaction: string;
   escrowVault: string;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }> {
   const recipient = new PublicKey(params.recipientWallet);
   const authority = new PublicKey(params.authorityWallet);
@@ -1383,6 +1701,24 @@ export async function buildReleaseTransaction(params: {
     }),
   );
 
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+  if (
+    params.priorityFeeMicroLamports !== undefined ||
+    params.maxPriorityFeeMicroLamports !== undefined
+  ) {
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction: tx,
+      estimateFee: () =>
+        getPriorityFeeEstimator().estimatePriorityFee(connection, [
+          escrowVault,
+          authority,
+          recipient,
+        ]),
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+  }
+
   const serializedTransaction = tx
     .serialize({ requireAllSignatures: false, verifySignatures: false })
     .toString("base64");
@@ -1391,6 +1727,7 @@ export async function buildReleaseTransaction(params: {
     transaction: tx,
     serializedTransaction,
     escrowVault: escrowVault.toBase58(),
+    ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
   };
 }
 
@@ -1405,10 +1742,13 @@ export async function buildRefundTransaction(params: {
   authorityWallet: string;
   rpcUrl: string;
   programId?: string;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
 }): Promise<{
   transaction: Transaction;
   serializedTransaction: string;
   escrowVault: string;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }> {
   const depositor = new PublicKey(params.depositorWallet);
   const authority = new PublicKey(params.authorityWallet);
@@ -1436,6 +1776,24 @@ export async function buildRefundTransaction(params: {
     }),
   );
 
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+  if (
+    params.priorityFeeMicroLamports !== undefined ||
+    params.maxPriorityFeeMicroLamports !== undefined
+  ) {
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction: tx,
+      estimateFee: () =>
+        getPriorityFeeEstimator().estimatePriorityFee(connection, [
+          escrowVault,
+          authority,
+          depositor,
+        ]),
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
+  }
+
   const serializedTransaction = tx
     .serialize({ requireAllSignatures: false, verifySignatures: false })
     .toString("base64");
@@ -1444,6 +1802,7 @@ export async function buildRefundTransaction(params: {
     transaction: tx,
     serializedTransaction,
     escrowVault: escrowVault.toBase58(),
+    ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
   };
 }
 
@@ -1909,6 +2268,7 @@ export interface SubmitEscrowRefundParams {
   confirmationTimeoutMs?: number;
   pollIntervalMs?: number;
   priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -1916,6 +2276,7 @@ export interface EscrowRefundSubmissionResult {
   signature: string;
   escrowVault: string;
   slot?: number;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
 }
 
 /**
@@ -1988,6 +2349,7 @@ export async function submitEscrowRefundTransaction(
   let transaction: Transaction;
   let signature: string;
   let escrowVault: string;
+  let priorityFeeDiagnostics: PriorityFeeCapDiagnostics;
   try {
     const { blockhash } = await pool.execute((connection) =>
       connection.getLatestBlockhash("confirmed"),
@@ -2009,42 +2371,20 @@ export async function submitEscrowRefundTransaction(
       feePayer: authority.publicKey,
     });
 
-    // Dynamic Priority Fee: estimate automatically if not explicitly provided
-    let priorityFee = params.priorityFeeMicroLamports;
-    if (priorityFee === undefined || priorityFee === null) {
-      try {
-        const estimator = getPriorityFeeEstimator();
-        const estimate = (await pool.execute((conn) =>
-          estimator.estimatePriorityFee(conn, [
+    // Dynamic Priority Fee: estimate automatically if not explicitly provided and enforce cap
+    priorityFeeDiagnostics = await resolveAndApplyEscrowPriorityFee({
+      transaction,
+      estimateFee: () =>
+        pool.execute((conn) =>
+          getPriorityFeeEstimator().estimatePriorityFee(conn, [
             address,
             authority.publicKey,
             depositor,
           ]),
-        )) as PriorityFeeEstimate;
-        priorityFee = estimate.microLamports;
-      } catch {
-        priorityFee = undefined;
-      }
-    }
-
-    // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
-    if (typeof priorityFee === "number" && priorityFee > 0) {
-      const safeFee = Math.max(0, Math.floor(priorityFee));
-      const existingIndex = transaction.instructions.findIndex(
-        (ix) =>
-          ix.programId.equals(ComputeBudgetProgram.programId) &&
-          ix.data.length > 0 &&
-          ix.data[0] === 3,
-      );
-      const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: safeFee,
-      });
-      if (existingIndex >= 0) {
-        transaction.instructions[existingIndex] = computeIx;
-      } else {
-        transaction.instructions.unshift(computeIx);
-      }
-    }
+        ) as Promise<PriorityFeeEstimate>,
+      priorityFeeMicroLamports: params.priorityFeeMicroLamports,
+      maxPriorityFeeMicroLamports: params.maxPriorityFeeMicroLamports,
+    });
 
     transaction.add(instruction);
     transaction.sign(authority);
@@ -2129,7 +2469,12 @@ export async function submitEscrowRefundTransaction(
           status.confirmationStatus === "finalized" ||
           status.confirmations === null
         ) {
-          return { signature, escrowVault, slot: status.slot };
+          return {
+            signature,
+            escrowVault,
+            slot: status.slot,
+            priorityFeeDiagnostics,
+          };
         }
       }
     } catch (error) {
@@ -3843,3 +4188,339 @@ export function subscribeToEscrowConfirmation(
 export * from "./solanaPayEscrow";
 export * from "./priorityFeeEstimator";
 export * from "./escrowTransactionRetry";
+
+// ---------------------------------------------------------------------------
+// Rate-limit retry & stateful settlement client
+// ---------------------------------------------------------------------------
+
+export const RPC_RETRY_INITIAL_DELAY_MS = 500;
+export const RPC_RETRY_MULTIPLIER = 2;
+export const RPC_MAX_RETRIES = 3;
+export const RPC_JITTER_RANGE_MS = 200;
+export const RPC_BUSY_USER_MESSAGE = "Solana RPC busy. Please retry shortly.";
+
+export interface RpcRetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  multiplier?: number;
+  jitterRangeMs?: number;
+  randomFn?: () => number;
+  sleepFn?: (ms: number) => Promise<void>;
+}
+
+export function isRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+
+  if (typeof error === "string") {
+    return /\b429\b|too many requests/i.test(error);
+  }
+
+  if (typeof error === "object") {
+    const errObj = error as {
+      status?: unknown;
+      statusCode?: unknown;
+      code?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+
+    const numericCodes = [errObj.status, errObj.statusCode, errObj.code];
+    if (numericCodes.some((val) => val === 429 || val === "429")) {
+      return true;
+    }
+
+    if (typeof errObj.message === "string" && isRateLimitError(errObj.message)) {
+      return true;
+    }
+
+    if (errObj.cause && isRateLimitError(errObj.cause)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function computeBackoffDelayMs(
+  retryIndex: number,
+  options: Pick<
+    RpcRetryOptions,
+    "initialDelayMs" | "multiplier" | "jitterRangeMs" | "randomFn"
+  > = {},
+): number {
+  const initialDelayMs = options.initialDelayMs ?? RPC_RETRY_INITIAL_DELAY_MS;
+  const multiplier = options.multiplier ?? RPC_RETRY_MULTIPLIER;
+  const jitterRangeMs = options.jitterRangeMs ?? RPC_JITTER_RANGE_MS;
+  const randomFn = options.randomFn ?? Math.random;
+
+  const exponentialDelay =
+    initialDelayMs * Math.pow(multiplier, Math.max(0, retryIndex));
+  const jitter = (randomFn() * 2 - 1) * jitterRangeMs;
+  return Math.max(0, Math.round(exponentialDelay + jitter));
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function withRpcRateLimitRetry<T>(
+  operation: () => Promise<T>,
+  options: RpcRetryOptions = {},
+): Promise<T> {
+  const maxRetries = options.maxRetries ?? RPC_MAX_RETRIES;
+  const sleepFn = options.sleepFn ?? defaultSleep;
+
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isRateLimitError(error)) {
+        throw error;
+      }
+
+      if (attempt >= maxRetries) {
+        const busyError = new Error(RPC_BUSY_USER_MESSAGE);
+        (busyError as Error & { cause?: unknown }).cause = error;
+        throw busyError;
+      }
+
+      const delayMs = computeBackoffDelayMs(attempt, options);
+      attempt += 1;
+      await sleepFn(delayMs);
+    }
+  }
+}
+
+export interface SettlementRequest {
+  escrowId: string;
+  targetState: Extract<
+    EscrowLifecycleState,
+    "released" | "refunded" | "partially_refunded"
+  >;
+  idempotencyKey: string;
+  refundBasisPoints?: number;
+  nowUnixSeconds?: number;
+  priorityFeeMicroLamports?: number;
+  maxPriorityFeeMicroLamports?: number;
+}
+
+export interface SettlementReceipt {
+  idempotencyKey: string;
+  txSignature: string;
+  escrow: EscrowRecord;
+  deduplicated: boolean;
+  priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
+}
+
+export interface EscrowAccountSnapshot {
+  escrowId: string;
+  status: "funded" | "released" | "refunded" | "pending";
+  lamports: number;
+}
+
+export interface SolanaEscrowRpcLike {
+  getAccountInfo?: (address: string) => Promise<unknown>;
+  getEscrowStatus?: (escrowId: string) => Promise<EscrowAccountSnapshot>;
+  estimatePriorityFee?: (
+    record: EscrowRecord,
+  ) => Promise<number | PriorityFeeEstimate>;
+  submitSettlement?: (
+    record: EscrowRecord,
+    idempotencyKey: string,
+    options?: {
+      priorityFeeMicroLamports?: number;
+      priorityFeeDiagnostics?: PriorityFeeCapDiagnostics;
+    },
+  ) => Promise<{ txSignature: string }>;
+}
+
+export class SolanaEscrowClient {
+  private readonly rpc: SolanaEscrowRpcLike;
+  private readonly retryOptions: RpcRetryOptions;
+  private readonly escrows = new Map<string, EscrowRecord>();
+  private readonly settlementReceipts = new Map<string, SettlementReceipt>();
+  private readonly inFlightSettlements = new Map<
+    string,
+    Promise<SettlementReceipt>
+  >();
+
+  constructor(
+    rpc: SolanaEscrowRpcLike = {},
+    initialEscrowsOrRetry: EscrowRecord[] | RpcRetryOptions = [],
+  ) {
+    this.rpc = rpc;
+    if (Array.isArray(initialEscrowsOrRetry)) {
+      this.retryOptions = {};
+      for (const item of initialEscrowsOrRetry) {
+        this.escrows.set(item.escrowId, item);
+      }
+    } else {
+      this.retryOptions = initialEscrowsOrRetry ?? {};
+    }
+  }
+
+  public async getEscrowStatus(escrowId: string): Promise<EscrowAccountSnapshot> {
+    return withRpcRateLimitRetry(async () => {
+      if (typeof this.rpc.getEscrowStatus === "function") {
+        return this.rpc.getEscrowStatus(escrowId);
+      }
+      if (typeof this.rpc.getAccountInfo === "function") {
+        const info = await this.rpc.getAccountInfo(escrowId);
+        return {
+          escrowId,
+          status: info ? "funded" : "pending",
+          lamports: 0,
+        };
+      }
+      throw new Error("No RPC method available on escrow client");
+    }, this.retryOptions);
+  }
+
+  public registerEscrow(record: EscrowRecord): void {
+    this.escrows.set(record.escrowId, record);
+  }
+
+  public getEscrow(escrowId: string): EscrowRecord | undefined {
+    return this.escrows.get(escrowId);
+  }
+
+  public openDispute(
+    escrowId: string,
+    disputeReason: string,
+    nowUnixSeconds?: number,
+  ): EscrowRecord {
+    const current = this.escrows.get(escrowId);
+    if (!current) {
+      throw new Error(`Escrow "${escrowId}" not found`);
+    }
+    const updated = transitionEscrowRecord(current, "disputed", {
+      disputeReason,
+      nowUnixSeconds,
+    });
+    this.escrows.set(escrowId, updated);
+    return updated;
+  }
+
+  public async settleEscrow(
+    request: SettlementRequest,
+  ): Promise<SettlementReceipt> {
+    const existingReceipt = this.settlementReceipts.get(request.idempotencyKey);
+    if (existingReceipt) {
+      return { ...existingReceipt, deduplicated: true };
+    }
+
+    const inFlight = this.inFlightSettlements.get(request.idempotencyKey);
+    if (inFlight) {
+      const receipt = await inFlight;
+      return { ...receipt, deduplicated: true };
+    }
+
+    const execution = (async (): Promise<SettlementReceipt> => {
+      const current = this.escrows.get(request.escrowId);
+      if (!current) {
+        throw new Error(`Escrow "${request.escrowId}" not found`);
+      }
+
+      const nextRecord = transitionEscrowRecord(current, request.targetState, {
+        refundBasisPoints: request.refundBasisPoints,
+        nowUnixSeconds: request.nowUnixSeconds,
+      });
+
+      let priorityFeeDiagnostics: PriorityFeeCapDiagnostics | undefined;
+      if (
+        request.priorityFeeMicroLamports !== undefined ||
+        request.maxPriorityFeeMicroLamports !== undefined ||
+        typeof this.rpc.estimatePriorityFee === "function"
+      ) {
+        let estimatedFee: number | null = null;
+        if (
+          request.priorityFeeMicroLamports === undefined &&
+          typeof this.rpc.estimatePriorityFee === "function"
+        ) {
+          const estimated = await this.rpc.estimatePriorityFee(nextRecord);
+          estimatedFee =
+            typeof estimated === "number"
+              ? estimated
+              : estimated.microLamports;
+        }
+        priorityFeeDiagnostics = resolveCappedPriorityFee({
+          explicitMicroLamports: request.priorityFeeMicroLamports,
+          estimatedMicroLamports: estimatedFee,
+          maxPriorityFeeMicroLamports: request.maxPriorityFeeMicroLamports,
+        });
+      }
+
+      const txResult =
+        typeof this.rpc.submitSettlement === "function"
+          ? await this.rpc.submitSettlement(
+              nextRecord,
+              request.idempotencyKey,
+              priorityFeeDiagnostics
+                ? {
+                    priorityFeeMicroLamports:
+                      priorityFeeDiagnostics.appliedMicroLamports,
+                    priorityFeeDiagnostics,
+                  }
+                : undefined,
+            )
+          : {
+              txSignature: `sig_${request.escrowId}_${request.idempotencyKey}`,
+            };
+
+      this.escrows.set(request.escrowId, nextRecord);
+
+      const receipt: SettlementReceipt = {
+        idempotencyKey: request.idempotencyKey,
+        txSignature: txResult.txSignature,
+        escrow: nextRecord,
+        deduplicated: false,
+        ...(priorityFeeDiagnostics ? { priorityFeeDiagnostics } : {}),
+      };
+      this.settlementReceipts.set(request.idempotencyKey, receipt);
+      return receipt;
+    })();
+
+    this.inFlightSettlements.set(request.idempotencyKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightSettlements.delete(request.idempotencyKey);
+    }
+  }
+
+  public async triggerGracePeriodAutoRefund(
+    escrowId: string,
+    idempotencyKey: string,
+    nowUnixSeconds?: number,
+  ): Promise<SettlementReceipt> {
+    const current = this.escrows.get(escrowId);
+    if (!current) {
+      throw new Error(`Escrow "${escrowId}" not found`);
+    }
+
+    const eligible = isAutoRefundEligible({
+      state: current.state,
+      fundedAtUnixSeconds: current.fundedAtUnixSeconds,
+      gracePeriodSeconds: current.gracePeriodSeconds,
+      hostCheckedIn: current.hostCheckedIn,
+      nowUnixSeconds,
+    });
+
+    if (!eligible) {
+      throw new EscrowTransitionError(
+        current.state,
+        "refunded",
+        "Escrow is not eligible for grace-period auto-refund",
+      );
+    }
+
+    return this.settleEscrow({
+      escrowId,
+      targetState: "refunded",
+      idempotencyKey,
+      nowUnixSeconds,
+    });
+  }
+}

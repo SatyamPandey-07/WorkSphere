@@ -185,6 +185,7 @@ export function VenueSearchDrawer({
 
   const pathname = usePathname();
   const prevPathnameRef = useRef(pathname);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Automatically close mobile drawer when route path changes
   useEffect(() => {
@@ -810,6 +811,7 @@ export function VenueSearchDrawer({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
               data-testid="search-input"
               value={search}
@@ -828,18 +830,22 @@ export function VenueSearchDrawer({
               className="w-full pl-9 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
             />
             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-              {search.trim().length > 0 && (
+              {search.length > 0 && (
                 <button
                   type="button"
                   data-testid="clear-search-input-btn"
-                  onClick={() => handleSearchInput("")}
-                  aria-label="Clear search input"
+                  onClick={() => {
+                    handleSearchInput("");
+                    searchInputRef.current?.focus();
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  aria-label="Clear search"
                   className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
-              {search.trim().length === 0 && (
+              {search.length === 0 && (
                 <div className="pointer-events-none hidden sm:flex items-center">
                   <KeyboardShortcutBadge
                     shortcut="K"
@@ -1089,3 +1095,5 @@ export function VenueSearchDrawer({
     </div>
   );
 }
+
+export default VenueSearchDrawer;

@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
@@ -25,6 +25,7 @@ const flagVenueSchema = z.object({
       error: "Reason must contain at least 5 non-whitespace characters",
     })
     .trim()
+    .max(100, { message: "Reason must be at most 100 characters" })
     .refine(
       (val) =>
         val.replace(/\s+/g, "").length >= MIN_REASON_NON_WHITESPACE_LENGTH,

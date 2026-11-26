@@ -8,12 +8,16 @@ It describes the code as it exists in the repository. When this document and the
 
 | Area                                                   | File                                                |
 | ------------------------------------------------------ | --------------------------------------------------- |
-| Service worker (registered at `/sw.js`)                | `public/sw.js`                                      |
-| Service worker registration and sync tag registration  | `src/hooks/usePWA.tsx`                              |
-| IndexedDB connection and schema (`worksphere-offline`) | `src/lib/offlineReviewSync.ts` & `public/sw.js`     |
-| Secondary offline cache (`WorkSphereOfflineDB`)        | `src/lib/offline/db.ts` & `src/lib/offlineStore.ts` |
-| Offline sync queue helpers                             | `src/lib/offline/`                                  |
-| Image cache LRU helpers                                | `src/lib/swCacheLru.ts`                             |
+| Service worker (registered at `/sw.js`)                | `public/sw.js` & `src/service-worker.ts`                               |
+| Service worker registration and sync tag registration  | `src/hooks/usePWA.tsx`                                                 |
+| Versioned migration registry & payload adapters        | `src/lib/offline/migrations/`                                          |
+| Multi-context crash-safe migration coordinator         | `src/lib/offline/migrationCoordinator.ts`                              |
+| IndexedDB connection and schema (`worksphere-offline`) | `src/lib/offlineReviewSync.ts`, `src/lib/offline/syncQueue.ts`, `public/sw.js` |
+| Secondary offline cache (`WorkSphereOfflineDB`)        | `src/lib/offline/db.ts` & `src/lib/offlineStore.ts`                    |
+| Booking drafts store (`WorkSphereBookingDB`)           | `src/worker/bookingSync/DraftStore.ts`                                 |
+| Offline mutations store (`WorkSphereOfflineMutationsDB`) | `src/core/sync/OfflineMutationQueue.ts` & `public/sw.js`             |
+| Offline sync queue helpers                             | `src/lib/offline/`                                                     |
+| Image cache LRU helpers                                | `src/lib/swCacheLru.ts`                                                |
 
 Related guides: [PWA_SERVICE_WORKER_GUIDE.md](./PWA_SERVICE_WORKER_GUIDE.md), [PWA_TROUBLESHOOTING.md](./PWA_TROUBLESHOOTING.md), [OFFLINE_INDEXEDDB_SYNC.md](./OFFLINE_INDEXEDDB_SYNC.md).
 
@@ -58,11 +62,11 @@ sequenceDiagram
   SW->>SW: delete any cache ending in -installing
 ```
 
-| Phase    | What the code does                                                                                                                                                                                                                                                            |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| install  | Opens a temporary cache named `worksphere-v3-installing` and calls `addAll` for `/`, `/offline`, `/icons/icon.svg`, `/manifest.json`. Errors are logged, they do not abort the install.                                                                                       |
-| waiting  | The worker deliberately does **not** call `skipWaiting()` on its own. This avoids infinite loaders when a new version takes over mid session. The page must send a `SKIP_WAITING` message.                                                                                    |
-| activate | Deletes every cache whose name is not one of `worksphere-v3`, `worksphere-images-v4`, `worksphere-maptiles-v1`, `worksphere-video-tours-v1`, `worksphere-prefetch-v1` (or ending in `-installing`), then calls `clients.claim()`, then removes leftover `-installing` caches. |
+| Phase | What the code does |
+| --- | --- |
+| install | Opens a temporary cache named `worksphere-v3-installing` and calls `addAll` for `/`, `/offline`, `/icons/icon.svg`, `/manifest.json`. Errors are logged, they do not abort the install. |
+| waiting | The worker deliberately does **not** call `skipWaiting()` on its own. This avoids infinite loaders when a new version takes over mid session. The page must send a `SKIP_WAITING` message. |
+| activate | Deletes every cache whose name is not one of `worksphere-v3`, `worksphere-images-v4`, `worksphere-maptiles-v1`, `worksphere-video-tours-v1`, `worksphere-venue-photos-v1`, `worksphere-prefetch-v1` (or ending in `-installing`), then calls `clients.claim()`, then removes leftover `-installing` caches. |
 
 To ship a change that must invalidate old cached responses, bump the relevant cache name constant at the top of `public/sw.js`. The activate step then removes the old cache on every client.
 
@@ -70,14 +74,14 @@ To ship a change that must invalidate old cached responses, bump the relevant ca
 
 All names are constants at the top of `public/sw.js`.
 
-| Cache name                   | Used for                                                              | Strategy                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `worksphere-v3`              | Pages, static assets, `/api/venues`, `/api/reservations/availability` | Network-first, falls back to cache                                                                           |
-| `worksphere-images-v4`       | `images.unsplash.com` assets                                          | Cache-first with LRU eviction, capped at 20 MB (`MAX_IMAGE_CACHE_BYTES`) so iOS Safari does not kill the PWA |
-| `worksphere-maptiles-v1`     | `tile.openstreetmap.org` and `basemaps.cartocdn.com` tiles            | Cache-first                                                                                                  |
-| `worksphere-venue-photos-v1` | `res.cloudinary.com` and `images.pexels.com` photos                   | Stale-while-revalidate                                                                                       |
-| `worksphere-video-tours-v1`  | Video tour assets                                                     | Managed by the video helpers in `sw.js`                                                                      |
-| `worksphere-prefetch-v1`     | Routes and tiles prefetched by the page                               | Checked first for every GET                                                                                  |
+| Cache name | Used for | Strategy |
+| --- | --- | --- |
+| `worksphere-v3` | Pages, static assets, `/api/venues`, `/api/reservations/availability` | Network-first, falls back to cache |
+| `worksphere-images-v4` | `images.unsplash.com` assets | Cache-first with LRU eviction, capped at 20 MB (`MAX_IMAGE_CACHE_BYTES`) so iOS Safari does not kill the PWA |
+| `worksphere-maptiles-v1` | `tile.openstreetmap.org` and `basemaps.cartocdn.com` tiles | Cache-first |
+| `worksphere-venue-photos-v1` | `res.cloudinary.com` and `images.pexels.com` photos | Stale-while-revalidate; on quota error evicts the oldest 20% by persisted last-access time and retries once |
+| `worksphere-video-tours-v1` | Video tour assets | Managed by the video helpers in `sw.js` |
+| `worksphere-prefetch-v1` | Routes and tiles prefetched by the page | Checked first for every GET |
 
 Note on naming: the map tile cache is called `worksphere-maptiles-v1` in the code. If you see `worksphere-offline-map-tiles-v1` in older notes or tickets, that is not the name the service worker uses today.
 
@@ -107,41 +111,45 @@ Details worth knowing:
 - **Unsplash images (cache-first with quota).** Size comes from `content-length`, or a 400 KB estimate for opaque responses. On `QuotaExceededError` the worker evicts and retries once.
 - **Everything else (network-first).** Successful responses are copied into `worksphere-v3`. When the network fails and nothing is cached, page navigations get the `/offline` page, other requests get `503`.
 
-## 5. IndexedDB Databases
+## 5. IndexedDB Databases & Crash-Safe Migration Protocol
 
-WorkSphere intentionally uses separate IndexedDB databases for distinct functional domains. Understanding this separation is critical when inspecting storage or making schema changes:
+WorkSphere intentionally uses separate IndexedDB databases for distinct functional domains, all governed by the declarative versioned migration registry in `src/lib/offline/migrations/migrationRegistry.ts` and coordinated across pages, tabs, Web Workers, and the Service Worker via `src/lib/offline/migrationCoordinator.ts`:
 
-1. **`worksphere-offline` (Primary PWA Store)**: The primary offline storage for venues, cached searches, review queues, image LRU tracking, and generic pending actions. Defined in `src/lib/offlineReviewSync.ts` and mirrored in the service worker (`public/sw.js`).
-2. **`WorkSphereOfflineDB` (Secondary Domain Outboxes)**: Dedicated outbox database for favorites, check-ins, and favorite tags. Defined in `src/lib/offline/db.ts` and used by `src/lib/offlineStore.ts`.
+1. **`worksphere-offline` (v9 — Primary PWA Store)**: Venues, cached searches, review queues, image LRU tracking, generic pending actions, and `pendingCheckins`.
+2. **`WorkSphereOfflineDB` (v3 — Secondary Domain Outboxes & Sync Queue)**: Unified `pending_sync_queue`, `pendingActions`, `pendingReviews`, notes, CRDT tombstones, and legacy `*-outbox` stores.
+3. **`WorkSphereBookingDB` (v2 — Encrypted Booking Drafts)**: `booking_drafts` with `venueId`, `userId`, and `updatedAt` indexes; preserves AES-GCM `encryptedPayload` envelopes and vector clocks across upgrades.
+4. **`WorkSphereOfflineMutationsDB` (v2 — Background Mutation Queue)**: `offline_mutations` with `status` and `timestamp` indexes; shared by `OfflineMutationQueue.ts` and `public/sw.js`.
+5. **`WorkSphereMigrationStateDB` (v1 — Durable Migration Checkpoints)**: Stores per-database migration checkpoints (`migration_checkpoints`) so interrupted data migrations resume deterministically from the last committed cursor.
 
 ---
 
 ### Database 1: `worksphere-offline` (Version 9)
 
 - **Database name:** `worksphere-offline`
-- **Version constant:** `DB_VERSION = 9` in `src/lib/offlineReviewSync.ts`
+- **Version constant:** `DB_VERSION = 9` in `src/lib/offlineReviewSync.ts` and `DEFAULT_OFFLINE_DB_VERSION = 9` in `src/lib/offline/syncQueue.ts`
 - **Service Worker version:** Opened at version `9` via `openIndexedDB()` in `public/sw.js`
-- **Open timeout:** 3 seconds. If `indexedDB.open` does not answer, the promise rejects with a `SecurityError`, which is what Safari Private Browsing causes. A one-time alert tells the user to leave Private Browsing.
+- **Open timeout:** 3 seconds (`SecurityError` surfaced for Safari Private Browsing).
 
 #### Object Stores in `worksphere-offline`
 
-Both the page-side code (`src/lib/offlineReviewSync.ts`) and the service worker (`public/sw.js`) define and maintain these 13 object stores:
+Both the page-side registry (`src/lib/offline/migrations/migrationRegistry.ts`) and the service worker (`public/sw.js`) define and maintain these 14 object stores:
 
-| Store                  | Key Path              | Indexes                           | Purpose                                                           |
-| ---------------------- | --------------------- | --------------------------------- | ----------------------------------------------------------------- |
-| `venues`               | `id`                  | `type`, `savedAt`                 | Saved venue records                                               |
-| `favorites`            | `id`                  | `savedAt`                         | Favorite venues (also updated by occupancy sync)                  |
-| `searches`             | `query`               | `timestamp`                       | Search history                                                    |
-| `pendingActions`       | `id` (auto-increment) | none                              | Generic queued actions (`crdt-sync`, `conversation-rename`, etc.) |
-| `imageCacheLRU`        | `url`                 | `lastAccessed`                    | LRU bookkeeping for the image cache quota                         |
-| `receiptExports`       | `bookingId`           | `status`, `createdAt`             | Receipt PDF export background jobs                                |
-| `pendingFavorites`     | `id` (auto-increment) | none                              | Queued favorite mutations                                         |
-| `availabilityDeltas`   | `venueId`             | `timestamp`                       | Last-known seat availability deltas                               |
-| `recentlyViewedVenues` | `id`                  | `viewedAt`                        | Recently viewed venue history                                     |
-| `pendingReviews`       | `id`                  | `venueId`, `status`, `createdAt`  | Offline review queue                                              |
-| `preference_rankings`  | `id`                  | none                              | Ranked venue preferences                                          |
-| `queued_reviews`       | `id`                  | `venueId`, `status`, `createdAt`  | Queued reviews for background replay                              |
-| `unsyncedReviewDrafts` | `id`                  | `review.venueId`, `quarantinedAt` | Quarantined review drafts exceeding retry limit                   |
+| Store                  | Key Path              | Indexes                                            | Purpose                                                           |
+| ---------------------- | --------------------- | -------------------------------------------------- | ----------------------------------------------------------------- |
+| `venues`               | `id`                  | `type`, `savedAt`                                  | Saved venue records                                               |
+| `favorites`            | `id`                  | `savedAt`                                          | Favorite venues (also updated by occupancy sync)                  |
+| `searches`             | `query`               | `timestamp`                                        | Search history                                                    |
+| `pendingActions`       | `id` (auto-increment) | none                                               | Generic queued actions (`crdt-sync`, `conversation-rename`, etc.) |
+| `imageCacheLRU`        | `url`                 | `lastAccessed`                                     | LRU bookkeeping for the image cache quota                         |
+| `receiptExports`       | `bookingId`           | `status`, `createdAt`                              | Receipt PDF export background jobs                                |
+| `pendingFavorites`     | `id` (auto-increment) | none                                               | Queued favorite mutations                                         |
+| `availabilityDeltas`   | `venueId`             | `timestamp`                                        | Last-known seat availability deltas                               |
+| `recentlyViewedVenues` | `id`                  | `viewedAt`                                         | Recently viewed venue history                                     |
+| `pendingReviews`       | `id`                  | `venueId`, `status`, `createdAt`                   | Offline review queue                                              |
+| `preference_rankings`  | `id`                  | none                                               | Ranked venue preferences                                          |
+| `queued_reviews`       | `id`                  | `venueId`, `status`, `createdAt`                   | Queued reviews for background replay                              |
+| `unsyncedReviewDrafts` | `id`                  | `review.venueId`, `quarantinedAt`                  | Quarantined review drafts exceeding retry limit                   |
+| `pendingCheckins`      | `id`                  | `seatId`, `idempotencyKey` (unique), `status`, `timestamp` | Offline desk check-ins with idempotency keys              |
 
 ---
 
@@ -149,46 +157,28 @@ Both the page-side code (`src/lib/offlineReviewSync.ts`) and the service worker 
 
 - **Database name:** `WorkSphereOfflineDB`
 - **Version constant:** `OFFLINE_DB_VERSION = 3` in `src/lib/offline/db.ts`
-- **Opened by:** `src/lib/offlineStore.ts` and `src/lib/offline/db.ts`
-- **Stores:** `favorites-outbox`, `checkins-outbox`, `favorite-tags-outbox`
-- **Note:** `src/lib/offline/db.ts` is **not** the version authority for `worksphere-offline`.
+- **Opened by:** `src/lib/offlineStore.ts` and `src/lib/offline/db.ts` via `openDatabaseWithMigration("WorkSphereOfflineDB")`
+- **Stores:** All 17 unified outbox and domain stores (`venues`, `favorites`, `searches`, `pending_sync_queue`, `pendingActions`, `receiptExports`, `pendingFavorites`, `preference_rankings`, `recentlyViewedVenues`, `pendingReviews`, `pending_notes_queue`, `notes_cache`, `favorite_tags`, `crdt_tombstones`, `favorites-outbox`, `checkins-outbox`, `favorite-tags-outbox`).
 
 ---
 
-### Schema Upgrade Protocol & VersionError Prevention
+### Crash-Safe Schema & Data Migration Protocol
 
-IndexedDB upgrades are additive and idempotent. Every store creation is guarded:
-
-```ts
-if (!database.objectStoreNames.contains("example")) {
-  database.createObjectStore("example", { keyPath: "id" });
-}
-```
-
-#### Understanding IndexedDB `VersionError`
-
-Per the W3C IndexedDB specification, opening a database with a requested version lower than the version already established on disk triggers a fatal `VersionError`:
-
-> `VersionError: The requested version (X) is less than the existing version (Y).`
-
-This error occurs when page-side code upgrades `worksphere-offline` (e.g. to version 9) while the Service Worker in `public/sw.js` requests an older version (e.g. version 7). Because the Service Worker runs in a separate execution context, a version mismatch prevents the worker from opening the database, breaking background sync and offline action replay.
-
-#### Upgrade Lifecycle Handling:
-
-1. **`onversionchange`:** When a newer version is requested by another tab or context, the currently open connection closes itself gracefully and clears its cached instance (`swDb.close(); swDb = null;`), allowing the pending upgrade transaction to proceed.
-2. **`onblocked`:** If another open connection fails to close immediately, the upgrade is blocked. Both client and worker log a warning and ensure inactive connections are closed.
-3. **Upgrade Transaction Protection:** Errors on `transaction.onabort` and `transaction.onerror` are logged, rejecting the open request without corrupting database state.
+1. **Ordered Structural Steps:** `onupgradeneeded` executes registered steps strictly in ascending `version` order (`oldVersion < step.version <= newVersion`), preserving existing stores and indexes.
+2. **Multi-Context Coordination:** Before upgrading, `migrationCoordinator.ts` acquires a per-database Web Lock (`worksphere:idb-migration:<dbName>`), broadcasts `UPGRADE_REQUESTED` on `BroadcastChannel("worksphere:idb-migration-coordination")`, and closes local handles on `onversionchange` / `onblocked`. Contexts refuse new transactions against outdated/upgrading connections (`STALE_SCHEMA_CONTEXT`).
+3. **Downgrade Prevention:** If `indexedDB.databases()` (or `VersionError`) indicates an on-disk version higher than the requesting context's target version, the coordinator throws `MigrationError("VERSION_DOWNGRADE")` and never deletes existing stores.
+4. **Resumable Data Migrations:** Long-running payload adaptations run in bounded cursor batches outside `onupgradeneeded` via `runResumableStoreDataMigration`, checkpointing `(storeIdx, key)` into `WorkSphereMigrationStateDB` after each committed batch. Interrupted or quota-failed runs resume from the last committed cursor without duplicating work or reverting completed statuses.
+5. **Failure Classification & Diagnostics:** Errors are classified into `BLOCKED_UPGRADE`, `QUOTA_EXCEEDED`, `TRANSACTION_ABORTED`, `VERSION_DOWNGRADE`, `MALFORMED_RECORD`, and `SCHEMA_VALIDATION_FAILED`, logged via `getMigrationDiagnostics(dbName)` without exposing sensitive payload content, and propagated rather than resolving silently.
 
 ### Developer Checklist for IndexedDB Schema Changes
 
-When modifying the schema of `worksphere-offline`:
+When modifying any IndexedDB schema:
 
-- [ ] 1. Update `src/lib/offlineReviewSync.ts`: add/update store in `request.onupgradeneeded` and increment `DB_VERSION`.
-- [ ] 2. Update `public/sw.js`: mirror the store creation in `request.onupgradeneeded` and increment `indexedDB.open("worksphere-offline", NEW_VERSION)`.
-- [ ] 3. Ensure both contexts implement `onversionchange` (`db.close()`) to avoid blocking upgrades.
-- [ ] 4. Guard all store creations with `if (!db.objectStoreNames.contains("..."))`.
-- [ ] 5. Run regression tests verifying that Service Worker opens the database without `VersionError`.
-- [ ] 6. Update this runbook and `PWA_OFFLINE_GUIDE.md`.
+- [ ] 1. Add a deterministic, idempotent `StructuralMigrationStep` (and optional resumable `DataMigrationStep`) to `src/lib/offline/migrations/migrationRegistry.ts`, update `requiredStores`, and bump `currentVersion`.
+- [ ] 2. Mirror any `worksphere-offline` or `WorkSphereOfflineMutationsDB` structural changes and version bumps in `public/sw.js`.
+- [ ] 3. Update any payload compatibility adapters in `src/lib/offline/migrations/payloadAdapters.ts`, preserving unknown fields, idempotency keys, encrypted envelopes, and terminal statuses.
+- [ ] 4. Run regression tests in `src/__tests__/offline/` and `src/__tests__/lib/swIndexedDBVersion.test.ts`.
+- [ ] 5. Update this runbook.
 
 ## 6. Background sync
 
@@ -308,3 +298,8 @@ These came up while writing this runbook and are worth checking before relying o
 1. **Precache copy.** `install` writes the precache entries into `worksphere-v3-installing`, and `activate` deletes any cache ending in `-installing`. In the code reviewed, nothing copies those entries into `worksphere-v3`, so `/offline` becomes available offline only after it has been fetched once through the normal network-first path.
 2. **Venue photo cache and activate.** `worksphere-venue-photos-v1` is used by the fetch handler but is not in the activate keep list, so the activate step would delete it. Confirm in Cache storage after an activate and add it to the keep list if it is meant to persist.
 3. **Worker vs client DB version.** See section 5. The two numbers should always match.
+4. **Crash-Safe Multi-Context Migration Protocol (`#10169`).**
+   - IndexedDB connections across tabs, windows, and service workers are coordinated via `BroadcastChannel("worksphere:idb-migrations")`.
+   - All open connections register `onversionchange` handlers and automatically call `db.close()` to prevent blocking upgrades (`onblocked`).
+   - Structural migrations execute deterministically inside `onupgradeneeded` using declarative migration registries (`src/lib/offline/migrations/`).
+   - Step progress (`MIGRATION_PROGRESS_STORE`) tracks upgrade completion so failed or interrupted upgrades can be safely detected and resumed without dropping pending offline queues.

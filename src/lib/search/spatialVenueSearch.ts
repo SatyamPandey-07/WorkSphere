@@ -48,6 +48,7 @@ export interface SpatialVenueSearchRow {
   outletDensity: number | null;
   rating: number | null;
   distanceMeters: number;
+  distanceKm: number;
 }
 
 /**
@@ -150,10 +151,16 @@ export async function searchVenuesWithinRadius(
     LIMIT ${input.limit}
   `);
 
-  return rows.map((row) => ({
-    ...row,
-    distanceMeters: Number(row.distanceMeters),
-  }));
+  return rows
+    .map((row) => {
+      const distanceMeters = Number(row.distanceMeters);
+      return {
+        ...row,
+        distanceMeters,
+        distanceKm: Number((distanceMeters / 1000).toFixed(1)),
+      };
+    })
+    .sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
 export const DEFAULT_SEARCH_RADIUS_METERS = 5000;

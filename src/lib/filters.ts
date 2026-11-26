@@ -6,9 +6,7 @@ export const VENUE_FILTERS = {
   quiet: { type: "boolean" as const, default: false },
   ergonomic: { type: "boolean" as const, default: false },
   standingDesk: { type: "boolean" as const, default: false },
-  standing_desks: { type: "boolean" as const, default: false },
-  externalMonitors: { type: "boolean" as const, default: false },
-  external_monitors: { type: "boolean" as const, default: false },
+  externalMonitor: { type: "boolean" as const, default: false },
   outletDensity: {
     type: "enum" as const,
     values: ["every_table", "some_tables", "wall_seats", "none"] as const,
@@ -83,6 +81,8 @@ interface VenueLike {
   hasOutlets?: boolean;
   noiseLevel?: string;
   hasErgonomic?: boolean;
+  hasStandingDesk?: boolean;
+  hasExternalMonitor?: boolean;
   outletDensity?: string;
   wifiSpeed?: number | null;
   hasPhoneBooths?: boolean;
@@ -175,43 +175,22 @@ export function applyFilters<T extends object>(
         case "ergonomic":
           return venue.hasErgonomic === true;
         case "standingDesk":
-        case "standing_desks":
-          return (
-            (venue as any).standing_desks === true ||
-            (venue as any).hasStandingDesks === true ||
-            venue.amenities?.includes("standing_desk") === true ||
-            venue.amenities?.includes("standing_desks") === true ||
-            (Array.isArray(venue.validations) &&
-              venue.validations.some(
-                (validation) =>
-                  typeof validation?.amenity === "string" &&
-                  (validation.amenity.toLowerCase() === "standing_desk" ||
-                    validation.amenity.toLowerCase() === "standing_desks") &&
-                  typeof validation.upvotes === "number" &&
-                  validation.upvotes > 0,
-              ))
-          );
-        case "externalMonitors":
-        case "external_monitors":
-          return (
-            (venue as any).external_monitors === true ||
-            (venue as any).hasExternalMonitors === true ||
-            venue.amenities?.includes("external_monitors") === true ||
-            venue.amenities?.includes("external_monitor") === true ||
-            (Array.isArray(venue.validations) &&
-              venue.validations.some(
-                (validation) =>
-                  typeof validation?.amenity === "string" &&
-                  (validation.amenity.toLowerCase() === "external_monitors" ||
-                    validation.amenity.toLowerCase() === "external_monitor") &&
-                  typeof validation.upvotes === "number" &&
-                  validation.upvotes > 0,
-              ))
-          );
+          return venue.hasStandingDesk === true;
+        case "externalMonitor":
+          return venue.hasExternalMonitor === true;
         case "outletDensity":
           return matchesOutletDensity(venue, value as string);
         case "wifiSpeedBand":
           return matchesWifiSpeedBand(venue, value as string);
+        case "minWifiSpeed": {
+          const target = typeof value === "number" ? value : Number(value);
+          if (isNaN(target)) return true;
+          const speed =
+            typeof venue.wifiSpeed === "number"
+              ? venue.wifiSpeed
+              : Number(venue.wifiSpeed);
+          return !isNaN(speed) && speed >= target;
+        }
         case "hasPhoneBooths":
           return venue.hasPhoneBooths === true;
         case "hasAncHeadsetRental":
@@ -305,6 +284,7 @@ export function buildVenueSearchSchema() {
       .optional(),
     semanticWeight: z.coerce.number().min(0).max(100).optional(),
     fullTextWeight: z.coerce.number().min(0).max(100).optional(),
+    minWifiSpeed: z.coerce.number().min(0).optional(),
   };
 
   for (const [key, config] of Object.entries(VENUE_FILTERS)) {

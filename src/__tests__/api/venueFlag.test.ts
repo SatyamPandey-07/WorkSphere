@@ -1,4 +1,4 @@
-﻿import { POST } from "@/app/api/venues/[venueId]/flag/route";
+import { POST } from "@/app/api/venues/[venueId]/flag/route";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { rateLimit } from "@/lib/rateLimit";
@@ -84,6 +84,22 @@ describe("POST /api/venues/[venueId]/flag", () => {
         reportedById: "user-123",
       }),
     });
+  });
+
+  it("returns a structured 400 error when reason exceeds 100 characters", async () => {
+    const response = await POST(
+      makeRequest("venue-123", { reason: "x".repeat(101) }),
+      { params: Promise.resolve({ venueId: "venue-123" }) },
+    );
+
+    expect(response.status).toBe(400);
+
+    const data = await response.json();
+    expect(data.code).toBe("VALIDATION_FAILED");
+    expect(data.details.reason).toContain(
+      "Reason must be at most 100 characters",
+    );
+    expect(prisma.flaggedItem.create).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid reason", async () => {

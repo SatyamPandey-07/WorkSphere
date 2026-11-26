@@ -36,6 +36,8 @@ export interface AmenityConsensusEvaluation {
   probability: number;
   effectiveSampleSize: number;
   settlementEligible: boolean;
+  disputeEscalated?: boolean;
+  settlementDeadline?: number;
   consensusDirection: "upvote" | "downvote" | "inconclusive";
   ruleVersion: string;
   snapshot?: SettlementSnapshot;

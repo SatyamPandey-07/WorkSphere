@@ -57,8 +57,20 @@ export function sanitizeFilenameSegment(
   raw: string | null | undefined,
   fallback = "pass",
 ): string {
+  const safeFallback =
+    typeof fallback === "string" && fallback.trim().length > 0
+      ? fallback
+          .normalize("NFKD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(INVALID_FILENAME_CHARS_REGEX, "-")
+          .replace(NON_SAFE_CHAR_REGEX, "-")
+          .replace(/-{2,}/g, "-")
+          .replace(/^[-.]+|[-.]+$/g, "")
+          .slice(0, 64) || "pass"
+      : "pass";
+
   if (typeof raw !== "string") {
-    return fallback;
+    return safeFallback;
   }
 
   const cleaned = raw
@@ -70,7 +82,7 @@ export function sanitizeFilenameSegment(
     .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, 64);
 
-  return cleaned.length > 0 ? cleaned : fallback;
+  return cleaned.length > 0 ? cleaned : safeFallback;
 }
 
 export function buildDeskPassPngFilename(

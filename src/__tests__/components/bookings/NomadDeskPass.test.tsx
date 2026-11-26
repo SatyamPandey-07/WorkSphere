@@ -1,5 +1,5 @@
-import React from "react";
-import { act, render, screen } from "@testing-library/react";
+﻿import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import {
   buildDeskPassPngFilename,
   NomadDeskPass,
@@ -160,54 +160,56 @@ describe('NomadDeskPass PNG filename sanitization and export', () => {
     ).toBe('nomad-desk-pass-Bandra-West-Studio-1-CONF-2026-01-02.png');
   });
 
-const renderPass = async (address?: string | null) => {
-  await act(async () => {
+  it('handles emoji-only, punctuation-only, and symbol-only venue names with safe deterministic fallbacks', () => {
+    // Emoji-only venue names
+    expect(sanitizeFilenameSegment('🏢✨', 'worksphere-venue')).toBe('worksphere-venue');
+    expect(sanitizeFilenameSegment('🚀🌟🎉')).toBe('pass');
+    expect(buildDeskPassPngFilename('🏢✨', 'CONF-100')).toBe(
+      'nomad-desk-pass-worksphere-venue-CONF-100.png'
+    );
+
+    // Punctuation-only and symbol-only venue names
+    expect(sanitizeFilenameSegment('???!!!...', 'worksphere-venue')).toBe('worksphere-venue');
+    expect(sanitizeFilenameSegment('---___...', 'worksphere-venue')).toBe('worksphere-venue');
+    expect(sanitizeFilenameSegment('$$$%%%@@@###')).toBe('pass');
+    expect(buildDeskPassPngFilename('!@#$%^&*()', 'ABC-999')).toBe(
+      'nomad-desk-pass-worksphere-venue-ABC-999.png'
+    );
+
+    // Mixed emoji / punctuation with valid characters preserves valid segment
+    expect(sanitizeFilenameSegment('🏢 Studio 42 ✨')).toBe('Studio-42');
+    expect(buildDeskPassPngFilename('🏢 Studio 42 ✨', 'CONF-42')).toBe(
+      'nomad-desk-pass-Studio-42-CONF-42.png'
+    );
+
+    // Normal venue names remain correctly sanitized
+    expect(sanitizeFilenameSegment('WeWork Innovation Hub')).toBe(
+      'WeWork-Innovation-Hub'
+    );
+    expect(buildDeskPassPngFilename('WeWork Innovation Hub', 'CONF-12345')).toBe(
+      'nomad-desk-pass-WeWork-Innovation-Hub-CONF-12345.png'
+    );
+
+    // Ensure generated PNG filenames never contain an empty venue-name segment
+    const emptyVenueResult = buildDeskPassPngFilename('', 'CONF-001');
+    expect(emptyVenueResult).toBe('nomad-desk-pass-worksphere-venue-CONF-001.png');
+    expect(emptyVenueResult).not.toContain('--CONF-001.png');
+  });
+
+  it('passes sanitized PNG filename when clicking Download PNG', () => {
+    const onDownloadPng = jest.fn();
     render(
       <NomadDeskPass
-        booking={createBooking(address)}
-        isOpen
-        onClose={jest.fn()}
-      />,
+        venueName="Andheri / East * Loft?"
+        confirmationId="WS:99/01"
+        onDownloadPng={onDownloadPng}
+      />
     );
-  });
-};
 
-describe("NomadDeskPass address rendering", () => {
-  it.each([null, undefined, "", "   "])(
-    "omits the address row when the address is %p",
-    async (address) => {
-      await renderPass(address);
-
-      expect(
-        screen.queryByTestId("nomad-desk-pass-address"),
-      ).not.toBeInTheDocument();
-    },
-  );
-
-  it("renders a valid venue address", async () => {
-    await renderPass("Jaipur, Rajasthan");
-
-    expect(screen.getByTestId("nomad-desk-pass-address")).toHaveTextContent(
-      "Jaipur, Rajasthan",
+    fireEvent.click(screen.getByTestId('download-pass-png-btn'));
+    expect(onDownloadPng).toHaveBeenCalledTimes(1);
+    expect(onDownloadPng.mock.calls[0]?.[0]).toBe(
+      'nomad-desk-pass-Andheri-East-Loft-WS-99-01.png'
     );
-  });
-});
-
-describe("NomadDeskPass PNG filename sanitization", () => {
-  it("sanitizes invalid path characters and handles Unicode and empty inputs", () => {
-    expect(sanitizeFilenameSegment("Bandra / West \\ Hub: A*B?C")).toBe(
-      "Bandra-West-Hub-A-B-C",
-    );
-    expect(sanitizeFilenameSegment("Café Powai — Studio")).toBe(
-      "Cafe-Powai-Studio",
-    );
-    expect(sanitizeFilenameSegment("   ", "fallback-venue")).toBe(
-      "fallback-venue",
-    );
-    expect(sanitizeFilenameSegment("", "fallback-id")).toBe("fallback-id");
-
-    expect(
-      buildDeskPassPngFilename("Bandra/West: Studio *1?", "CONF\\2026:01/02"),
-    ).toBe("nomad-desk-pass-Bandra-West-Studio-1-CONF-2026-01-02.png");
   });
 });

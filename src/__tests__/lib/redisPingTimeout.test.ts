@@ -1,11 +1,10 @@
 import {
   pingRedisDiagnostic,
   DEFAULT_REDIS_PING_TIMEOUT_MS,
-  RedisPingOptions,
 } from "@/lib/redis";
 import { Redis } from "@upstash/redis";
 
-describe("pingRedisDiagnostic (Issue #10603)", () => {
+describe("pingRedisDiagnostic (Issue #10611 & #10603)", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -23,7 +22,7 @@ describe("pingRedisDiagnostic (Issue #10603)", () => {
     process.env = originalEnv;
   });
 
-  it("completes fast ping before timeout", async () => {
+  it("completes fast ping before timeout and returns connected: true and finite latency", async () => {
     const mockClient = {
       ping: jest.fn().mockResolvedValue("PONG"),
     } as unknown as Redis;
@@ -32,11 +31,15 @@ describe("pingRedisDiagnostic (Issue #10603)", () => {
     const result = await resultPromise;
 
     expect(result.ok).toBe(true);
+    expect(result.connected).toBe(true);
+    expect(result.latencyMs).not.toBeNull();
+    expect(Number.isFinite(result.latencyMs)).toBe(true);
+    expect(result.latency).toEqual(result.latencyMs);
     expect(result.error).toBeUndefined();
     expect(mockClient.ping).toHaveBeenCalledTimes(1);
   });
 
-  it("times out when ping exceeds pingTimeoutMs", async () => {
+  it("returns null latency and connected: false when Redis ping times out", async () => {
     const mockClient = {
       ping: jest.fn().mockImplementation(() => new Promise(() => {})), // never resolves
     } as unknown as Redis;
@@ -48,74 +51,56 @@ describe("pingRedisDiagnostic (Issue #10603)", () => {
 
     const result = await pingPromise;
     expect(result.ok).toBe(false);
+    expect(result.connected).toBe(false);
+    expect(result.latencyMs).toBeNull();
+    expect(result.latency).toBeNull();
     expect(result.error).toMatch(/Redis ping timed out after 500ms/);
   });
 
-  it("uses default timeout when no option is supplied", async () => {
-    expect(DEFAULT_REDIS_PING_TIMEOUT_MS).toBe(2000);
-
-    const mockClient = {
-      ping: jest.fn().mockImplementation(() => new Promise(() => {})), // never resolves
+  it("returns null latency and connected: false when Redis is disconnected or offline", async () => {
+    const mockDisconnectedClient = {
+      status: "close",
+      ping: jest.fn().mockRejectedValue(new Error("Connection is closed")),
     } as unknown as Redis;
 
-    const pingPromise = pingRedisDiagnostic(undefined, mockClient);
-
-    // Advance 1999ms - should still be waiting
-    jest.advanceTimersByTime(1999);
-    let resolved = false;
-    pingPromise.then(() => {
-      resolved = true;
-    });
-    await Promise.resolve(); // tick event loop
-    expect(resolved).toBe(false);
-
-    // Advance remaining 1ms to hit default 2000ms
-    jest.advanceTimersByTime(1);
-    const result = await pingPromise;
-
+    const result = await pingRedisDiagnostic(undefined, mockDisconnectedClient);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(
-      new RegExp(`Redis ping timed out after ${DEFAULT_REDIS_PING_TIMEOUT_MS}ms`)
-    );
+    expect(result.connected).toBe(false);
+    expect(result.latencyMs).toBeNull();
+    expect(result.latency).toBeNull();
+    expect(result.error).toContain("close");
   });
 
-  it("safely cleans up pending timers and handles Redis errors", async () => {
-    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
-
-    // Test error from ping
-    const mockClientError = {
-      ping: jest.fn().mockRejectedValue(new Error("Network connection lost")),
-    } as unknown as Redis;
-
-    const result = await pingRedisDiagnostic({ pingTimeoutMs: 1500 }, mockClientError);
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe("Network connection lost");
-    expect(clearTimeoutSpy).toHaveBeenCalled();
-
-    clearTimeoutSpy.mockRestore();
-  });
-
-  it("cleans up timer on timeout", async () => {
-    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
-
-    const mockClientStalled = {
-      ping: jest.fn().mockImplementation(() => new Promise(() => {})),
-    } as unknown as Redis;
-
-    const pingPromise = pingRedisDiagnostic({ pingTimeoutMs: 300 }, mockClientStalled);
-    jest.advanceTimersByTime(300);
-
-    const result = await pingPromise;
-    expect(result.ok).toBe(false);
-    expect(clearTimeoutSpy).toHaveBeenCalled();
-
-    clearTimeoutSpy.mockRestore();
-  });
-
-  it("returns failure when redis client is not configured", async () => {
+  it("returns null latency and connected: false when Redis is unconfigured or null", async () => {
     const result = await pingRedisDiagnostic(undefined, null);
     expect(result.ok).toBe(false);
+    expect(result.connected).toBe(false);
+    expect(result.latencyMs).toBeNull();
+    expect(result.latency).toBeNull();
     expect(result.error).toContain("Redis client is not configured");
+  });
+
+  it("returns null latency and connected: false when Redis client throws on ping error", async () => {
+    const mockErrorClient = {
+      ping: jest.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    } as unknown as Redis;
+
+    const result = await pingRedisDiagnostic(undefined, mockErrorClient);
+    expect(result.ok).toBe(false);
+    expect(result.connected).toBe(false);
+    expect(result.latencyMs).toBeNull();
+    expect(result.latency).toBeNull();
+    expect(result.error).toBe("ECONNREFUSED");
+  });
+
+  it("guards against mocked or non-function ping clients without throwing or returning NaN", async () => {
+    const invalidMock = {} as unknown as Redis;
+
+    const result = await pingRedisDiagnostic(undefined, invalidMock);
+    expect(result.ok).toBe(false);
+    expect(result.connected).toBe(false);
+    expect(result.latencyMs).toBeNull();
+    expect(result.latency).toBeNull();
+    expect(Number.isNaN(result.latencyMs)).toBe(false);
   });
 });

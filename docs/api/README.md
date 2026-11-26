@@ -13,7 +13,16 @@ WorkSphere enforces per-client / per-key rate limits using Redis token buckets (
 | `X-RateLimit-Reset`     | Integer / Epoch Seconds        | Unix timestamp (in seconds) when the rate-limit window or bucket refill resets.                                          |
 | `Retry-After`           | Integer (seconds) or HTTP-date | Recommended wait time before retrying a `429` request—either seconds until retry or an HTTP date string (`IMF-fixdate`). |
 
-### TypeScript / JavaScript Example: Parsing `Retry-After` & Exponential Backoff
+- [Date filter formats](./DATE_FILTER_FORMATS.md) — supported calendar dates, RFC 3339 timestamps, relative windows, aliases, and 400 error responses.
+- [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
+- [Bookings](./bookings.md)
+- [Cafe orders](./cafe-orders.md)
+- [Message translation](./message-translation.md)
+- [Partition export](./partition-export.md)
+- [Semantic search](./semantic-search.md)
+- [Solana Pay](./solana-pay.md)
+- [Telemetry](./telemetry.md)
+- [Telemetry Batch Ingestion](./telemetry-batch.md)
 
 ```typescript
 export interface RetryAfterOptions {

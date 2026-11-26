@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import {
   NOISE_ALERT_PREFS_STORAGE_KEY,
+  NOISE_ALERT_SNOOZE_DURATIONS_MS,
   SoundLevelMeter,
 } from '@/components/audio/SoundLevelMeter';
 import { NoiseLevelSlider } from '@/components/venues/NoiseLevelSlider';
@@ -117,5 +118,83 @@ describe('SoundLevelMeter & NoiseLevelSlider Peak Noise Alert Toast (#9609)', ()
     fireEvent.click(muteBtn);
     expect(onAlertPrefsChange).toHaveBeenLastCalledWith({ thresholdDb: 70, muted: true });
     expect(muteBtn).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('renders 5m/15m/30m snooze selector alongside peak alert toast and suppresses repeat alerts until snooze expires', () => {
+    const onViolation = jest.fn();
+    const { rerender } = render(
+      <SoundLevelMeter decibels={72} onThresholdViolation={onViolation} />
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(screen.getByTestId('noise-peak-alert-toast')).toBeInTheDocument();
+    expect(onViolation).toHaveBeenCalledTimes(1);
+
+    const snoozeSelect = screen.getByTestId('noise-alert-snooze-select') as HTMLSelectElement;
+    expect(Array.from(snoozeSelect.options).map((o) => o.text)).toEqual(['5m', '15m', '30m']);
+
+    // Select 15m and snooze
+    fireEvent.change(snoozeSelect, { target: { value: '15' } });
+    fireEvent.click(screen.getByTestId('snooze-noise-alerts-btn'));
+
+    expect(screen.queryByTestId('noise-peak-alert-toast')).not.toBeInTheDocument();
+    expect(screen.getByTestId('noise-alert-snoozed-badge')).toHaveTextContent('Snoozed (15m)');
+
+    // Even if noise drops and spikes again while snoozed, repeat alerts are suppressed
+    rerender(<SoundLevelMeter decibels={50} onThresholdViolation={onViolation} />);
+    rerender(<SoundLevelMeter decibels={78} onThresholdViolation={onViolation} />);
+    act(() => {
+      jest.advanceTimersByTime(NOISE_ALERT_SNOOZE_DURATIONS_MS[15] - 1000);
+    });
+    expect(screen.queryByTestId('noise-peak-alert-toast')).not.toBeInTheDocument();
+    expect(onViolation).toHaveBeenCalledTimes(1);
+
+    // Advance past 15m snooze expiry + 3s sustained threshold window -> re-triggers alert
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByTestId('noise-alert-snoozed-badge')).not.toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(screen.getByTestId('noise-peak-alert-toast')).toBeInTheDocument();
+    expect(onViolation).toHaveBeenCalledTimes(2);
+  });
+
+  it('supports 5m and 30m snooze durations and allows resuming alerts early', () => {
+    const onViolation = jest.fn();
+    render(<SoundLevelMeter decibels={74} onThresholdViolation={onViolation} />);
+
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(onViolation).toHaveBeenCalledTimes(1);
+
+    // Snooze for 30m
+    fireEvent.change(screen.getByTestId('noise-alert-snooze-select'), {
+      target: { value: '30' },
+    });
+    fireEvent.click(screen.getByTestId('snooze-noise-alerts-btn'));
+    expect(screen.getByTestId('noise-alert-snoozed-badge')).toHaveTextContent('Snoozed (30m)');
+
+    // Advance 5m — still snoozed under 30m selection
+    act(() => {
+      jest.advanceTimersByTime(NOISE_ALERT_SNOOZE_DURATIONS_MS[5] + 3000);
+    });
+    expect(screen.queryByTestId('noise-peak-alert-toast')).not.toBeInTheDocument();
+    expect(onViolation).toHaveBeenCalledTimes(1);
+
+    // Clear snooze early by clicking the snoozed badge
+    fireEvent.click(screen.getByTestId('noise-alert-snoozed-badge'));
+    expect(screen.queryByTestId('noise-alert-snoozed-badge')).not.toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    expect(screen.getByTestId('noise-peak-alert-toast')).toBeInTheDocument();
+    expect(onViolation).toHaveBeenCalledTimes(2);
   });
 });

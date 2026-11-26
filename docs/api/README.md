@@ -18,5 +18,6 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Semantic search](./semantic-search.md)
 - [Solana Pay](./solana-pay.md)
 - [Telemetry](./telemetry.md)
+- [Telemetry Batch Ingestion](./telemetry-batch.md)
 
 For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).

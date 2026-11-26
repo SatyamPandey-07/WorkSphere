@@ -84,13 +84,13 @@ graph TD
 
 Below is the complete list of rate-limited routes implemented in the codebase:
 
-| Endpoint                         | Method |  Default Limit   | Purpose                                                                 |
-| :------------------------------- | :----: | :--------------: | :---------------------------------------------------------------------- |
-| `POST /api/chat`                 | `POST` | **20 req / min** | Protects the Groq LLM API from query abuse and token credit exhaustion. |
-| `POST /api/auth/forgot-password` | `POST` | **3 req / min**  | Prevents email spam, account enumeration, and dictionary attacks.       |
-| `POST /api/auth/resend-otp`      | `POST` | **3 req / min**  | Limits outbound OTP codes to protect SMS/email carrier budgets.         |
-| `POST /api/auth/reset-password`  | `POST` | **5 req / min**  | Prevents brute-forcing user credentials during password recovery.       |
-| `POST /api/auth/verify-otp`      | `POST` | **5 req / min**  | Prevents credential-stuffing and guess attacks against OTP codes.       |
+| Endpoint                         | Method |   Default Limit    | Purpose                                                                 |
+| :------------------------------- | :----: | :----------------: | :---------------------------------------------------------------------- |
+| `POST /api/chat`                 | `POST` |  **20 req / min**  | Protects the Groq LLM API from query abuse and token credit exhaustion. |
+| `POST /api/auth/forgot-password` | `POST` |  **3 req / min**   | Prevents email spam, account enumeration, and dictionary attacks.       |
+| `POST /api/auth/resend-otp`      | `POST` | Retired (HTTP 410) | Retired legacy endpoint (replaced by Clerk native password reset).      |
+| `POST /api/auth/reset-password`  | `POST` |  **5 req / min**   | Prevents brute-forcing user credentials during password recovery.       |
+| `POST /api/auth/verify-otp`      | `POST` |  **5 req / min**   | Prevents credential-stuffing and guess attacks against OTP codes.       |
 
 > [!IMPORTANT]
 > **Venue Search Route Limits**

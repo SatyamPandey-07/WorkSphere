@@ -1,6 +1,6 @@
 # `usePlatformModifier`: OS Platform Detection, SSR Hydration Safety & Keyboard Badges
 
-This document details the architecture, operating system detection algorithm, Server-Side Rendering (SSR) hydration safety patterns, and integration recipes for the **`usePlatformModifier`** React hook ([`src/hooks/usePlatformModifier.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/usePlatformModifier.ts)).
+This document details the architecture, operating system detection algorithm, Server-Side Rendering (SSR) hydration safety patterns, and integration recipes for the **`usePlatformModifier`** React hook ([`src/hooks/usePlatformModifier.ts`](../../src/hooks/usePlatformModifier.ts)).
 
 ---
 
@@ -104,7 +104,7 @@ Because initial state on both the server and client starts at `isMac = false`, R
 
 ## 4. Integration with `KeyboardShortcutBadge`
 
-WorkSphere's [`KeyboardShortcutBadge.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/KeyboardShortcutBadge.tsx) consumes `usePlatformModifier` to render clean keyboard hints across search bars and menus.
+WorkSphere's [`KeyboardShortcutBadge.tsx`](../../src/components/ui/KeyboardShortcutBadge.tsx) consumes `usePlatformModifier` to render clean keyboard hints across search bars and menus.
 
 ### 4.1 Component Implementation Overview
 

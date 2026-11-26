@@ -159,6 +159,21 @@ Binary PDF download.
 | `ACCEPTED` | Guest confirmed attendance |
 | `DECLINED` | Guest declined the invitation |
 
+> [!NOTE]
+> **RSVP Attendance vs. Payment Status:**
+> An `ACCEPTED` status indicates solely that the guest confirmed attendance via the invitation link. It does **not** indicate that the guest has paid their split share. Payment state is tracked separately via `paidAt`.
+
+---
+
+## Split Bill Payments & Digital Guest Passes
+
+While the `/api/bookings/{bookingId}/guests` endpoints handle guest invitations, attendance tracking, and RSVP responses, split-bill payment collection and digital guest pass issuance are managed separately via signed split-payment token endpoints:
+
+- `GET /api/payments/split/{token}` — Verifies the split payment token and returns checkout details, host info, and venue amenities.
+- `POST /api/payments/split/{token}` — Idempotently records payment for the guest share (`paidAt`, `paidAmountCents`, `paidCurrency`) and unlocks a digital guest pass with Wi-Fi access credentials.
+
+For full technical specifications, signed token formats, idempotency guarantees, and error contracts, see the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md).
+
 ---
 
 ## Error Response Schema

@@ -5,7 +5,6 @@ import {
   Star,
   Wifi,
   Zap,
-  Volume2,
   Navigation,
   Heart,
   Headphones,
@@ -31,6 +30,8 @@ import {
   BadgeCheck,
   Music,
   Sunset,
+  Monitor,
+  ArrowUpDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -56,6 +57,7 @@ const AmbientSoundPlayer = dynamic(
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { MachSpeedBadge } from "@/components/ui/NoiseLevelBadge";
+import { VenueSoundBadge } from "@/components/venue/VenueSoundBadge";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getVenueHoursStatus } from "@/lib/venueHours";
@@ -234,6 +236,10 @@ interface VoteMetricState {
   hidden: boolean;
   userVote: boolean | null;
 }
+
+// Shared keyboard focus style for the card's icon and action controls (#7941).
+const ACTION_FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500";
 
 export function VenueCard({
   venue,
@@ -828,7 +834,7 @@ export function VenueCard({
                       : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
                 return (
                   <span
-                    className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+                    className={`mt-0.5 inline-flex max-w-full items-center whitespace-nowrap px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
                     title={`${Math.round(pct)}% occupancy — ${label}`}
                     aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
                   >
@@ -840,12 +846,13 @@ export function VenueCard({
           <button
             onClick={handleFavorite}
             disabled={isSavingFavorite}
+            aria-pressed={isFavorited}
             aria-label={
               isFavorited
                 ? `Remove ${venue.name} from favorites`
                 : `Add ${venue.name} to favorites`
             }
-            className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`venue-action-glass-btn p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:backdrop-blur-md ${ACTION_FOCUS_RING} ${
               enableTransition ? "transition-colors duration-300" : ""
             } ${
               isFavorited
@@ -864,7 +871,7 @@ export function VenueCard({
         {/* Rating & Category */}
         <div className="flex items-center gap-3 mb-3">
           <div
-            className="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+            className="inline-flex items-center gap-1 leading-none font-medium text-amber-500 dark:text-amber-400"
             data-testid="star-rating-container"
           >
             <Star
@@ -911,6 +918,8 @@ export function VenueCard({
                 </span>
               </div>
             )}
+            {/* The wheelchair flag comes from the OSM `wheelchair=yes` tag.
+                Audit criteria and what "Accessible" means: docs/accessibility-audit.md */}
             {amenities.wheelchair && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Accessibility className="w-3 h-3 shrink-0" />
@@ -919,6 +928,21 @@ export function VenueCard({
                 </span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Gigabit Verified Badge (#9893) */}
+        {((typeof venue.wifiSpeed === "number" && venue.wifiSpeed >= 100) ||
+          (typeof venue.amenities?.wifiSpeed === "number" &&
+            venue.amenities.wifiSpeed >= 100)) && (
+          <div className="flex items-center gap-2 mb-3">
+            <span
+              data-testid="gigabit-verified-badge"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-xs"
+            >
+              <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+              <span>Gigabit Verified</span>
+            </span>
           </div>
         )}
 
@@ -949,7 +973,7 @@ export function VenueCard({
               <Clock className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
               {isClient && operatingStatus.badgeText ? (
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight ${
+                  className={`inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap px-2 sm:px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium tracking-tight ${
                     isOpen || is24Hours
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
                       : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200/60 dark:border-zinc-700/50"
@@ -963,7 +987,9 @@ export function VenueCard({
                         : "bg-zinc-400 dark:bg-zinc-500"
                     }`}
                   />
-                  {operatingStatus.badgeText}
+                  <span className="min-w-0 truncate">
+                    {operatingStatus.badgeText}
+                  </span>
                 </span>
               ) : (
                 <span className="truncate">{hoursStr}</span>
@@ -1181,6 +1207,42 @@ export function VenueCard({
                     👎
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Standing Desk Tag (#9759) */}
+            {((venue as any).standing_desks ||
+              (venue as any).hasStandingDesks ||
+              (venue.amenities as any)?.standing_desks) && (
+              <div
+                data-testid="amenity-badge-standing-desks"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title="Standing Desk"
+                >
+                  Standing Desk
+                </span>
+              </div>
+            )}
+
+            {/* External Monitor Tag (#9759) */}
+            {((venue as any).external_monitors ||
+              (venue as any).hasExternalMonitors ||
+              (venue.amenities as any)?.external_monitors) && (
+              <div
+                data-testid="amenity-badge-external-monitors"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              >
+                <Monitor className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title="External Monitor (4K/USB-C)"
+                >
+                  External Monitor
+                </span>
               </div>
             )}
 
@@ -1556,22 +1618,11 @@ export function VenueCard({
             {/* Noise profile badge — Issue #701: ambient audio preview */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
-                <Volume2
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    venue.noiseLevel === "quiet"
-                      ? "text-green-600"
-                      : venue.noiseLevel === "moderate"
-                        ? "text-orange-600"
-                        : "text-red-600"
-                  }`}
+                <VenueSoundBadge noiseLevel={venue.noiseLevel} />
+                <AmbientSoundPlayer
+                  noiseLevel={venue.noiseLevel}
+                  venueName={venue.name}
                 />
-                <span
-                  className="capitalize truncate max-w-[200px]"
-                  title={venue.noiseLevel}
-                >
-                  {venue.noiseLevel}
-                </span>
-                <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
               </div>
             )}
             {/* Lighting profile badge */}
@@ -1599,7 +1650,7 @@ export function VenueCard({
         </div>
 
         {/* Amenities */}
-        <div className="flex flex-wrap gap-1.5 overflow-hidden mb-4">
+        <div className="flex flex-wrap items-center gap-1.5 overflow-hidden mb-4">
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Wifi className="w-4 h-4 text-blue-600 shrink-0" />
@@ -1628,7 +1679,10 @@ export function VenueCard({
             venue.powerTypes.includes("ac_wall") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Plug className="w-4 h-4 text-yellow-600 shrink-0" />
-                <span className="max-w-[140px] sm:max-w-[180px] truncate" title="AC Outlets">
+                <span
+                  className="max-w-[140px] sm:max-w-[180px] truncate"
+                  title="AC Outlets"
+                >
                   AC Outlets
                 </span>
               </div>
@@ -1638,7 +1692,10 @@ export function VenueCard({
             venue.powerTypes.includes("usb_c") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Smartphone className="w-4 h-4 text-blue-500 shrink-0" />
-                <span className="max-w-[140px] sm:max-w-[180px] truncate" title="USB-C PD">
+                <span
+                  className="max-w-[140px] sm:max-w-[180px] truncate"
+                  title="USB-C PD"
+                >
                   USB-C PD
                 </span>
               </div>
@@ -1648,7 +1705,10 @@ export function VenueCard({
             venue.powerTypes.includes("wireless") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <BatteryCharging className="w-4 h-4 text-green-500 shrink-0" />
-                <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Wireless">
+                <span
+                  className="max-w-[140px] sm:max-w-[180px] truncate"
+                  title="Wireless"
+                >
                   Wireless
                 </span>
               </div>
@@ -1691,7 +1751,10 @@ export function VenueCard({
 
           {venue.patioOnly && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Patio Only">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Patio Only"
+              >
                 🌿 Patio Only
               </span>
             </div>
@@ -1699,14 +1762,20 @@ export function VenueCard({
 
           {venue.waterBowlsProvided && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Water Bowls">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Water Bowls"
+              >
                 💧 Water Bowls
               </span>
             </div>
           )}
           {venue.singleOriginBeans && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Single-Origin">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Single-Origin"
+              >
                 ☕ Single-Origin
               </span>
             </div>
@@ -1725,7 +1794,10 @@ export function VenueCard({
 
           {venue.oatAlmondMilk && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Oat/Almond Milk">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Oat/Almond Milk"
+              >
                 🥛 Oat/Almond Milk
               </span>
             </div>
@@ -1733,7 +1805,10 @@ export function VenueCard({
 
           {venue.pourOverAvailable && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Pour Over">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Pour Over"
+              >
                 🫖 Pour Over
               </span>
             </div>
@@ -1760,7 +1835,10 @@ export function VenueCard({
           )}
           {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="No Music Played">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="No Music Played"
+              >
                 🔇 No Music Played
               </span>
             </div>
@@ -1778,22 +1856,11 @@ export function VenueCard({
           {/* Noise level row — Issue #701: ambient audio preview */}
           {venue.noiseLevel && (
             <div className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
-              <Volume2
-                className={`w-4 h-4 shrink-0 ${
-                  venue.noiseLevel === "quiet"
-                    ? "text-green-600"
-                    : venue.noiseLevel === "moderate"
-                      ? "text-orange-600"
-                      : "text-red-600"
-                }`}
+              <VenueSoundBadge noiseLevel={venue.noiseLevel} size="regular" />
+              <AmbientSoundPlayer
+                noiseLevel={venue.noiseLevel}
+                venueName={venue.name}
               />
-              <span
-                className="capitalize max-w-[140px] sm:max-w-[180px] truncate"
-                title={venue.noiseLevel}
-              >
-                {venue.noiseLevel}
-              </span>
-              <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
             </div>
           )}
           {venue.lighting && (
@@ -1826,25 +1893,28 @@ export function VenueCard({
         <div className="flex gap-2">
           <button
             onClick={() => onGetDirections?.(venue)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
+            aria-label={`Directions to ${venue.name}`}
+            className={`venue-action-glass-btn flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
           >
-            <Navigation className="w-4 h-4 shrink-0" />
+            <Navigation className="w-4 h-4 shrink-0" aria-hidden="true" />
             Directions
           </button>
           <button
             onClick={() => onRate?.(venue)}
-            className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+            aria-label={`Rate ${venue.name}`}
+            className={`venue-action-glass-btn flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
           >
-            <MessageSquare className="w-4 h-4 shrink-0" />
+            <MessageSquare className="w-4 h-4 shrink-0" aria-hidden="true" />
             Rate
           </button>
           {venue.id && (
             <button
               onClick={() => setShowFolderModal(true)}
-              className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+              aria-label={`Add ${venue.name} to a collection`}
+              className={`venue-action-glass-btn flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
               title="Add to Collection"
             >
-              <FolderPlus className="w-4 h-4 shrink-0" />
+              <FolderPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
             </button>
           )}
           {enrichData?.website && (
@@ -1852,22 +1922,24 @@ export function VenueCard({
               href={enrichData.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+              aria-label={`Visit the website of ${venue.name} (opens in a new tab)`}
+              className={`venue-action-glass-btn flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
             >
-              <ExternalLink className="w-4 h-4 shrink-0" />
+              <ExternalLink className="w-4 h-4 shrink-0" aria-hidden="true" />
             </a>
           )}
           {enrichData?.venueId && (
             <VenueShareButton
               venueId={enrichData.venueId}
               venueName={venue.name}
+              className="venue-action-glass-btn hover:backdrop-blur-md"
             />
           )}
 
           {enrichData?.venueId && (
             <a
               href={`/reserve/${enrichData.venueId}`}
-              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 flex flex-col items-center leading-tight"
+              className={`rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 flex flex-col items-center leading-tight ${ACTION_FOCUS_RING}`}
             >
               <span>Reserve</span>
               <span className="text-[10px] opacity-80">

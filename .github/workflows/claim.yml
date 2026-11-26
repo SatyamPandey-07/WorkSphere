@@ -18,9 +18,6 @@ jobs:
         with:
           script: |
             try {
-              // Ensure this is an issue comment, not a PR comment
-              if (context.payload.issue.pull_request) return;
-
               const body = context.payload.comment.body || '';
               const isUnclaim = /\/unclaim\b/i.test(body);
               const isClaim = !isUnclaim && /\/claim\b/i.test(body);
@@ -30,15 +27,15 @@ jobs:
 
               const issueNumber = context.payload.issue.number;
               const commenter = context.payload.comment.user.login;
-              const assignees = context.payload.issue.assignees || [];
-              
+              const isPR = Boolean(context.payload.issue.pull_request);
+
               // Ignore bot comments
               if (context.payload.comment.user.type === 'Bot') return;
 
               // Check for blocked/banned contributors
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === commenter.toLowerCase())) {
-                console.log(`Blocked contributor @${commenter} attempted to interact with issue #${issueNumber}`);
+                console.log(`Blocked contributor @${commenter} attempted to interact with issue/PR #${issueNumber}`);
                 if (isClaim) {
                   await github.rest.issues.createComment({
                     owner: context.repo.owner,
@@ -49,6 +46,44 @@ jobs:
                 }
                 return;
               }
+
+              // ==========================================
+              // Handle /claim or /unclaim on Pull Requests
+              // ==========================================
+              if (isPR) {
+                if (isClaim) {
+                  console.log(`Processing /claim on PR #${issueNumber} by ${commenter}...`);
+                  await github.rest.issues.addAssignees({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    assignees: [commenter]
+                  });
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    body: `Hey @${commenter}, you have been officially assigned to PR #${issueNumber}! 🚀`
+                  });
+                } else if (isUnclaim) {
+                  console.log(`Processing /unclaim on PR #${issueNumber} by ${commenter}...`);
+                  await github.rest.issues.removeAssignees({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    assignees: [commenter]
+                  });
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    body: `Hey @${commenter}, you have been unassigned from PR #${issueNumber}.`
+                  });
+                }
+                return;
+              }
+
+              const assignees = context.payload.issue.assignees || [];
 
               // ==========================================
               // Handle /unclaim
@@ -137,19 +172,19 @@ jobs:
                 return;
               }
 
-              // 2. Check active assigned issues for this contributor (max 10 limit with rate limit fallback)
+              // 2. Check active assigned issues for this contributor (max 10 limit with full pagination)
               let activeIssuesCount = 0;
               try {
-                const userAssignedIssues = await github.rest.issues.listForRepo({
+                const userAssignedIssues = await github.paginate(github.rest.issues.listForRepo, {
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   assignee: commenter,
                   state: 'open',
                   per_page: 100
                 });
-                activeIssuesCount = userAssignedIssues.data.filter(item => !item.pull_request).length;
+                activeIssuesCount = userAssignedIssues.filter(item => !item.pull_request).length;
               } catch (rateLimitErr) {
-                console.warn('API rate limit or query error encountered, proceeding with auto-assignment fallback:', rateLimitErr.message);
+                console.warn('API query error encountered:', rateLimitErr.message);
               }
 
               if (activeIssuesCount >= 10) {

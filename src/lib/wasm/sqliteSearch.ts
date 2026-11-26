@@ -37,7 +37,14 @@ export interface SQLiteSearchWorkerResponse {
 }
 
 /**
- * Calculates BM25 score for a document relative to query tokens
+ * Escapes regular expression metacharacters for literal query matching.
+ */
+export function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Calculates BM25 score for a document relative to query tokens.
  */
 export function calculateBM25Score(
   doc: { name: string; tags: string[]; reviews: string[] },
@@ -63,17 +70,24 @@ export function calculateBM25Score(
     const term = token.toLowerCase();
     if (!term) continue;
 
-    // Count term frequencies per field (with field weights: name=3.0, tags=2.0, reviews=1.0)
-    const nameTF = (nameText.match(new RegExp(`\\b${term}`, "g")) || []).length;
-    const tagsTF = (tagsText.match(new RegExp(`\\b${term}`, "g")) || []).length;
-    const reviewsTF = (reviewsText.match(new RegExp(`\\b${term}`, "g")) || [])
-      .length;
+    const escapedTerm = escapeRegex(term);
+
+    // Retain the existing word-prefix behavior for ordinary terms.
+    // Punctuation-leading terms use literal matching without an invalid
+    // or ineffective word boundary.
+    const prefix = /^\w/.test(term) ? "\\b" : "";
+    const termRegex = new RegExp(`${prefix}${escapedTerm}`, "g");
+
+    // Field weights: name = 3.0, tags = 2.0, reviews = 1.0.
+    const nameTF = (nameText.match(termRegex) || []).length;
+    const tagsTF = (tagsText.match(termRegex) || []).length;
+    const reviewsTF = (reviewsText.match(termRegex) || []).length;
 
     if (nameTF > 0) matchedFields.add("name");
     if (tagsTF > 0) matchedFields.add("tags");
     if (reviewsTF > 0) matchedFields.add("reviews");
 
-    const weightedTF = nameTF * 3.0 + tagsTF * 2.0 + reviewsTF * 1.0;
+    const weightedTF = nameTF * 3.0 + tagsTF * 2.0 + reviewsTF;
 
     if (weightedTF > 0) {
       const df = docFreqs[term] || 1;
@@ -81,6 +95,7 @@ export function calculateBM25Score(
       const tfNorm =
         (weightedTF * (k1 + 1)) /
         (weightedTF + k1 * (1 - b + b * (docLen / (avgDocLen || 1))));
+
       totalScore += idf * tfNorm;
     }
   }
@@ -114,15 +129,18 @@ export class SQLiteFTS5SearchEngine {
           typeof window !== "undefined"
             ? window.location?.href
             : "http://localhost";
+
         const workerUrl = new URL(
           "../../workers/sqlite-search.worker.ts",
           baseUrl,
         );
+
         this.worker = new Worker(workerUrl);
         this.worker.onmessage = (
           e: MessageEvent<SQLiteSearchWorkerResponse>,
         ) => {
           const { id, type, results, count, executionTimeMs, error } = e.data;
+
           if (id && this.pendingRequests.has(id)) {
             const { resolve, reject } = this.pendingRequests.get(id)!;
             this.pendingRequests.delete(id);
@@ -155,9 +173,11 @@ export class SQLiteFTS5SearchEngine {
 
     if (this.worker) {
       const id = `init_${++this.messageCounter}`;
+
       const promise = new Promise<void>((resolve, reject) => {
         this.pendingRequests.set(id, { resolve, reject });
       });
+
       this.worker.postMessage({ type: "INIT", id });
       await promise;
     }
@@ -168,19 +188,21 @@ export class SQLiteFTS5SearchEngine {
   public async indexVenues(venues: VenueSearchDocument[]): Promise<number> {
     await this.init();
 
-    // Store in internal document map
-    for (const v of venues) {
-      this.documents.set(v.id, v);
+    for (const venue of venues) {
+      this.documents.set(venue.id, venue);
     }
 
     if (this.worker) {
       const id = `index_${++this.messageCounter}`;
+
       const promise = new Promise<{ count: number }>((resolve, reject) => {
         this.pendingRequests.set(id, { resolve, reject });
       });
+
       this.worker.postMessage({ type: "INDEX", id, documents: venues });
-      const res = await promise;
-      return res.count;
+
+      const result = await promise;
+      return result.count;
     }
 
     return venues.length;
@@ -194,23 +216,26 @@ export class SQLiteFTS5SearchEngine {
     await this.init();
 
     const trimmed = query.trim();
+
     if (!trimmed) {
       return { results: [], executionTimeMs: performance.now() - startTime };
     }
 
     if (this.worker) {
       const id = `search_${++this.messageCounter}`;
+
       const promise = new Promise<{
         results: SearchResultItem[];
         executionTimeMs: number;
       }>((resolve, reject) => {
         this.pendingRequests.set(id, { resolve, reject });
       });
+
       this.worker.postMessage({ type: "SEARCH", id, query: trimmed });
       return promise;
     }
 
-    // Direct in-memory fallback BM25 search
+    // Direct in-memory fallback BM25 search.
     const queryTokens = trimmed.split(/\s+/).filter(Boolean);
     const docs = Array.from(this.documents.values());
     const totalDocs = docs.length;
@@ -221,12 +246,14 @@ export class SQLiteFTS5SearchEngine {
     docs.forEach((doc) => {
       const fullText =
         `${doc.name} ${(doc.tags || []).join(" ")} ${(doc.reviews || []).join(" ")}`.toLowerCase();
+
       const tokens = fullText.split(/\s+/).filter(Boolean);
       totalLen += tokens.length;
 
       const uniqueTokens = new Set(tokens);
-      uniqueTokens.forEach((t) => {
-        docFreqs[t] = (docFreqs[t] || 0) + 1;
+
+      uniqueTokens.forEach((token) => {
+        docFreqs[token] = (docFreqs[token] || 0) + 1;
       });
     });
 
@@ -258,11 +285,12 @@ export class SQLiteFTS5SearchEngine {
     });
 
     scoredResults.sort((a, b) => b.score - a.score);
+
     const limited = scoredResults.slice(0, limit);
     const executionTimeMs = performance.now() - startTime;
 
-    const finalResults = limited.map((r) => ({
-      ...r,
+    const finalResults = limited.map((result) => ({
+      ...result,
       executionTimeMs,
     }));
 
@@ -274,6 +302,7 @@ export class SQLiteFTS5SearchEngine {
       this.worker.terminate();
       this.worker = null;
     }
+
     this.documents.clear();
     this.isInitialized = false;
   }
@@ -285,5 +314,6 @@ export function getSQLiteFTS5Engine(): SQLiteFTS5SearchEngine {
   if (!searchEngineInstance) {
     searchEngineInstance = new SQLiteFTS5SearchEngine();
   }
+
   return searchEngineInstance;
 }

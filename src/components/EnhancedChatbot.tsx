@@ -11,6 +11,7 @@ import { BookingModal } from "./chat/BookingModal";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ShortcutsModal } from "./ui/ShortcutsModal";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
+import { useUnreadMessageTracking } from "@/lib/chat/unreadTracker";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import {
   trackSearch,
@@ -129,6 +130,13 @@ export function EnhancedChatbot({
   const { isSignedIn, user } = useUser();
 
   const { socket, isHydrated } = useMultiplayerSession(roomId || null);
+  const activeRoomId = roomId || "default";
+  const { processIncomingMessage } = useUnreadMessageTracking({
+    roomId: activeRoomId,
+    currentUserId: user?.id || null,
+    currentUserName: user?.firstName || null,
+    isChatOpen: true, // While EnhancedChatbot is mounted and focused in the view
+  });
   const sendSocketMessage = useCallback(
     (data: string) => {
       if (socket) {
@@ -328,6 +336,16 @@ export function EnhancedChatbot({
             }
           });
         } else if (data.type === "new-message") {
+          // Process incoming message with unread tracking
+          if (data.message) {
+            processIncomingMessage({
+              id: data.message.id,
+              senderId: data.message.senderId,
+              senderName: data.message.name,
+              timestamp: data.message.timestamp || Date.now(),
+              roomId: activeRoomId,
+            });
+          }
           // Prevent duplicates
           setMessages((prev) => {
             if (prev.some((m) => m.id === data.message.id)) return prev;
@@ -358,7 +376,7 @@ export function EnhancedChatbot({
 
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [isHydrated, socket, onMapUpdate]);
+  }, [isHydrated, socket, onMapUpdate, activeRoomId, processIncomingMessage]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastReadMsgId = useRef<string | null>(null);
@@ -1494,6 +1512,8 @@ export function EnhancedChatbot({
       </div>
 
       <ChatInput
+        roomId={activeRoomId}
+        userId={user?.id || null}
         input={input}
         isLoading={isLoading}
         onInputChange={handleInputChange}

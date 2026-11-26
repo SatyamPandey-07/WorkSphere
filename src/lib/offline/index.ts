@@ -10,5 +10,8 @@ export * from "./crdt";
 export * from "./venueCache";
 export * from "./storageStats";
 export * from "./SyncQueueManager";
+export * from "./SeatSyncCoordinator";
 export * from "./tombstoneCompactor";
-
+export * from "./syncQueue";
+export * from "./migrations";
+export * from "./migrationCoordinator";

@@ -1,6 +1,6 @@
 # Component Reference: `NoiseLevelBadge` & Decibel Acoustic Bands
 
-This document provides complete reference documentation for the **`NoiseLevelBadge`** UI component located at [`src/components/ui/NoiseLevelBadge.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/NoiseLevelBadge.tsx), covering its decibel threshold boundaries, semantic tiers, visual themes, accessibility traits, and JSX integration examples.
+This document provides complete reference documentation for the **`NoiseLevelBadge`** UI component located at [`src/components/ui/NoiseLevelBadge.tsx`](../../src/components/ui/NoiseLevelBadge.tsx), covering its decibel threshold boundaries, semantic tiers, visual themes, accessibility traits, and JSX integration examples.
 
 ---
 

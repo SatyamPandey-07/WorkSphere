@@ -1,6 +1,6 @@
 ﻿# 3D Isometric Coordinate Transformation Matrix Formulas
 
-This developer and mathematical guide documents the transformation pipelines and projection matrices used to map 3D workspace Cartesian world coordinates into 2D isometric viewport space in WorkSphere’s WebGL engine ([`src/core/webgl/IsometricRenderer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/webgl/IsometricRenderer.ts)).
+This developer and mathematical guide documents the transformation pipelines and projection matrices used to map 3D workspace Cartesian world coordinates into 2D isometric viewport space in WorkSphere’s WebGL engine ([`src/core/webgl/IsometricRenderer.ts`](../../src/core/webgl/IsometricRenderer.ts)).
 
 ---
 
@@ -219,7 +219,7 @@ export function worldToScreenIsometric(
 
 ## 5. WebGL Vertex Shader Integration
 
-In [`src/core/webgl/IsometricRenderer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/webgl/IsometricRenderer.ts), uniforms `u_projection` and `u_view` are passed directly to the vertex shader:
+In [`src/core/webgl/IsometricRenderer.ts`](../../src/core/webgl/IsometricRenderer.ts), uniforms `u_projection` and `u_view` are passed directly to the vertex shader:
 
 ```glsl
 #version 300 es

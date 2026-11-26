@@ -8,6 +8,10 @@ import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 import { useMeshDataChannels } from "@/hooks/useMeshDataChannels";
 import {
+  RELAY_WHITEBOARD_THROTTLE_MS,
+  DIRECT_WHITEBOARD_THROTTLE_MS,
+} from "@/lib/realtime/webrtc/meshConnection";
+import {
   compressYjsUpdate,
   decompressYjsUpdate,
 } from "@/lib/crdt/yjsCompression";
@@ -214,12 +218,21 @@ export function useMeshCanvasWhiteboard(
     [localUserId],
   );
 
+  const effectiveThrottleIntervalMs =
+    options?.throttleIntervalMs ??
+    (mesh.isRelayed
+      ? RELAY_WHITEBOARD_THROTTLE_MS
+      : DIRECT_WHITEBOARD_THROTTLE_MS);
+
   const {
     strokeBufferRef,
     flushStrokeBuffer,
     broadcastStroke: bufferStroke,
     bufferStrokePoints,
-  } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
+  } = useStrokeBuffer({
+    onApplyPoints: applyShapePoints,
+    throttleIntervalMs: effectiveThrottleIntervalMs,
+  });
 
   const broadcastStroke = useCallback(
     (id: string, points: number[]) => {
@@ -438,7 +451,12 @@ export function useMeshCanvasWhiteboard(
       shapes.unobserveDeep(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
       unsubDocUpdateRef.current?.();
+      um.off("stack-item-added", updateUndoState);
+      um.off("stack-item-popped", updateUndoState);
+      um.clear();
       um.destroy();
+      setCanUndo(false);
+      setCanRedo(false);
       if (newProvider) {
         if (handleStatus) newProvider.off("status", handleStatus);
         if (handleSync) newProvider.off("sync", handleSync);
@@ -577,6 +595,8 @@ export function useMeshCanvasWhiteboard(
     canRedo,
     clearCanvas,
     updateCursor,
+    isRelayed: mesh.isRelayed,
+    relayStatus: mesh.relayStatus,
   };
 }
 

@@ -41,10 +41,13 @@ function payloadDigest(rawBody: string): string {
   return createHash("sha256").update(rawBody, "utf8").digest("hex");
 }
 
-function duplicateResponse(existing: {
-  payloadHash: string;
-  bookingId: string;
-}, currentHash: string) {
+function duplicateResponse(
+  existing: {
+    payloadHash: string;
+    bookingId: string;
+  },
+  currentHash: string,
+) {
   if (existing.payloadHash !== currentHash) {
     return NextResponse.json(
       {
@@ -73,17 +76,22 @@ export async function POST(request: Request) {
   const secret = process.env.VENUE_CANCEL_WEBHOOK_SECRET;
   if (!secret) {
     return NextResponse.json(
-      { success: false, error: "Venue cancellation webhook secret is not configured." },
+      {
+        success: false,
+        error: "Venue cancellation webhook secret is not configured.",
+      },
       { status: 503 },
     );
   }
 
   const rawBody = await request.text();
-  if (!verifySignature(
-    rawBody,
-    request.headers.get("x-worksphere-signature"),
-    secret,
-  )) {
+  if (
+    !verifySignature(
+      rawBody,
+      request.headers.get("x-worksphere-signature"),
+      secret,
+    )
+  ) {
     return NextResponse.json(
       { success: false, error: "Invalid webhook signature." },
       { status: 401 },
@@ -97,7 +105,10 @@ export async function POST(request: Request) {
     !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)
   ) {
     return NextResponse.json(
-      { success: false, error: "A valid X-Idempotency-Key header is required." },
+      {
+        success: false,
+        error: "A valid X-Idempotency-Key header is required.",
+      },
       { status: 400 },
     );
   }
@@ -158,10 +169,7 @@ export async function POST(request: Request) {
     const booking = await prisma.$transaction(async (tx) => {
       const matchedBooking = await tx.booking.findFirst({
         where: {
-          OR: [
-            { id: bookingReference },
-            { confirmationId: bookingReference },
-          ],
+          OR: [{ id: bookingReference }, { confirmationId: bookingReference }],
           status: { in: [...ACTIVE_BOOKING_STATUSES] },
         },
         select: {
@@ -231,11 +239,19 @@ export async function POST(request: Request) {
       return matchedBooking;
     });
 
+    await invalidateVenueAvailability(
+      venueAvailabilityCacheKey(booking.venueId),
+    );
+
     // Release any short-lived desk hold owned by this booking's user. The
     // booking status change remains authoritative if there is no active hold.
     if (booking.seatId) {
       try {
-        await releaseDeskReservation(booking.venueId, booking.seatId, booking.userId);
+        await releaseDeskReservation(
+          booking.venueId,
+          booking.seatId,
+          booking.userId,
+        );
       } catch (error) {
         console.warn("[venue-cancel] desk hold release failed:", error);
       }
@@ -322,7 +338,10 @@ export async function POST(request: Request) {
 
     console.error("[POST /api/webhooks/venue-cancel] Error:", error);
     return NextResponse.json(
-      { success: false, error: "Unable to process venue cancellation webhook." },
+      {
+        success: false,
+        error: "Unable to process venue cancellation webhook.",
+      },
       { status: 500 },
     );
   }

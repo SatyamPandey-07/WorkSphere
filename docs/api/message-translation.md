@@ -1,6 +1,6 @@
 ﻿# Message Translation Hook API & Supported Locale Codes
 
-This technical API reference documents the `useMessageTranslation` React hook ([`src/hooks/useMessageTranslation.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useMessageTranslation.ts)) and its underlying backend translation service ([`src/app/api/translate/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/translate/route.ts)). It covers hook parameters, return signatures, in-memory caching mechanisms, request deduplication, supported ISO 639-1 language codes, and sample React integration components.
+This technical API reference documents the `useMessageTranslation` React hook ([`src/hooks/useMessageTranslation.ts`](../../src/hooks/useMessageTranslation.ts)) and its underlying backend translation service ([`src/app/api/translate/route.ts`](../../src/app/api/translate/route.ts)). It covers hook parameters, return signatures, in-memory caching mechanisms, request deduplication, supported ISO 639-1 language codes, and sample React integration components.
 
 ---
 
@@ -84,7 +84,7 @@ export interface UseMessageTranslationReturn {
 
 ## 3. Supported Language Codes & Allowlist
 
-The backend translation API enforces a strict language code allowlist ([`src/app/api/translate/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/translate/route.ts)) to safeguard against prompt injection attacks:
+The backend translation API enforces a strict language code allowlist ([`src/app/api/translate/route.ts`](../../src/app/api/translate/route.ts)) to safeguard against prompt injection attacks:
 
 | ISO 639-1 Code | Language Name | Native Script | Primary Coworking Region |
 | :---: | :--- | :--- | :--- |

@@ -13,3 +13,4 @@ export * from "./chatExporter";
 export * from "./systemVitalsExporter";
 export * from "./bookingHistoryExporter";
 export * from "./itineraryExporter";
+export * from "./batchCheckInAttestationExporter";

@@ -61,13 +61,13 @@ graph TD
 
 ### Core Architecture Components
 
-1. **Database Engine**: **PostgreSQL** hosted on **Neon Serverless PostgreSQL**, running with the **`vector`** extension enabled (see [schema.prisma](file:///c:/Codes/WorkSphere/prisma/schema.prisma#L8)).
-2. **ORM & Client**: **Prisma 7.2** ([schema.prisma](file:///c:/Codes/WorkSphere/prisma/schema.prisma#L1)) utilizing `@prisma/adapter-pg` driver adapter with standard Node.js `pg.Pool` clients (see [prisma.ts](file:///c:/Codes/WorkSphere/src/lib/prisma.ts#L10)).
-3. **Telemetry & Logging**: Per-query duration metrics are intercepted using a Prisma Client extension (see [prisma.ts](file:///c:/Codes/WorkSphere/src/lib/prisma.ts#L24)), buffered in-memory, and flushed in batches every 5 seconds (see [dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts#L48)) to **Upstash Redis** (via `@upstash/redis` REST client in [redis.ts](file:///c:/Codes/WorkSphere/src/lib/redis.ts)).
+1. **Database Engine**: **PostgreSQL** hosted on **Neon Serverless PostgreSQL**, running with the **`vector`** extension enabled (see [schema.prisma](../prisma/schema.prisma#L8)).
+2. **ORM & Client**: **Prisma 7.2** ([schema.prisma](../prisma/schema.prisma#L1)) utilizing `@prisma/adapter-pg` driver adapter with standard Node.js `pg.Pool` clients (see [prisma.ts](../src/lib/prisma.ts#L10)).
+3. **Telemetry & Logging**: Per-query duration metrics are intercepted using a Prisma Client extension (see [prisma.ts](../src/lib/prisma.ts#L24)), buffered in-memory, and flushed in batches every 5 seconds (see [dbTelemetry.ts](../src/lib/dbTelemetry.ts#L48)) to **Upstash Redis** (via `@upstash/redis` REST client in [redis.ts](../src/lib/redis.ts)).
 4. **Caching Layer**:
-   - **In-Memory LRU Cache**: Implemented in [cache.ts](file:///c:/Codes/WorkSphere/src/lib/cache.ts) and instantiated in [venues.ts](file:///c:/Codes/WorkSphere/src/lib/venues.ts#L15-L17) as `searchCache` (capacity: 100, TTL: 15 mins) and `detailsCache` (capacity: 200, TTL: 30 mins) for caching external OpenStreetMap/Overpass API results.
-   - **Database-Backed Semantic Cache**: Relies on the `SemanticCache` model using 1024-dimensional query vector embeddings to cache AI search results (see [schema.prisma](file:///c:/Codes/WorkSphere/prisma/schema.prisma#L288)).
-5. **Connection Strategy**: PgBouncer transaction-mode connection pooler for API traffic, and direct connections for schema migrations (see [NEON_POOLING.md](file:///c:/Codes/WorkSphere/docs/NEON_POOLING.md)).
+   - **In-Memory LRU Cache**: Implemented in [cache.ts](../src/lib/cache.ts) and instantiated in [venues.ts](../src/lib/venues.ts#L15-L17) as `searchCache` (capacity: 100, TTL: 15 mins) and `detailsCache` (capacity: 200, TTL: 30 mins) for caching external OpenStreetMap/Overpass API results.
+   - **Database-Backed Semantic Cache**: Relies on the `SemanticCache` model using 1024-dimensional query vector embeddings to cache AI search results (see [schema.prisma](../prisma/schema.prisma#L288)).
+5. **Connection Strategy**: PgBouncer transaction-mode connection pooler for API traffic, and direct connections for schema migrations (see [NEON_POOLING.md](NEON_POOLING.md)).
 
 ---
 
@@ -374,17 +374,17 @@ The repository implements transactions under two patterns: **interactive transac
 
 ### Current Transaction Flows Audited
 
-1. **Confirm Booking API** (interactive): [route.ts:L52-105](file:///c:/Codes/WorkSphere/src/app/api/bookings/confirm/route.ts#L52-L105)
+1. **Confirm Booking API** (interactive): [route.ts:L52-105](../src/app/api/bookings/confirm/route.ts#L52-L105)
    - _Flow_: Checks if the local `Venue` exists (using `upsert`), checks for booking date/time slot collisions (using `findMany`), and then loops through `bookingDates` to create `Booking` rows sequentially inside the transaction.
    - _Risk_: Running sequential database inserts in a loop inside an interactive transaction locks the `Booking` rows and holds the connection checked out of the pool. If `bookingDates` has many items, this can cause transaction timeouts.
-2. **Collection Upvote API** (interactive): [route.ts:L39-79](file:///c:/Codes/WorkSphere/src/app/api/collections/public/upvote/route.ts#L39-L79)
+2. **Collection Upvote API** (interactive): [route.ts:L39-79](../src/app/api/collections/public/upvote/route.ts#L39-L79)
    - _Flow_: Reads `Folder` to ensure it is public, finds if `FolderUpvote` exists. If exists, deletes the upvote record and decrements the folder's `upvotes` counter. If it does not exist, creates the upvote record and increments the folder's `upvotes` counter.
    - _Risk_: A write amplification cycle. The folder row is updated immediately, creating hot spots on the `Folder` table when a collection is upvoted rapidly.
-3. **Folder Join API** (array batch): [route.ts:L103-115](file:///c:/Codes/WorkSphere/src/app/api/folders/join/route.ts#L103-L115)
+3. **Folder Join API** (array batch): [route.ts:L103-115](../src/app/api/folders/join/route.ts#L103-L115)
    - _Flow_: Executes a batch containing `FolderMember.upsert` and `FolderInvite.update` in a single database round trip. Safe, structured, and fast.
-4. **Favorite Tags Sync** (array batch): [favoriteTagSync.ts:L35-47](file:///c:/Codes/WorkSphere/src/lib/favoriteTagSync.ts#L35-L47)
+4. **Favorite Tags Sync** (array batch): [favoriteTagSync.ts:L35-47](../src/lib/favoriteTagSync.ts#L35-L47)
    - _Flow_: Takes an array of updates, sorts their IDs deterministically, and maps them to a batch transaction of `prisma.favoriteTag.update` updates. Highly secure deadlock prevention.
-5. **Folder Delete API** (batch sequence + retries): [folders.ts:L91-122](file:///c:/Codes/WorkSphere/src/lib/folders.ts#L91-L122)
+5. **Folder Delete API** (batch sequence + retries): [folders.ts:L91-122](../src/lib/folders.ts#L91-L122)
    - _Flow_: Deletes related records (`FolderVenue`, `FolderMember`, `FolderUpvote`) in batches of 50 inside short transactions with explicitly defined isolation levels (`ReadCommitted`) and custom linear backoff retries on deadlock errors (`P2034`). Highly robust scaling design.
 
 ---
@@ -454,10 +454,10 @@ export async function chunkAndBatchInsert<T>(
 1. **Cascading Deletes (Folder Venues)**:
    - When a folder is deleted, standard cascade constraints will lock many rows in `FolderVenue`, `FolderMember`, and `FolderUpvote` tables.
    - If user A deletes a folder containing venue X while user B adds venue X to another folder, Postgres locks overlaps, causing a cycle deadlock (Prisma Error code `P2034`).
-   - **Repository Implementation Status**: Mitigated in [folders.ts](file:///c:/Codes/WorkSphere/src/lib/folders.ts#L91) using batch-wise deletes of 50 items and isolation tuning.
+   - **Repository Implementation Status**: Mitigated in [folders.ts](../src/lib/folders.ts#L91) using batch-wise deletes of 50 items and isolation tuning.
 2. **Concurrent Bulk Tag Updates**:
    - If User A updates tags `[tag_1, tag_2]` and User B updates tags `[tag_2, tag_1]` simultaneously, they acquire exclusive row locks in different orders. Transaction A locks `tag_1` and blocks on `tag_2`. Transaction B locks `tag_2` and blocks on `tag_1`.
-   - **Repository Implementation Status**: Solved in [favoriteTagSync.ts](file:///c:/Codes/WorkSphere/src/lib/favoriteTagSync.ts#L14-L16) by using `sortTagIdsDeterministically` which guarantees a single locking order.
+   - **Repository Implementation Status**: Solved in [favoriteTagSync.ts](../src/lib/favoriteTagSync.ts#L14-L16) by using `sortTagIdsDeterministically` which guarantees a single locking order.
 
 ### Production Deadlock Prevention Blueprint
 
@@ -532,7 +532,7 @@ COMMIT;
 
 WorkSphere connects using `@prisma/adapter-pg` over PgBouncer transaction-mode pools.
 
-### Audited Connection Settings (From [prisma.ts](file:///c:/Codes/WorkSphere/src/lib/prisma.ts#L12-L19))
+### Audited Connection Settings (From [prisma.ts](../src/lib/prisma.ts#L12-L19))
 
 ```typescript
 const pool = new Pool({
@@ -572,7 +572,7 @@ const pool = new Pool({
 
 ### 1. Over-Fetching in `existingBookings` Check
 
-- **Code Evidence**: [route.ts:L72-78](file:///c:/Codes/WorkSphere/src/app/api/bookings/confirm/route.ts#L72-L78)
+- **Code Evidence**: [route.ts:L72-78](../src/app/api/bookings/confirm/route.ts#L72-L78)
 - **Issue**: Performs `findMany` fetching all columns (`userId`, `confirmationId`, `projectBillingCode`, etc.) only to verify if `existingBookings.length > 0`.
 - **Fix**: Optimize to a light count query or select `id` only:
   ```typescript
@@ -641,7 +641,7 @@ WHERE "timestamp" >= '2026-07-24 00:00:00' AND "timestamp" < '2026-07-25 00:00:0
 
 ### 1. In-App Performance Logging
 
-WorkSphere records durations using a Prisma extension (`recordQueryDuration`) which aggregates slow query counts to Upstash Redis (see [dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts#L23)). Ensure the Admin telemetry endpoint is reviewed weekly.
+WorkSphere records durations using a Prisma extension (`recordQueryDuration`) which aggregates slow query counts to Upstash Redis (see [dbTelemetry.ts](../src/lib/dbTelemetry.ts#L23)). Ensure the Admin telemetry endpoint is reviewed weekly.
 
 ### 2. Spotting Index Bloat & Autovacuum Status
 

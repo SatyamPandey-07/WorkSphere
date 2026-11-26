@@ -22,17 +22,22 @@ jest.mock("partysocket/react", () => {
   }));
 });
 
+// Mock WebGL heatmap to isolate map resize behavior
+jest.mock("@/components/WebGLHeatmapLayer", () => ({
+  WebGLHeatmapLayer: () => null,
+}));
+
 // Mock react-leaflet
 const mockInvalidateSize = jest.fn();
 const mockSetView = jest.fn();
-const mockGetCenter = jest.fn().mockReturnValue({ lat: 37.7749, lng: -122.4194 });
+const mockGetCenter = jest
+  .fn()
+  .mockReturnValue({ lat: 37.7749, lng: -122.4194 });
 const mockGetZoom = jest.fn().mockReturnValue(13);
 let mockMapContainerElement: HTMLDivElement | null = null;
 
 jest.mock("react-leaflet", () => {
-  const original = jest.requireActual("react-leaflet");
   return {
-    ...original,
     MapContainer: ({ children, style }: any) => {
       mockMapContainerElement = document.createElement("div");
       Object.assign(mockMapContainerElement.style, style);
@@ -51,7 +56,17 @@ jest.mock("react-leaflet", () => {
         <div
           data-testid="mock-map-container"
           ref={(el) => {
-            if (el) mockMapContainerElement = el;
+            if (el) {
+              mockMapContainerElement = el;
+              Object.defineProperty(el, "clientWidth", {
+                configurable: true,
+                value: 800,
+              });
+              Object.defineProperty(el, "clientHeight", {
+                configurable: true,
+                value: 600,
+              });
+            }
           }}
           style={style}
         >
@@ -64,6 +79,7 @@ jest.mock("react-leaflet", () => {
       setView: mockSetView,
       getCenter: mockGetCenter,
       getZoom: mockGetZoom,
+      getPanes: () => ({ overlayPane: document.createElement("div") }),
       getContainer: () => {
         if (!mockMapContainerElement) {
           mockMapContainerElement = document.createElement("div");
@@ -91,6 +107,8 @@ jest.mock("react-leaflet", () => {
       Overlay: ({ children }: any) => <div>{children}</div>,
     }),
     LayerGroup: ({ children }: any) => <div>{children}</div>,
+    CircleMarker: ({ children }: any) => <div>{children}</div>,
+    ScaleControl: () => null,
   };
 });
 
@@ -145,7 +163,7 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
   });
 
   it("1. ignores transient zero-height measurements during sidebar toggle animations", () => {
-    render(<Map />);
+    render(<Map location={{ latitude: 37.7749, longitude: -122.4194 }} />);
     expect(observeCallback).not.toBeNull();
 
     // Trigger ResizeObserver with 0 height (as when sidebar starts folding)
@@ -163,7 +181,7 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
   });
 
   it("2. recovers and resizes when dimensions normalize after transient zero-height frame", () => {
-    render(<Map />);
+    render(<Map location={{ latitude: 37.7749, longitude: -122.4194 }} />);
 
     // First: zero-height event
     act(() => {
@@ -174,7 +192,10 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
 
     // Next frame: dimension recovers to 800x600
     act(() => {
-      observeCallback!([{ contentRect: { width: 800, height: 600 } }], {} as any);
+      observeCallback!(
+        [{ contentRect: { width: 800, height: 600 } }],
+        {} as any,
+      );
     });
 
     // Advance debounce timer (150ms default)
@@ -191,11 +212,14 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
   });
 
   it("3. handles rapid toggles without race conditions or multiple premature invalidations", () => {
-    render(<Map />);
+    render(<Map location={{ latitude: 37.7749, longitude: -122.4194 }} />);
 
     // Rapid toggle 1: sidebar opens
     act(() => {
-      observeCallback!([{ contentRect: { width: 600, height: 600 } }], {} as any);
+      observeCallback!(
+        [{ contentRect: { width: 600, height: 600 } }],
+        {} as any,
+      );
       jest.advanceTimersByTime(50);
     });
 
@@ -207,7 +231,10 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
 
     // Rapid toggle 3: sidebar settles open
     act(() => {
-      observeCallback!([{ contentRect: { width: 700, height: 600 } }], {} as any);
+      observeCallback!(
+        [{ contentRect: { width: 700, height: 600 } }],
+        {} as any,
+      );
     });
 
     // Before debounce finishes: no invalidations
@@ -223,11 +250,16 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
   });
 
   it("4. cleans up ResizeObserver and cancels pending timers/animation frames on unmount", () => {
-    const { unmount } = render(<Map />);
+    const { unmount } = render(
+      <Map location={{ latitude: 37.7749, longitude: -122.4194 }} />,
+    );
 
     // Trigger resize that sets up a timer
     act(() => {
-      observeCallback!([{ contentRect: { width: 750, height: 600 } }], {} as any);
+      observeCallback!(
+        [{ contentRect: { width: 750, height: 600 } }],
+        {} as any,
+      );
     });
 
     unmount();
@@ -242,8 +274,46 @@ describe("Map Zero-Height Flash Prevention (#10448)", () => {
     expect(mockInvalidateSize).not.toHaveBeenCalled();
   });
 
-  it("5. enforces minimum dimensions on map container style to prevent zero collapse", () => {
-    const { getByTestId } = render(<Map />);
+  it("5. ignores queued animation frames and stale observer callbacks after unmount", () => {
+    const { unmount } = render(
+      <Map location={{ latitude: 37.7749, longitude: -122.4194 }} />,
+    );
+    const staleObserverCallback = observeCallback!;
+
+    // A transient zero-height measurement queues an animation frame.
+    act(() => {
+      staleObserverCallback(
+        [{ contentRect: { width: 800, height: 0 } }],
+        {} as any,
+      );
+    });
+
+    expect(rafCallbacks[0]).toBeDefined();
+
+    // Keep a reference to simulate a callback already queued by the browser.
+    const queuedCallback = rafCallbacks[0];
+
+    unmount();
+
+    expect(mockDisconnect).toHaveBeenCalled();
+    expect(global.cancelAnimationFrame).toHaveBeenCalledWith(1);
+
+    // Even if the cancelled callback or stale observer fires, it must do no work.
+    act(() => {
+      queuedCallback();
+      staleObserverCallback(
+        [{ contentRect: { width: 800, height: 600 } }],
+        {} as any,
+      );
+    });
+
+    expect(mockInvalidateSize).not.toHaveBeenCalled();
+    expect(rafCallbacks.filter(Boolean)).toHaveLength(0);
+  });
+  it("6. enforces minimum dimensions on map container style to prevent zero collapse", () => {
+    const { getByTestId } = render(
+      <Map location={{ latitude: 37.7749, longitude: -122.4194 }} />,
+    );
     const container = getByTestId("mock-map-container");
 
     expect(container.style.minHeight).toBe("200px");

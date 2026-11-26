@@ -50,7 +50,9 @@ export interface RedisPingOptions {
 
 export interface RedisPingResult {
   ok: boolean;
-  latencyMs: number;
+  connected: boolean;
+  latencyMs: number | null;
+  latency?: number | null;
   error?: string;
 }
 
@@ -67,26 +69,59 @@ export async function pingRedisDiagnostic(
   client?: Redis | null
 ): Promise<RedisPingResult> {
   const timeoutMs = options?.pingTimeoutMs ?? DEFAULT_REDIS_PING_TIMEOUT_MS;
-  const redisClient = client !== undefined ? client : getRedis();
+  let redisClient: Redis | null = null;
 
-  if (!redisClient) {
+  try {
+    redisClient = client !== undefined ? client : getRedis();
+  } catch (err: unknown) {
     return {
       ok: false,
-      latencyMs: -1,
-      error: "Redis client is not configured or unavailable",
+      connected: false,
+      latencyMs: null,
+      latency: null,
+      error:
+        err instanceof Error
+          ? err.message
+          : String(err || "Redis client initialization failed"),
     };
   }
 
-  const startTime = performance.now();
+  // Guard disconnected, unconfigured, or mocked clients missing a callable ping method
+  if (!redisClient || typeof (redisClient as unknown as { ping?: unknown }).ping !== "function") {
+    return {
+      ok: false,
+      connected: false,
+      latencyMs: null,
+      latency: null,
+      error: "Redis client is not configured, disconnected, or unavailable",
+    };
+  }
+
+  // Guard against clients with explicit disconnected or offline status
+  const clientStatus = (redisClient as unknown as { status?: string }).status;
+  if (
+    clientStatus &&
+    (clientStatus === "disconnecting" ||
+      clientStatus === "close" ||
+      clientStatus === "end" ||
+      clientStatus === "offline")
+  ) {
+    return {
+      ok: false,
+      connected: false,
+      latencyMs: null,
+      latency: null,
+      error: `Redis client is ${clientStatus}`,
+    };
+  }
+
+  const startTime = typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
   let timer: NodeJS.Timeout | null = null;
 
   try {
-    const pingPromise = (async () => {
-      if (typeof redisClient.ping === "function") {
-        return await redisClient.ping();
-      }
-      return "PONG";
-    })();
+    const pingPromise = Promise.resolve(redisClient.ping());
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -95,20 +130,27 @@ export async function pingRedisDiagnostic(
     });
 
     await Promise.race([pingPromise, timeoutPromise]);
-    const latencyMs = Math.round(performance.now() - startTime);
+    const endTime = typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+    const duration = endTime - startTime;
+    const latencyMs = Number.isFinite(duration) ? Math.max(0, Math.round(duration)) : null;
 
     return {
       ok: true,
+      connected: true,
       latencyMs,
+      latency: latencyMs,
     };
   } catch (err: unknown) {
-    const latencyMs = Math.round(performance.now() - startTime);
     const errorMessage =
       err instanceof Error ? err.message : String(err || "Unknown Redis ping error");
 
     return {
       ok: false,
-      latencyMs,
+      connected: false,
+      latencyMs: null,
+      latency: null,
       error: errorMessage,
     };
   } finally {

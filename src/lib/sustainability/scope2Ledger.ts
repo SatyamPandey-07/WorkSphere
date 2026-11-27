@@ -14,6 +14,11 @@ export interface Scope2CsvExportFilter {
   to?: string | number | Date;
 }
 
+export interface MonthlyEmissionsSummary {
+  month: string;
+  emissionsKgCo2e: number;
+}
+
 const FORMULA_PREFIX_PATTERN = /^[=+\-@\t\r]/;
 
 function parseTimestampMs(input?: string | number | Date): number | null {
@@ -53,13 +58,32 @@ export function filterScope2LedgerEntries(entries: readonly Scope2LedgerEntry[],
   });
 }
 
+function getEmissionsKgCo2e(entry: Scope2LedgerEntry): number {
+  return typeof entry.emissionsKgCo2e === 'number' && Number.isFinite(entry.emissionsKgCo2e)
+    ? entry.emissionsKgCo2e
+    : entry.kwh * entry.emissionFactorKgPerKwh;
+}
+
+export function summarizeMonthlyEmissions(entries: readonly Scope2LedgerEntry[]): MonthlyEmissionsSummary[] {
+  const monthlyTotals = new Map<string, number>();
+  for (const entry of entries) {
+    const recordedAtMs = parseTimestampMs(entry.recordedAt);
+    if (recordedAtMs === null) continue;
+
+    const month = new Date(recordedAtMs).toISOString().slice(0, 7);
+    monthlyTotals.set(month, (monthlyTotals.get(month) ?? 0) + getEmissionsKgCo2e(entry));
+  }
+
+  return Array.from(monthlyTotals, ([month, emissionsKgCo2e]) => ({ month, emissionsKgCo2e }))
+    .sort((left, right) => left.month.localeCompare(right.month));
+}
+
 export function exportScope2LedgerToCsv(entries: readonly Scope2LedgerEntry[], filter: Scope2CsvExportFilter = {}): string {
   const headers = ['id', 'venueId', 'recordedAt', 'kwh', 'emissionFactorKgPerKwh', 'emissionsKgCo2e', 'notes'];
   const filtered = filterScope2LedgerEntries(entries, filter);
   const lines: string[] = [headers.map(formatRfc4180CsvCell).join(',')];
   for (const entry of filtered) {
-    const computedEmissions = typeof entry.emissionsKgCo2e === 'number' && Number.isFinite(entry.emissionsKgCo2e) ? entry.emissionsKgCo2e : entry.kwh * entry.emissionFactorKgPerKwh;
-    const row = [entry.id, entry.venueId, entry.recordedAt, entry.kwh, entry.emissionFactorKgPerKwh, computedEmissions, entry.notes ?? ''];
+    const row = [entry.id, entry.venueId, entry.recordedAt, entry.kwh, entry.emissionFactorKgPerKwh, getEmissionsKgCo2e(entry), entry.notes ?? ''];
     lines.push(row.map(formatRfc4180CsvCell).join(','));
   }
   return lines.join('\r\n');

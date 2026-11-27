@@ -59,3 +59,23 @@ describe('GatewayAuthRegistry stale credential listing', () => {
     expect(registry.getCredentialRecord('unused', 'unused-key')?.lastUsedAtMs).toBeUndefined();
   });
 });
+
+describe('GatewayAuthRegistry revocation metadata cleanup', () => {
+  it('removes lastUsedAt tracking for the revoked gateway only', () => {
+    const registry = new GatewayAuthRegistry();
+    registry.enrollGatewayCredential({ gatewayId: 'revoked-gateway', keyId: 'key-1', secretOrVerifier: 'secret-1' });
+    registry.enrollGatewayCredential({ gatewayId: 'revoked-gateway', keyId: 'key-2', secretOrVerifier: 'secret-2' });
+    registry.enrollGatewayCredential({ gatewayId: 'other-gateway', keyId: 'key-3', secretOrVerifier: 'secret-3' });
+
+    registry.verifyCredential({ gatewayId: 'revoked-gateway', keyId: 'key-1', tokenSecret: 'secret-1', nowMs: 1_000 });
+    registry.verifyCredential({ gatewayId: 'revoked-gateway', keyId: 'key-2', tokenSecret: 'secret-2', nowMs: 2_000 });
+    registry.verifyCredential({ gatewayId: 'other-gateway', keyId: 'key-3', tokenSecret: 'secret-3', nowMs: 3_000 });
+
+    registry.revokeGateway('revoked-gateway');
+
+    expect(registry.getCredentialRecord('revoked-gateway', 'key-1')).toEqual(expect.objectContaining({ lastUsedAtMs: undefined, lastUsedAt: undefined }));
+    expect(registry.getCredentialRecord('revoked-gateway', 'key-2')).toEqual(expect.objectContaining({ lastUsedAtMs: undefined, lastUsedAt: undefined }));
+    expect(registry.getCredentialRecord('other-gateway', 'key-3')).toEqual(expect.objectContaining({ lastUsedAtMs: 3_000, lastUsedAt: new Date(3_000).toISOString() }));
+    expect(registry.listStaleCredentials(0, 10_000).map((record) => record.gatewayId)).toEqual(['other-gateway']);
+  });
+});

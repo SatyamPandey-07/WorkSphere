@@ -54,6 +54,61 @@ export type SocketConnectionState =
   | "CONNECTED"
   | "DISCONNECTING";
 
+export type MeshDataChannelState =
+  | "connecting"
+  | "open"
+  | "closing"
+  | "closed";
+
+export interface MeshConnectionQualityMetrics {
+  reconnectCount: number;
+  lastDisconnectReason: string | null;
+  activeChannelState: MeshDataChannelState;
+}
+
+export function createMeshConnectionMetricsController(
+  onUpdate?: (metrics: MeshConnectionQualityMetrics) => void,
+) {
+  let metrics: MeshConnectionQualityMetrics = {
+    reconnectCount: 0,
+    lastDisconnectReason: null,
+    activeChannelState: "closed",
+  };
+  let hasConnected = false;
+  let disconnectedSinceConnect = false;
+
+  const update = (changes: Partial<MeshConnectionQualityMetrics>) => {
+    const next = { ...metrics, ...changes };
+    if (
+      next.reconnectCount === metrics.reconnectCount &&
+      next.lastDisconnectReason === metrics.lastDisconnectReason &&
+      next.activeChannelState === metrics.activeChannelState
+    ) {
+      return;
+    }
+    metrics = next;
+    onUpdate?.(metrics);
+  };
+
+  return {
+    getMetrics: () => metrics,
+    markConnected: () => {
+      if (hasConnected && disconnectedSinceConnect) {
+        update({ reconnectCount: metrics.reconnectCount + 1 });
+      }
+      hasConnected = true;
+      disconnectedSinceConnect = false;
+    },
+    markDisconnected: (reason: string | null) => {
+      if (hasConnected) disconnectedSinceConnect = true;
+      update({ lastDisconnectReason: reason });
+    },
+    setActiveChannelState: (activeChannelState: MeshDataChannelState) => {
+      update({ activeChannelState });
+    },
+  };
+}
+
 export const VISIBILITY_RECONNECT_DEBOUNCE_MS = 300;
 
 export function createSocketReconnectController(options: {
@@ -394,6 +449,12 @@ export function useMeshDataChannels({
   );
   const [isRelayed, setIsRelayed] = useState(false);
   const [relayStatus, setRelayStatus] = useState<TurnRelayStatus>("unknown");
+  const [connectionMetrics, setConnectionMetrics] =
+    useState<MeshConnectionQualityMetrics>({
+      reconnectCount: 0,
+      lastDisconnectReason: null,
+      activeChannelState: "closed",
+    });
 
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
@@ -405,6 +466,38 @@ export function useMeshDataChannels({
   const isConnectingRef = useRef<boolean>(false);
   const socketStateRef = useRef<SocketConnectionState>("DISCONNECTED");
   const visibilityDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionMetricsControllerRef = useRef<
+    ReturnType<typeof createMeshConnectionMetricsController> | null
+  >(null);
+  if (!connectionMetricsControllerRef.current) {
+    connectionMetricsControllerRef.current = createMeshConnectionMetricsController(
+      (next) => {
+        setConnectionMetrics((previous) =>
+          previous.reconnectCount === next.reconnectCount &&
+          previous.lastDisconnectReason === next.lastDisconnectReason &&
+          previous.activeChannelState === next.activeChannelState
+            ? previous
+            : next,
+        );
+      },
+    );
+  }
+
+  const updateActiveChannelState = useCallback(() => {
+    const states = Array.from(dataChannelsRef.current.values(), (channel) =>
+      channel.readyState as MeshDataChannelState,
+    );
+    const activeChannelState: MeshDataChannelState = states.includes("open")
+      ? "open"
+      : states.includes("connecting")
+        ? "connecting"
+        : states.includes("closing")
+          ? "closing"
+          : "closed";
+    connectionMetricsControllerRef.current?.setActiveChannelState(
+      activeChannelState,
+    );
+  }, []);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -533,6 +626,7 @@ export function useMeshDataChannels({
 
       const pc = peersRef.current.get(peerId);
       dataChannelsRef.current.delete(peerId);
+      updateActiveChannelState();
       prevBitrateBaselineRef.current.delete(peerId);
       prevRtpBaselineRef.current.delete(peerId);
       clearPeerTelemetryState(peerId);
@@ -562,7 +656,7 @@ export function useMeshDataChannels({
       dataChannelsRef.current.delete(peerId);
       updatePeerCount();
     },
-    [clearPeerTelemetryState, updatePeerCount],
+    [clearPeerTelemetryState, updatePeerCount, updateActiveChannelState],
   );
 
   const handleIncomingData = useCallback(
@@ -681,9 +775,11 @@ export function useMeshDataChannels({
       limiter.setEnabled(peerRelayStatusRef.current.get(peerId) === "relay");
 
       dataChannelsRef.current.set(peerId, dc);
+      updateActiveChannelState();
 
       const onOpenHandler = () => {
         if (dataChannelsRef.current.get(peerId) !== dc) return;
+        updateActiveChannelState();
         updatePeerCount();
         setIsConnected(true);
         chunker.drainQueue();
@@ -710,6 +806,7 @@ export function useMeshDataChannels({
         }
 
         dataChannelsRef.current.delete(peerId);
+        updateActiveChannelState();
         prevBitrateBaselineRef.current.delete(peerId);
         prevRtpBaselineRef.current.delete(peerId);
         clearPeerTelemetryState(peerId);
@@ -744,7 +841,12 @@ export function useMeshDataChannels({
       };
       dc.onerror = onErrorHandler;
     },
-    [clearPeerTelemetryState, updatePeerCount, handleIncomingData],
+    [
+      clearPeerTelemetryState,
+      updatePeerCount,
+      handleIncomingData,
+      updateActiveChannelState,
+    ],
   );
 
   const ensurePeer = useCallback(
@@ -866,6 +968,9 @@ export function useMeshDataChannels({
     room: roomId,
     query: token ? { token } : undefined,
     onOpen() {
+      connectionMetricsControllerRef.current?.markConnected();
+      socketStateRef.current = "CONNECTED";
+      isConnectingRef.current = false;
       if (userId) {
         const peerIds = [...peersRef.current.keys()];
         for (const id of peerIds) {
@@ -873,6 +978,13 @@ export function useMeshDataChannels({
         }
         sendSignal({ kind: "peer-join" });
       }
+    },
+    onClose(event) {
+      connectionMetricsControllerRef.current?.markDisconnected(
+        event.reason || null,
+      );
+      socketStateRef.current = "DISCONNECTED";
+      isConnectingRef.current = false;
     },
     onMessage(event) {
       try {
@@ -914,6 +1026,7 @@ export function useMeshDataChannels({
       rateLimiters.clear();
       peerRelayStatus.clear();
       dataChannels.clear();
+      connectionMetricsControllerRef.current?.setActiveChannelState("closed");
     };
   }, [cleanupPeer]);
 
@@ -1274,6 +1387,9 @@ export function useMeshDataChannels({
     peerLatencies,
     isRelayed,
     relayStatus,
+    reconnectCount: connectionMetrics.reconnectCount,
+    lastDisconnectReason: connectionMetrics.lastDisconnectReason,
+    activeChannelState: connectionMetrics.activeChannelState,
     rateLimiters: rateLimitersRef.current,
   };
 }

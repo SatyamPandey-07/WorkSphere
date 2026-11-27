@@ -1,5 +1,65 @@
 import { createHash } from "crypto";
 
+export type BundlePriorityTier = "critical" | "normal" | "bulk";
+
+const PRIORITY_RANK: Record<BundlePriorityTier, number> = {
+  critical: 3,
+  normal: 2,
+  bulk: 1,
+};
+
+/**
+ * Normalizes explicit priority tiers, numeric BundlePriority values, or
+ * semantic bundle categories (e.g. emergency, check-in, telemetry) into a tier.
+ */
+export function normalizeBundlePriority(
+  rawPriority?: unknown,
+  categoryHint?: unknown,
+): BundlePriorityTier {
+  if (typeof rawPriority === "string") {
+    const normalized = rawPriority.trim().toLowerCase();
+    if (normalized === "critical" || normalized === "emergency") {
+      return "critical";
+    }
+    if (normalized === "bulk" || normalized === "telemetry") {
+      return "bulk";
+    }
+    if (normalized === "normal" || normalized === "expedited") {
+      return "normal";
+    }
+  }
+
+  if (typeof rawPriority === "number" && Number.isFinite(rawPriority)) {
+    if (rawPriority >= 3) return "critical";
+    if (rawPriority <= 0) return "bulk";
+    return "normal";
+  }
+
+  if (typeof categoryHint === "string") {
+    const hint = categoryHint.trim().toLowerCase();
+    if (hint === "emergency" || hint === "sos" || hint === "alert") {
+      return "critical";
+    }
+    if (
+      hint === "telemetry" ||
+      hint === "bulk_telemetry" ||
+      hint === "bulk-telemetry" ||
+      hint === "metrics"
+    ) {
+      return "bulk";
+    }
+  }
+
+  return "normal";
+}
+
+export function comparePriorityTiers(
+  a: BundlePriorityTier,
+  b: BundlePriorityTier,
+): number {
+  return PRIORITY_RANK[b] - PRIORITY_RANK[a];
+}
+
 export type BundleLifecycleStatus =
   | "received"
   | "assembling"
@@ -31,12 +91,17 @@ export interface IncomingFragment {
   payloadBase64: string;
   creationTimestamp: number;
   lifetimeMs: number;
+  priority?: BundlePriorityTier;
+  category?: string;
 }
 
 export interface StoredBundleRecord {
   logicalBundleId: string;
   source: string;
   destination: string;
+  priority: BundlePriorityTier;
+  creationTimestamp: number;
+  ingestedSeq: number;
   totalPayloadLength: number;
   expiresAtMs: number;
   status: BundleLifecycleStatus;
@@ -66,6 +131,7 @@ export class DTNBundlesInbox {
   private maxTotalPayloadBytes: number;
   private maxFragmentsPerBundle: number;
   private receiptSeq = 0;
+  private ingestSeq = 0;
 
   constructor(limits: DTNInboxLimits = {}) {
     this.maxTotalPayloadBytes = limits.maxTotalPayloadBytes ?? 1024 * 1024; // 1 MiB
@@ -78,15 +144,21 @@ export class DTNBundlesInbox {
   ): {
     accepted: boolean;
     status: BundleLifecycleStatus;
+    priority: BundlePriorityTier;
     duplicate?: boolean;
     receipt?: DTNDeliveryReceipt;
     error?: string;
   } {
+    const priority = normalizeBundlePriority(
+      fragment.priority,
+      fragment.category,
+    );
     const expiresAtMs = fragment.creationTimestamp + fragment.lifetimeMs;
     if (nowMs >= expiresAtMs) {
       return {
         accepted: false,
         status: "expired",
+        priority,
         error: "Bundle has expired",
       };
     }
@@ -98,6 +170,7 @@ export class DTNBundlesInbox {
       return {
         accepted: false,
         status: "failed",
+        priority,
         error: `Payload length ${fragment.totalPayloadLength} exceeds limit ${this.maxTotalPayloadBytes}`,
       };
     }
@@ -106,6 +179,7 @@ export class DTNBundlesInbox {
       return {
         accepted: false,
         status: "failed",
+        priority,
         error: "Negative fragmentOffset is invalid",
       };
     }
@@ -116,6 +190,9 @@ export class DTNBundlesInbox {
         logicalBundleId: fragment.logicalBundleId,
         source: fragment.source,
         destination: fragment.destination,
+        priority,
+        creationTimestamp: fragment.creationTimestamp,
+        ingestedSeq: ++this.ingestSeq,
         totalPayloadLength: fragment.totalPayloadLength,
         expiresAtMs,
         status: "received",
@@ -123,12 +200,15 @@ export class DTNBundlesInbox {
         receipts: [],
       };
       this.bundles.set(fragment.logicalBundleId, record);
+    } else if (PRIORITY_RANK[priority] > PRIORITY_RANK[record.priority]) {
+      record.priority = priority;
     }
 
     if (record.status === "delivered") {
       return {
         accepted: true,
         status: "delivered",
+        priority: record.priority,
         duplicate: true,
         receipt: record.receipts.find((r) => r.kind === "application_delivery"),
       };
@@ -138,6 +218,7 @@ export class DTNBundlesInbox {
       return {
         accepted: false,
         status: record.status,
+        priority: record.priority,
         error: "Conflicting totalPayloadLength for existing logicalBundleId",
       };
     }
@@ -148,12 +229,14 @@ export class DTNBundlesInbox {
         return {
           accepted: true,
           status: record.status,
+          priority: record.priority,
           duplicate: true,
         };
       }
       return {
         accepted: false,
         status: record.status,
+        priority: record.priority,
         error: `Conflicting fragment bytes at offset ${fragment.fragmentOffset}`,
       };
     }
@@ -162,6 +245,7 @@ export class DTNBundlesInbox {
       return {
         accepted: false,
         status: "failed",
+        priority: record.priority,
         error: `Fragment count exceeds maxFragmentsPerBundle (${this.maxFragmentsPerBundle})`,
       };
     }
@@ -182,6 +266,7 @@ export class DTNBundlesInbox {
       return {
         accepted: true,
         status: "ready",
+        priority: record.priority,
         receipt: completeReceipt,
       };
     }
@@ -190,7 +275,90 @@ export class DTNBundlesInbox {
     return {
       accepted: true,
       status: "assembling",
+      priority: record.priority,
       receipt: transportReceipt,
+    };
+  }
+
+  /**
+   * Orders incoming fragments by bundle priority (`critical` > `normal` > `bulk`),
+   * preserving relative arrival order within the same tier.
+   */
+  public prioritizeFragments<
+    T extends Pick<IncomingFragment, "priority" | "category">,
+  >(fragments: readonly T[]): T[] {
+    return fragments
+      .map((fragment, index) => ({
+        fragment,
+        index,
+        tier: normalizeBundlePriority(fragment.priority, fragment.category),
+      }))
+      .sort(
+        (a, b) =>
+          comparePriorityTiers(a.tier, b.tier) || a.index - b.index,
+      )
+      .map((entry) => entry.fragment);
+  }
+
+  /**
+   * Ingests a batch of fragments in priority queue order (`critical`, then `normal`, then `bulk`).
+   */
+  public ingestFragmentsPrioritized(
+    fragments: readonly IncomingFragment[],
+    nowMs: number = Date.now(),
+  ) {
+    return this.prioritizeFragments(fragments).map((fragment) => ({
+      logicalBundleId: fragment.logicalBundleId,
+      ...this.ingestFragment(fragment, nowMs),
+    }));
+  }
+
+  /**
+   * Returns all `ready` bundles ordered by priority tier (`critical` > `normal` > `bulk`),
+   * tie-breaking by earlier creationTimestamp and FIFO ingestion sequence.
+   */
+  public getPrioritizedReadyBundles(): StoredBundleRecord[] {
+    return Array.from(this.bundles.values())
+      .filter((record) => record.status === "ready")
+      .sort(
+        (a, b) =>
+          comparePriorityTiers(a.priority, b.priority) ||
+          a.creationTimestamp - b.creationTimestamp ||
+          a.ingestedSeq - b.ingestedSeq,
+      )
+      .map((record) => structuredClone(record));
+  }
+
+  /**
+   * Delivers the highest-priority non-expired `ready` bundle in the queue.
+   */
+  public async deliverNextReady(
+    workerId: string,
+    applyFn: (payloadBase64: string, record: StoredBundleRecord) => Promise<void>,
+    nowMs: number = Date.now(),
+  ): Promise<{
+    logicalBundleId?: string;
+    priority?: BundlePriorityTier;
+    delivered: boolean;
+    alreadyDelivered?: boolean;
+    receipt?: DTNDeliveryReceipt;
+    error?: string;
+  }> {
+    this.purgeExpired(nowMs);
+    const next = this.getPrioritizedReadyBundles()[0];
+    if (!next) {
+      return { delivered: false, error: "No ready bundles in queue" };
+    }
+    const result = await this.deliverBundle(
+      next.logicalBundleId,
+      workerId,
+      applyFn,
+      nowMs,
+    );
+    return {
+      logicalBundleId: next.logicalBundleId,
+      priority: next.priority,
+      ...result,
     };
   }
 
@@ -323,6 +491,15 @@ export class DTNBundlesInbox {
     this.bundles = new Map(entries);
     // Recover any bundles that were mid-processing during crash back to ready
     for (const record of this.bundles.values()) {
+      record.priority = normalizeBundlePriority(record.priority);
+      if (typeof record.creationTimestamp !== "number") {
+        record.creationTimestamp = 0;
+      }
+      if (typeof record.ingestedSeq !== "number") {
+        record.ingestedSeq = ++this.ingestSeq;
+      } else if (record.ingestedSeq > this.ingestSeq) {
+        this.ingestSeq = record.ingestedSeq;
+      }
       if (record.status === "processing") {
         record.status = record.assembledPayloadBase64 ? "ready" : "assembling";
         record.claimedByWorker = undefined;

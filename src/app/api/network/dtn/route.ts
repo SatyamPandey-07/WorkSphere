@@ -5,9 +5,24 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  comparePriorityTiers,
   defaultDtnInbox,
+  normalizeBundlePriority,
+  type BundlePriorityTier,
   type IncomingFragment,
 } from '@/core/network/DTNBundlesInbox';
+
+function isFragmentBundleItem(item: unknown): item is Record<string, unknown> & {
+  logicalBundleId: string;
+  payloadBase64: string;
+} {
+  return (
+    Boolean(item) &&
+    typeof item === 'object' &&
+    typeof (item as Record<string, unknown>).logicalBundleId === 'string' &&
+    typeof (item as Record<string, unknown>).payloadBase64 === 'string'
+  );
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -18,16 +33,29 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
         }
 
+        const orderedItems = bundles
+            .map((item, index) => {
+                const record =
+                    item && typeof item === 'object'
+                        ? (item as Record<string, unknown>)
+                        : null;
+                const priority: BundlePriorityTier = normalizeBundlePriority(
+                    record?.priority,
+                    record?.bundleType ?? record?.category ?? record?.type,
+                );
+                return { item, index, priority };
+            })
+            .sort(
+                (a, b) =>
+                    comparePriorityTiers(a.priority, b.priority) ||
+                    a.index - b.index,
+            );
+
         const results = [];
         let processedCount = 0;
 
-        for (const item of bundles) {
-            if (
-                item &&
-                typeof item === 'object' &&
-                typeof item.logicalBundleId === 'string' &&
-                typeof item.payloadBase64 === 'string'
-            ) {
+        for (const { item, priority } of orderedItems) {
+            if (isFragmentBundleItem(item)) {
                 const fragment: IncomingFragment = {
                     logicalBundleId: item.logicalBundleId,
                     source: String(item.source ?? userId),
@@ -40,13 +68,14 @@ export async function POST(request: NextRequest) {
                     payloadBase64: item.payloadBase64,
                     creationTimestamp: Number(item.creationTimestamp ?? Date.now()),
                     lifetimeMs: Number(item.lifetimeMs ?? 3_600_000),
+                    priority,
                 };
                 const res = defaultDtnInbox.ingestFragment(fragment);
                 results.push({ logicalBundleId: fragment.logicalBundleId, ...res });
                 if (res.accepted) processedCount++;
             } else {
                 processedCount++;
-                results.push({ accepted: true, legacy: true });
+                results.push({ accepted: true, legacy: true, priority });
             }
         }
 

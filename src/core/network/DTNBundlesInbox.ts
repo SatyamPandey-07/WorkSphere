@@ -82,6 +82,12 @@ export interface DTNDeliveryReceipt {
   digest: string;
 }
 
+export interface BundleIntegrityError {
+  code: "PAYLOAD_DIGEST_MISMATCH";
+  expectedDigest: string;
+  actualDigest: string;
+}
+
 export interface IncomingFragment {
   logicalBundleId: string;
   source: string;
@@ -89,6 +95,7 @@ export interface IncomingFragment {
   fragmentOffset: number;
   totalPayloadLength: number;
   payloadBase64: string;
+  expectedPayloadDigest?: string;
   creationTimestamp: number;
   lifetimeMs: number;
   priority?: BundlePriorityTier;
@@ -103,6 +110,7 @@ export interface StoredBundleRecord {
   creationTimestamp: number;
   ingestedSeq: number;
   totalPayloadLength: number;
+  expectedPayloadDigest?: string;
   expiresAtMs: number;
   status: BundleLifecycleStatus;
   fragments: Record<number, string>; // offset -> base64
@@ -118,8 +126,8 @@ export interface DTNInboxLimits {
   maxFragmentsPerBundle?: number;
 }
 
-function sha256Hex(input: string): string {
-  return createHash("sha256").update(input, "utf8").digest("hex");
+function sha256Hex(input: string | Uint8Array): string {
+  return createHash("sha256").update(input).digest("hex");
 }
 
 /**
@@ -148,6 +156,7 @@ export class DTNBundlesInbox {
     duplicate?: boolean;
     receipt?: DTNDeliveryReceipt;
     error?: string;
+    integrityError?: BundleIntegrityError;
   } {
     const priority = normalizeBundlePriority(
       fragment.priority,
@@ -194,6 +203,7 @@ export class DTNBundlesInbox {
         creationTimestamp: fragment.creationTimestamp,
         ingestedSeq: ++this.ingestSeq,
         totalPayloadLength: fragment.totalPayloadLength,
+        expectedPayloadDigest: fragment.expectedPayloadDigest,
         expiresAtMs,
         status: "received",
         fragments: {},
@@ -221,6 +231,22 @@ export class DTNBundlesInbox {
         priority: record.priority,
         error: "Conflicting totalPayloadLength for existing logicalBundleId",
       };
+    }
+
+    if (fragment.expectedPayloadDigest !== undefined) {
+      if (
+        record.expectedPayloadDigest !== undefined &&
+        record.expectedPayloadDigest.toLowerCase() !==
+          fragment.expectedPayloadDigest.toLowerCase()
+      ) {
+        return {
+          accepted: false,
+          status: record.status,
+          priority: record.priority,
+          error: "Conflicting expected payload digests for existing bundle",
+        };
+      }
+      record.expectedPayloadDigest ??= fragment.expectedPayloadDigest;
     }
 
     const existingFrag = record.fragments[fragment.fragmentOffset];
@@ -256,6 +282,28 @@ export class DTNBundlesInbox {
     // Attempt assembly
     const assembled = this.tryAssemble(record);
     if (assembled !== null) {
+      if (record.expectedPayloadDigest !== undefined) {
+        const actualDigest = sha256Hex(Buffer.from(assembled, "base64"));
+        if (
+          actualDigest !== record.expectedPayloadDigest.toLowerCase()
+        ) {
+          record.status = "failed";
+          record.lastError = "SHA-256 payload digest mismatch";
+          const integrityError: BundleIntegrityError = {
+            code: "PAYLOAD_DIGEST_MISMATCH",
+            expectedDigest: record.expectedPayloadDigest,
+            actualDigest,
+          };
+          return {
+            accepted: false,
+            status: "failed",
+            priority: record.priority,
+            error: record.lastError,
+            integrityError,
+          };
+        }
+      }
+
       record.assembledPayloadBase64 = assembled;
       record.status = "ready";
       const completeReceipt = this.issueReceipt(

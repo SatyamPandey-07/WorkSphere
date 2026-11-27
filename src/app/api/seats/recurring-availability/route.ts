@@ -96,6 +96,15 @@ export function createRecurringAvailabilityHandler(
         );
       }
 
+      const startTime = Date.parse(`${startDate}T00:00:00.000Z`);
+      const endTime = Date.parse(`${endDate}T00:00:00.000Z`);
+      if (Number.isFinite(startTime) && Number.isFinite(endTime) && endTime < startTime) {
+        return NextResponse.json(
+          { error: 'dateRange.endDate must be on or after dateRange.startDate' },
+          { status: 400 },
+        );
+      }
+
       const validation = await validateRecurringBookingSlots(
         seatId,
         rrulePattern,

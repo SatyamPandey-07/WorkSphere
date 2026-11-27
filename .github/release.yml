@@ -1,0 +1,41 @@
+changelog:
+  exclude:
+    labels:
+      - dependencies
+      - chore
+      - maintenance
+      - ci
+      - build
+      - automated
+      - duplicate
+      - invalid
+      - wontfix
+      - skip-changelog
+    authors:
+      - dependabot[bot]
+      - renovate[bot]
+      - github-actions[bot]
+
+  categories:
+    - title: Breaking Changes
+      labels:
+        - breaking
+        - breaking-change
+    - title: Features
+      labels:
+        - feature
+        - enhancement
+        - feat
+    - title: Bug Fixes & Security
+      labels:
+        - bug
+        - fix
+        - security
+        - resilience
+    - title: Documentation
+      labels:
+        - documentation
+        - docs
+    - title: Other Changes
+      labels:
+        - "*"

@@ -931,3 +931,7 @@ main
 main
 main
  main
+
+## Releases
+
+Maintainers cutting a release or pre-release should follow the [Maintainer Release Checklist & Guide](docs/RELEASE_GUIDE.md).

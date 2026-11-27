@@ -1,19 +1,12 @@
-# Release Guide & Pre-Release vs. Latest Resolution
+# Maintainer Release Checklist & Guide
 
-Defines when to check **This is a pre-release** vs. **Set as the latest release** on GitHub Releases, how GitHub resolves `/releases/latest`, and examples for **Web** and **Flutter** staging builds.
+Step-by-step maintainer checklist for cutting a GitHub Release, selecting a previous tag for generated release notes, writing release descriptions, and attaching build artifacts.
 
-## 1. Pre-Release vs. Latest Release Resolution
+## Step-by-Step Maintainer Release Checklist
 
-* **Pre-Release (`prerelease: true`):** Marks non-production builds (`-alpha`, `-beta.N`, `-rc.N`, staging/QA builds). Excluded from `/releases/latest` API and redirect resolution and never replaces the active **Latest** release.
-* **Latest Production Release (`prerelease: false`, `make_latest: "true"`):** Marks a verified `vMAJOR.MINOR.PATCH` production release on the active release line so `/releases/latest` resolves to it.
-* **Older-Line Backports:** Leave both **This is a pre-release** and **Set as the latest release** unchecked so `latest` remains on the newest major release line.
-
-## 2. Web & Flutter Staging Build Examples
-
-### Web Staging Build
-* Tag staging builds as `v2.4.0-rc.1` (or `web-v2.4.0-rc.1`), attach staging bundle notes, check **This is a pre-release**, and leave **Set as the latest release** unchecked.
-* Promote to production by tagging `v2.4.0`, unchecking **This is a pre-release**, and checking **Set as the latest release**.
-
-### Flutter Staging Build
-* Tag staging APK/AAB/IPA builds as `v2.4.0-beta.1` (or `flutter-v2.4.0-beta.1`), attach staging binaries and SHA-256 checksums, check **This is a pre-release**, and leave **Set as the latest release** unchecked.
-* Promote to production by tagging `v2.4.0`, unchecking **This is a pre-release**, and checking **Set as the latest release**.
+1. **Verify Target Commit & Push Tag:** Ensure CI passes on `main`, create an annotated `vMAJOR.MINOR.PATCH` (or pre-release) tag, and push it to `upstream`.
+2. **Draft Release & Choose Tag:** Open **Releases -> Draft a new release** and select the pushed tag.
+3. **Select Previous Tag for Generated Release Notes:** Choose the baseline tag in the **Previous tag** dropdown (e.g., `v2.3.4` for `v2.4.0`) and click **Generate release notes**.
+4. **Write Release Description:** Title the release (`vMAJOR.MINOR.PATCH — <Summary>`) and organize notes into **Breaking Changes**, **Features**, **Bug Fixes & Security**, and **Documentation** with PR/issue links.
+5. **Attach Build Artifacts & Checksums:** Upload Web/Flutter build artifacts and `SHA256SUMS.txt` under **Attach binaries** and verify file integrity.
+6. **Configure Release Flags & Publish:** Check **This is a pre-release** (and uncheck **Set as the latest release**) for `-alpha`/`-beta`/`-rc` builds; check **Set as the latest release** only for active-line production releases, then click **Publish release**.

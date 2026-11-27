@@ -628,12 +628,24 @@ export function AmbientNoiseSparkline({
                 key={p.index}
                 cx={p.x}
                 cy={p.y}
-                r={hoveredIndex === p.index ? 4.5 : 2}
+                r={
+                  hoveredIndex === p.index
+                    ? 4.5
+                    : p.dBA > effectiveThresholdDb
+                      ? 3.5
+                      : 2
+                }
                 fill={
                   hoveredIndex === p.index
                     ? "#ffffff"
-                    : "url(#noiseLevelGradient)"
+                    : p.dBA > effectiveThresholdDb
+                      ? "#fb7185"
+                      : "url(#noiseLevelGradient)"
                 }
+                stroke={p.dBA > effectiveThresholdDb ? "#f43f5e" : "none"}
+                strokeWidth={p.dBA > effectiveThresholdDb ? 1.5 : 0}
+                data-testid="noise-data-point"
+                data-threshold-exceeded={String(p.dBA > effectiveThresholdDb)}
                 className="transition-all duration-150"
                 aria-hidden="true"
               />

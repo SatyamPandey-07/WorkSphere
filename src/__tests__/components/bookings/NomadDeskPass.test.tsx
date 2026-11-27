@@ -261,3 +261,82 @@ describe('NomadDeskPass PNG filename sanitization and export', () => {
     }
   });
 });
+
+describe('NomadDeskPass confirmation ID copy action', () => {
+  const booking: NomadDeskBooking = {
+    id: 'copy-test-booking',
+    confirmationId: 'CONF-Exact/42',
+    date: '2026-11-27',
+    time: '10:00 AM',
+    venue: { name: 'Copy Test Workspace' },
+  };
+
+  function restoreClipboard(
+    descriptor: PropertyDescriptor | undefined,
+  ) {
+    if (descriptor) {
+      Object.defineProperty(navigator, 'clipboard', descriptor);
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  }
+
+  it('copies the exact confirmation ID and shows success feedback', async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      'clipboard',
+    );
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    try {
+      render(<NomadDeskPass booking={booking} />);
+      const copyButton = screen.getByRole('button', {
+        name: 'Copy confirmation ID',
+      });
+
+      fireEvent.click(copyButton);
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith('CONF-Exact/42');
+      });
+      expect(copyButton).toHaveTextContent('Copied');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Confirmation ID copied.',
+      );
+    } finally {
+      restoreClipboard(originalClipboard);
+    }
+  });
+
+  it('shows visible feedback when clipboard access fails', async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      'clipboard',
+    );
+    const writeText = jest.fn().mockRejectedValue(new Error('clipboard denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    try {
+      render(<NomadDeskPass booking={booking} />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Copy confirmation ID' }),
+      );
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Could not copy confirmation ID. Copy it manually.',
+      );
+      expect(
+        screen.getByRole('button', { name: 'Copy confirmation ID' }),
+      ).toHaveTextContent('Copy failed');
+    } finally {
+      restoreClipboard(originalClipboard);
+    }
+  });
+});

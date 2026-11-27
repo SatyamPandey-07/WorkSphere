@@ -159,6 +159,9 @@ export function NomadDeskPass({
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -265,6 +268,22 @@ export function NomadDeskPass({
     link.remove();
   };
 
+  const handleCopyConfirmationId = async () => {
+    setCopyFeedback("idle");
+    try {
+      if (
+        typeof navigator === "undefined" ||
+        typeof navigator.clipboard?.writeText !== "function"
+      ) {
+        throw new Error("Clipboard access is unavailable.");
+      }
+      await navigator.clipboard.writeText(effectiveBooking.confirmationId);
+      setCopyFeedback("copied");
+    } catch {
+      setCopyFeedback("failed");
+    }
+  };
+
   if (!isOpen) return null;
 
   const locationSubtitle = resolveVenueLocationSubtitle(effectiveBooking.venue);
@@ -301,12 +320,21 @@ export function NomadDeskPass({
           )}
         </header>
 
-        <button
-          type="button"
+        <div
+          role="group"
+          aria-label="NomadDesk passcard"
+          tabIndex={0}
           onClick={() => setFlipped((value) => !value)}
-          aria-label={flipped ? "Show pass front" : "Show QR code back"}
-          aria-pressed={flipped}
-          className="mb-4 w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
+          onKeyDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              (event.key === "Enter" || event.key === " ")
+            ) {
+              event.preventDefault();
+              setFlipped((value) => !value);
+            }
+          }}
+          className="mb-4 w-full cursor-pointer text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
         >
           <div className="perspective-[1200px]">
             <div
@@ -341,9 +369,36 @@ export function NomadDeskPass({
                 <div className="flex items-end justify-between border-t border-white/10 pt-4">
                   <div>
                     <p className="text-xs text-zinc-400">BOOKING REFERENCE</p>
-                    <p className="mt-1 font-mono text-sm font-semibold">
-                      {effectiveBooking.confirmationId}
-                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <p className="font-mono text-sm font-semibold">
+                        {effectiveBooking.confirmationId}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleCopyConfirmationId();
+                        }}
+                        aria-label="Copy confirmation ID"
+                        className="rounded-md border border-white/15 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                      >
+                        {copyFeedback === "copied"
+                          ? "Copied"
+                          : copyFeedback === "failed"
+                            ? "Copy failed"
+                            : "Copy ID"}
+                      </button>
+                    </div>
+                    {copyFeedback === "copied" && (
+                      <p className="mt-1 text-xs text-emerald-300" role="status">
+                        Confirmation ID copied.
+                      </p>
+                    )}
+                    {copyFeedback === "failed" && (
+                      <p className="mt-1 text-xs text-red-300" role="alert">
+                        Could not copy confirmation ID. Copy it manually.
+                      </p>
+                    )}
                   </div>
                   <div className="text-right text-xs text-zinc-400">
                     <p>{effectiveBooking.date}</p>
@@ -391,11 +446,13 @@ export function NomadDeskPass({
               </div>
             </div>
           </div>
-        </button>
+        </div>
 
         <button
           type="button"
           onClick={() => setFlipped((value) => !value)}
+          aria-label={flipped ? "Show pass front" : "Show QR code back"}
+          aria-pressed={flipped}
           className="mb-4 flex w-full items-center justify-center gap-2 text-sm text-emerald-300 hover:text-emerald-200"
         >
           <RotateCw className="h-4 w-4" />

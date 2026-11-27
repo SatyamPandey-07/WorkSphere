@@ -112,7 +112,7 @@ const clerkMiddlewareHandler = clerkMiddleware(async (auth, request) => {
   return await runMiddlewarePipeline(request, context);
 });
 
-export async function middleware(
+export async function proxy(
   request: NextRequest,
   event: NextFetchEvent,
 ): Promise<NextResponse> {

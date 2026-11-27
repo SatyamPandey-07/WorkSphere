@@ -251,7 +251,12 @@ export class DTNBundlesInbox {
 
     const existingFrag = record.fragments[fragment.fragmentOffset];
     if (existingFrag !== undefined) {
-      if (existingFrag === fragment.payloadBase64) {
+      const existingPayloadLength = Buffer.from(existingFrag, "base64").byteLength;
+      const incomingPayloadLength = Buffer.from(
+        fragment.payloadBase64,
+        "base64",
+      ).byteLength;
+      if (existingPayloadLength === incomingPayloadLength) {
         return {
           accepted: true,
           status: record.status,

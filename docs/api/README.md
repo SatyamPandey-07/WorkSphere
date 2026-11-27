@@ -16,6 +16,7 @@ WorkSphere enforces per-client / per-key rate limits using Redis token buckets (
 - [Batch check-in attestation verification](./batch-checkin-attestation.md) — client-side batch PoAP signature verification payload, result, and encoding contract.
 - [Date filter formats](./DATE_FILTER_FORMATS.md) — supported calendar dates, RFC 3339 timestamps, relative windows, aliases, and 400 error responses.
 - [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
+- [Zero-downtime web and mobile API versioning](./API_VERSIONING_ZERO_DOWNTIME.md) — current unversioned API behavior, Flutter compatibility limits, proposed client-version/deprecation headers, and rollout guidance.
 - [Redis ping latency diagnostics](./REDIS_PING_LATENCY.md) — Redis ping latency measurement, timeout behavior, diagnostic response contracts, and healthy vs. degraded thresholds.
 - [Venue flagging API](./VENUE_FLAGGING.md) — venue flag moderation endpoint, reason length constraints, validation errors, and persistence schema.
 - [Bookings](./bookings.md)

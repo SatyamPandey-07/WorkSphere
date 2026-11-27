@@ -51,6 +51,8 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
 
   describe("formatCountdown helper", () => {
     it("formats minutes under 1 hour correctly", () => {
+      expect(formatCountdown(0.5, "Closes in")).toBe("Closes in < 1m");
+      expect(formatCountdown(0.25, "Opens in")).toBe("Opens in < 1m");
       expect(formatCountdown(1, "Closes in")).toBe("Closes in 1 min");
       expect(formatCountdown(2, "Closes in")).toBe("Closes in 2 mins");
       expect(formatCountdown(45, "Closes in")).toBe("Closes in 45 mins");
@@ -169,6 +171,37 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
   });
 
   describe("VenueHoursBadge presentation & status states", () => {
+    it("displays '< 1m' when under 60 seconds remain before closing or opening", () => {
+      // 14:29:30 UTC = 19:59:30 IST (30 seconds before 20:00 close)
+      const { rerender } = render(
+        <VenueHoursBadge
+          openingHours={standardSchedule}
+          currentTime="2026-11-24T14:29:30.000Z"
+          showCountdown
+        />,
+      );
+
+      const badge = screen.getByTestId("venue-opening-badge");
+      expect(badge.textContent).toBe("Closes in < 1m");
+      expect(badge).toHaveAttribute("data-state", "closing_soon");
+
+      // 03:29:30 UTC = 08:59:30 IST (30 seconds before 09:00 open)
+      rerender(
+        <VenueHoursBadge
+          openingHours={standardSchedule}
+          currentTime="2026-11-24T03:29:30.000Z"
+          showCountdown
+        />,
+      );
+      expect(screen.getByTestId("venue-opening-badge").textContent).toBe(
+        "Opens in < 1m",
+      );
+      expect(screen.getByTestId("venue-opening-badge")).toHaveAttribute(
+        "data-state",
+        "closed",
+      );
+    });
+
     it("renders a singular minute countdown and preserves the closing-soon state", () => {
       render(
         <VenueHoursBadge
@@ -332,7 +365,7 @@ describe("VenueHoursBadge & dynamic opening countdown", () => {
       render(<VenueHoursBadge openingHours={standardSchedule} showCountdown />);
 
       expect(screen.getByTestId("venue-opening-badge").textContent).toBe(
-        "Closes in 45m",
+        "Closes in 45 mins",
       );
 
       // Advance by 1 minute (60,000ms)

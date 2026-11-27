@@ -1,31 +1,32 @@
 # End-to-End Encrypted (E2EE) WebCrypto Session Key Exchange Protocol
 
-This specification defines how team chat clients establish, rotate, and verify end-to-end encrypted sessions in the browser using the Web Cryptography API (`crypto.subtle`) so message confidentiality and integrity hold even if transport TLS terminates at an edge proxy.
+Expands the E2EE WebCrypto specification with the threat model, `ECDH` + `HKDF` key derivation, 96-bit `AES-GCM` IV rotation, key rotation triggers, and replay protections.
 
-## 1. Key Generation & Session Derivation
+## 1. Threat Model
 
-* **Asymmetric Key Agreement (`ECDH` / `X25519`):** Generate key pairs via `crypto.subtle.generateKey` using `ECDH` or `X25519` with non-extractable private keys (`extractable: false`).
-* **Session Derivation (`HKDF` / `PBKDF2`):** Derive 256-bit `AES-GCM` session keys from the shared secret via `HKDF` (`SHA-256`) with unique salt and domain-separated `info` labels; use `PBKDF2` (`SHA-256`) with high iteration counts and unique salts when deriving keys from passphrases.
-* **Authenticated Encryption (`AES-GCM`):** Encrypt chat frames with `AES-GCM` and bind protocol metadata via `additionalData`.
+* **Network & Relay Adversary:** Treats transport links, proxies, and chat relays as untrusted against passive interception, tampering, MITM substitution, downgrade, and replay.
+* **Endpoint Boundary:** Assumes client runtimes are trusted within session scope while keeping private keys non-extractable (`extractable: false`).
 
-## 2. Ephemeral Key Exchange Handshake
+## 2. ECDH Key Generation & HKDF Session Derivation
 
-1. **Initiator Exchange:** Client A generates an ephemeral `ECDH`/`X25519` key pair, exports its public key with a fresh nonce and supported versions, and sends the handshake init message.
-2. **Responder Exchange:** Client B generates its ephemeral key pair, selects the highest mutually supported protocol/cipher suite, and returns its ephemeral public key and nonce.
-3. **Shared Secret & Confirmation:** Both peers derive the session key via `HKDF` over the handshake transcript and exchange a key-confirmation MAC before sending encrypted chat messages.
+* Generate `ECDH` key pairs via `crypto.subtle.generateKey` with non-extractable private keys.
+* Derive 256-bit `AES-GCM` session keys from the shared secret using `HKDF` (`SHA-256`) with unique session salt and domain-separated `info`.
+* Bind session/frame metadata (`protocolVersion`, `roomId`, `senderId`, `epoch`, `counter`) via `AES-GCM` `additionalData`.
 
-## 3. Forward Secrecy & Session Re-Keying
+## 3. AES-GCM 96-Bit IV Rotation
 
-* **Forward Secrecy:** Ephemeral key pairs per session or ratchet step isolate past session keys from later compromise.
-* **Session Re-Keying:** Rotate session keys on message count/time limits, room membership changes, or explicit re-key messages (`epoch + 1`), retiring prior keys after a short grace window.
+* Use 96-bit (12-byte) IVs with `AES-GCM` and never reuse an `(AES-GCM Key, IV)` pair.
+* Generate fresh 12-byte IVs via `crypto.getRandomValues` per frame and rotate session keys before IV/message thresholds are reached.
+* Reject missing, malformed, or duplicate IV/counter frames.
 
-## 4. Initialization Vector (IV) Uniqueness Rules
+## 4. Key Rotation Triggers
 
-* **No `(Key, IV)` Reuse:** Never reuse an IV under the same `AES-GCM` key.
-* **Fresh 12-Byte IV:** Generate a fresh 96-bit (12-byte) IV with `crypto.getRandomValues(new Uint8Array(12))` per payload and send it alongside the ciphertext.
-* **Duplicate Rejection:** Reject missing, malformed, or previously observed IV/counter pairs.
+* **Message Count:** Rotate session key (`epoch + 1`) once a frame-count threshold is reached.
+* **Time Interval:** Rotate keys periodically (e.g., every 15 minutes) or on key max-age expiry.
+* **Membership Changes:** Re-key immediately when room members join, leave, or change roles.
+* **Peer Re-Key / Epoch Reset:** Support explicit re-key frames and grace-window retirement of prior keys.
 
-## 5. Verification Against Downgrade & Replay Attacks
+## 5. Replay Protections
 
-* **Downgrade Verification:** Include negotiated version/cipher identifiers in the `HKDF` context and `AES-GCM` `additionalData`; reject versions below the minimum supported floor.
-* **Replay Verification:** Validate monotonic per-sender frame counters/nonces and freshness windows per `(roomId, senderId, epoch)`, rejecting duplicates or stale frames.
+* Include a monotonic per-sender `counter` and `epoch` authenticated by `AES-GCM`.
+* Enforce a per-`(roomId, senderId, epoch)` sliding anti-replay window and reject duplicate or out-of-window counters.

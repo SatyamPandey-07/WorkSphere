@@ -118,4 +118,25 @@ describe("AmbientNoiseSparkline threshold alert badge and line", () => {
     expect(y1).toBeGreaterThanOrEqual(12);
     expect(y1).toBeLessThanOrEqual(180);
   });
+
+  it("highlights individual peaks exceeding the configured thresholdDb", () => {
+    render(
+      <AmbientNoiseSparkline
+        thresholdDb={60}
+        hourlyDecibels={[
+          { hour: 10, dBA: 55 },
+          { hour: 11, dBA: 70 },
+          { hour: 12, dBA: 58 },
+        ]}
+      />,
+    );
+
+    const points = screen.getAllByTestId("noise-data-point");
+
+    expect(points[0]).toHaveAttribute("data-threshold-exceeded", "false");
+    expect(points[1]).toHaveAttribute("data-threshold-exceeded", "true");
+    expect(points[1]).toHaveAttribute("fill", "#fb7185");
+    expect(points[1]).toHaveAttribute("stroke", "#f43f5e");
+    expect(points[2]).toHaveAttribute("data-threshold-exceeded", "false");
+  });
 });

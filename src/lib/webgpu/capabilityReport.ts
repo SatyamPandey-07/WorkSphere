@@ -21,18 +21,40 @@ export interface WebGpuCapabilityReport {
   };
 }
 
+export interface WebGpuDiagnosticAdapterInfo {
+  vendor: string;
+  architecture: string;
+  driver: string;
+}
+
+export interface WebGpuDiagnosticExportPayload {
+  timestamp: string;
+  userAgent: string;
+  webgpuSupported: boolean;
+  adapterInfo: WebGpuDiagnosticAdapterInfo;
+  features: string[];
+  limits: Record<string, WebGpuLimitBucket>;
+}
+
 type AdapterLike = {
   features?: { has: (feature: string) => boolean };
   limits?: Record<string, unknown>;
+  info?: Record<string, unknown>;
+  requestAdapterInfo?: () => Promise<Record<string, unknown>>;
 };
 
 type GpuNavigatorLike = Navigator & {
   gpu?: {
-    requestAdapter: (options?: { powerPreference?: "low-power" | "high-performance" }) => Promise<AdapterLike | null>;
+    requestAdapter: (options?: {
+      powerPreference?: "low-power" | "high-performance";
+    }) => Promise<AdapterLike | null>;
   };
 };
 
-function bucket(value: unknown, thresholds: [number, number, number]): WebGpuLimitBucket {
+function bucket(
+  value: unknown,
+  thresholds: [number, number, number],
+): WebGpuLimitBucket {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return "unavailable";
   }
@@ -40,6 +62,32 @@ function bucket(value: unknown, thresholds: [number, number, number]): WebGpuLim
   if (value <= thresholds[1]) return "medium";
   if (value <= thresholds[2]) return "large";
   return "very-large";
+}
+
+/**
+ * Sanitizes strings in diagnostic exports by stripping private IPv4/IPv6 addresses,
+ * bearer/API tokens, and sensitive query credentials.
+ */
+export function sanitizeDiagnosticString(input: string): string {
+  if (!input) return "";
+
+  return input
+    // Redact private IPv4 ranges (10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x)
+    .replace(
+      /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g,
+      "[REDACTED_IP]",
+    )
+    // Redact Bearer / API / JWT-like tokens
+    .replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi, "Bearer [REDACTED_TOKEN]")
+    .replace(
+      /\b(?:sk|pk|whsec|tok|api|secret|token)[_-][A-Za-z0-9\-._]{8,}\b/gi,
+      "[REDACTED_TOKEN]",
+    )
+    // Redact sensitive query parameters (?token=..., &api_key=..., etc.)
+    .replace(
+      /([?&](?:token|api_key|apikey|secret|password|auth|session)=)[^&\s]+/gi,
+      "$1[REDACTED]",
+    );
 }
 
 /**
@@ -102,6 +150,62 @@ export async function collectWebGpuCapabilityReport(): Promise<WebGpuCapabilityR
   } catch {
     return unsupported;
   }
+}
+
+/**
+ * Assembles and sanitizes a full WebGPU diagnostic export payload suitable
+ * for administrator JSON export or clipboard sharing.
+ */
+export function buildWebGpuDiagnosticExportPayload(
+  report: WebGpuCapabilityReport,
+  options?: {
+    timestamp?: string;
+    userAgent?: string;
+    adapterInfo?: Partial<WebGpuDiagnosticAdapterInfo>;
+  },
+): WebGpuDiagnosticExportPayload {
+  const rawUserAgent =
+    options?.userAgent ??
+    (typeof navigator !== "undefined" && typeof navigator.userAgent === "string"
+      ? navigator.userAgent
+      : "unknown");
+
+  const supportedFeatures = Object.entries(report.features)
+    .filter(([, supported]) => Boolean(supported))
+    .map(([featureName]) => sanitizeDiagnosticString(featureName));
+
+  const sanitizedLimits: Record<string, WebGpuLimitBucket> = {};
+  for (const [key, value] of Object.entries(report.limits)) {
+    sanitizedLimits[sanitizeDiagnosticString(key)] = value;
+  }
+
+  return {
+    timestamp: options?.timestamp ?? new Date().toISOString(),
+    userAgent: sanitizeDiagnosticString(rawUserAgent),
+    webgpuSupported: Boolean(report.adapterAvailable),
+    adapterInfo: {
+      vendor: sanitizeDiagnosticString(
+        options?.adapterInfo?.vendor || "redacted-coarse-only",
+      ),
+      architecture: sanitizeDiagnosticString(
+        options?.adapterInfo?.architecture || "redacted-coarse-only",
+      ),
+      driver: sanitizeDiagnosticString(
+        options?.adapterInfo?.driver || "redacted-coarse-only",
+      ),
+    },
+    features: supportedFeatures,
+    limits: sanitizedLimits,
+  };
+}
+
+/**
+ * Formats a diagnostic export payload as 2-space indented JSON.
+ */
+export function formatWebGpuDiagnosticJson(
+  payload: WebGpuDiagnosticExportPayload,
+): string {
+  return JSON.stringify(payload, null, 2);
 }
 
 /** Strictly accepts only the allowlisted, coarse capability schema from clients. */
@@ -201,7 +305,9 @@ export function summarizeWebGpuCapabilityReports(
     if (!latest || timestamp > latest) latest = timestamp;
     if (!row.details) continue;
     try {
-      const normalized = normalizeWebGpuCapabilityReport(JSON.parse(row.details));
+      const normalized = normalizeWebGpuCapabilityReport(
+        JSON.parse(row.details),
+      );
       if (normalized) reports.push(normalized);
     } catch {
       // Ignore malformed legacy audit rows.
@@ -210,9 +316,11 @@ export function summarizeWebGpuCapabilityReports(
 
   return {
     sampleCount: reports.length,
-    adaptersAvailable: reports.filter((report) => report.adapterAvailable).length,
+    adaptersAvailable: reports.filter((report) => report.adapterAvailable)
+      .length,
     featureSupport: {
-      timestampQuery: reports.filter((report) => report.features.timestampQuery).length,
+      timestampQuery: reports.filter((report) => report.features.timestampQuery)
+        .length,
       shaderF16: reports.filter((report) => report.features.shaderF16).length,
       subgroups: reports.filter((report) => report.features.subgroups).length,
     },

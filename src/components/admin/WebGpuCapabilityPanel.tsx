@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  buildWebGpuDiagnosticExportPayload,
   collectWebGpuCapabilityReport,
+  formatWebGpuDiagnosticJson,
   type WebGpuCapabilityReport,
 } from "@/lib/webgpu/capabilityReport";
 
 type SaveState = "checking" | "saving" | "saved" | "failed";
+type ExportFeedback = "idle" | "exported" | "copied" | "failed";
 
 const limitLabels: Array<{
   key: keyof WebGpuCapabilityReport["limits"];
@@ -21,6 +24,7 @@ const limitLabels: Array<{
 export function WebGpuCapabilityPanel() {
   const [report, setReport] = useState<WebGpuCapabilityReport | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("checking");
+  const [exportFeedback, setExportFeedback] = useState<ExportFeedback>("idle");
   const [error, setError] = useState<string | null>(null);
   const attemptedRef = useRef(false);
 
@@ -66,6 +70,58 @@ export function WebGpuCapabilityPanel() {
     };
   }, []);
 
+  const buildFormattedReport = useCallback(() => {
+    if (!report) return "";
+    const payload = buildWebGpuDiagnosticExportPayload(report);
+    return formatWebGpuDiagnosticJson(payload);
+  }, [report]);
+
+  const handleExportJson = useCallback(() => {
+    if (!report) return;
+    const formattedJson = buildFormattedReport();
+    const filename = `worksphere-webgpu-diagnostic-${Date.now()}.json`;
+
+    try {
+      const blob = new Blob([formattedJson], { type: "application/json" });
+      const objectUrl = URL.createObjectURL(blob);
+
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = filename;
+        anchor.style.display = "none";
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        setExportFeedback("exported");
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch {
+      setExportFeedback("failed");
+    }
+  }, [report, buildFormattedReport]);
+
+  const handleCopyJson = useCallback(async () => {
+    if (!report) return;
+    const formattedJson = buildFormattedReport();
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(formattedJson);
+        setExportFeedback("copied");
+      } else {
+        setExportFeedback("failed");
+      }
+    } catch {
+      setExportFeedback("failed");
+    }
+  }, [report, buildFormattedReport]);
+
   return (
     <section
       className="mt-6 rounded-2xl border border-white/10 bg-zinc-950/50 p-5"
@@ -82,15 +138,41 @@ export function WebGpuCapabilityPanel() {
             device, driver, and exact hardware limits are not collected.
           </p>
         </div>
-        <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-300">
-          {saveState === "checking"
-            ? "Checking"
-            : saveState === "saving"
-              ? "Saving report"
-              : saveState === "saved"
-                ? "Reported"
-                : "Local only"}
-        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {report && (
+            <>
+              <button
+                type="button"
+                onClick={handleExportJson}
+                data-testid="export-webgpu-json-button"
+                aria-label="Export Diagnostic Report (.json)"
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-400/70"
+              >
+                Export Diagnostic Report (.json)
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCopyJson()}
+                data-testid="copy-webgpu-json-button"
+                aria-label="Copy Diagnostic JSON to Clipboard"
+                className="rounded-lg border border-white/10 bg-transparent px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-indigo-400/70"
+              >
+                {exportFeedback === "copied" ? "Copied JSON" : "Copy JSON"}
+              </button>
+            </>
+          )}
+
+          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-300">
+            {saveState === "checking"
+              ? "Checking"
+              : saveState === "saving"
+                ? "Saving report"
+                : saveState === "saved"
+                  ? "Reported"
+                  : "Local only"}
+          </span>
+        </div>
       </div>
 
       {report && (
@@ -131,6 +213,22 @@ export function WebGpuCapabilityPanel() {
             ))}
           </div>
         </>
+      )}
+
+      {exportFeedback === "exported" && (
+        <p className="mt-3 text-xs text-emerald-300" role="status">
+          Diagnostic JSON report downloaded.
+        </p>
+      )}
+      {exportFeedback === "copied" && (
+        <p className="mt-3 text-xs text-emerald-300" role="status">
+          Diagnostic JSON report copied to clipboard.
+        </p>
+      )}
+      {exportFeedback === "failed" && (
+        <p className="mt-3 text-xs text-amber-300" role="status">
+          Unable to export diagnostic JSON report.
+        </p>
       )}
 
       {error && (

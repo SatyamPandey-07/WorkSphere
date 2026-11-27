@@ -407,7 +407,6 @@ describe("Clerk Webhook Handler & Verification", () => {
       expect(prisma.user.upsert).toHaveBeenCalledWith({
         where: { id: "user_minimal" },
         update: {
-          email: null,
           firstName: null,
           lastName: null,
           imageUrl:
@@ -576,7 +575,7 @@ describe("Clerk webhook user.updated null email handling (#9267)", () => {
     };
 
     const rawBody = JSON.stringify(payload);
-    const wh = new Webhook(secret);
+    const wh = new StandardWebhook(secret);
     const msgId = "msg_test_user_updated_9267";
     const now = new Date();
     const signature = wh.sign(msgId, now, rawBody);
@@ -605,7 +604,6 @@ describe("Clerk webhook user.updated null email handling (#9267)", () => {
     expect(prisma.user.upsert).toHaveBeenCalledWith({
       where: { id: "user_phone_only_9267" },
       update: {
-        email: null,
         firstName: "Gaurika",
         lastName: "Dogra",
         imageUrl: "https://img.clerk.com/avatar.png?sz=150",

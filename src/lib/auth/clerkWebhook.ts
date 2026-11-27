@@ -139,7 +139,7 @@ export async function handleUserUpdated(
   await db.user.upsert({
     where: { id: profile.id },
     update: {
-      email: profile.email,
+      ...(profile.email !== null ? { email: profile.email } : {}),
       firstName: profile.firstName,
       lastName: profile.lastName,
       imageUrl: profile.imageUrl,

@@ -242,4 +242,38 @@ describe("Recurring availability dry-run preview", () => {
     expect(created.created).toBe(true);
     expect(created.series?.occurrences).toHaveLength(3);
   });
+
+  it("rejects a dry run when endDate precedes startDate before generating occurrences", async () => {
+    const manager = new RecurringSeriesManager();
+    const occupiedDates = jest.spyOn(manager, "getOccupiedDates");
+    const handler = createRecurringAvailabilityHandler(manager);
+
+    const response = await handler(
+      makeAvailabilityRequest({
+        ...request,
+        dryRun: true,
+        dateRange: { startDate: "2026-11-16", endDate: "2026-11-02" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "dateRange.endDate must be on or after dateRange.startDate",
+    });
+    expect(occupiedDates).not.toHaveBeenCalled();
+  });
+
+  it("continues to process a valid date range", async () => {
+    const manager = new RecurringSeriesManager();
+    const handler = createRecurringAvailabilityHandler(manager);
+
+    const response = await handler(
+      makeAvailabilityRequest({ ...request, dryRun: true }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      requestedDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
+    });
+  });
 });

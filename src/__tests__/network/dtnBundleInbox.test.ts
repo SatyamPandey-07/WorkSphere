@@ -93,3 +93,61 @@ describe('DTNBundlesInbox payload integrity digest', () => {
     expect(result.integrityError).toBeUndefined();
   });
 });
+
+describe('DTNBundlesInbox duplicate fragment lengths', () => {
+  const makeFragment = (offset: number, payload: Buffer): IncomingFragment => ({
+    logicalBundleId: 'bundle-duplicates',
+    source: 'source-node',
+    destination: 'destination-node',
+    fragmentOffset: offset,
+    totalPayloadLength: 6,
+    payloadBase64: payload.toString('base64'),
+    creationTimestamp: 1_000,
+    lifetimeMs: 60_000,
+  });
+
+  it('accepts same-index retransmissions with the same byte length idempotently', () => {
+    const inbox = new DTNBundlesInbox();
+    expect(inbox.ingestFragment(makeFragment(0, Buffer.from([1, 2])), 1_001).accepted).toBe(true);
+
+    const retransmission = inbox.ingestFragment(
+      makeFragment(0, Buffer.from([9, 9])),
+      1_002,
+    );
+
+    expect(retransmission).toMatchObject({ accepted: true, duplicate: true });
+    expect(inbox.getBundle('bundle-duplicates')?.fragments[0]).toBe(
+      Buffer.from([1, 2]).toString('base64'),
+    );
+  });
+
+  it('rejects a same-index retransmission with a different byte length without overwriting', () => {
+    const inbox = new DTNBundlesInbox();
+    inbox.ingestFragment(makeFragment(0, Buffer.from([1, 2])), 1_001);
+
+    const conflicting = inbox.ingestFragment(
+      makeFragment(0, Buffer.from([9])),
+      1_002,
+    );
+
+    expect(conflicting).toMatchObject({
+      accepted: false,
+      error: 'Conflicting fragment bytes at offset 0',
+    });
+    expect(inbox.getBundle('bundle-duplicates')?.fragments[0]).toBe(
+      Buffer.from([1, 2]).toString('base64'),
+    );
+  });
+
+  it('continues accepting different fragment indices normally', () => {
+    const inbox = new DTNBundlesInbox();
+    expect(inbox.ingestFragment(makeFragment(0, Buffer.from([1, 2])), 1_001).accepted).toBe(true);
+    const second = makeFragment(2, Buffer.from([3, 4]));
+
+    expect(inbox.ingestFragment(second, 1_002).accepted).toBe(true);
+    expect(inbox.getBundle('bundle-duplicates')?.fragments).toEqual({
+      0: Buffer.from([1, 2]).toString('base64'),
+      2: Buffer.from([3, 4]).toString('base64'),
+    });
+  });
+});

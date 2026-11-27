@@ -12,6 +12,36 @@ import {
 } from "../../workers/zkpWorker";
 
 describe("zkpWorker memory boundary & recovery", () => {
+  it("clears active scratch and job state when a prover throws synchronously", async () => {
+    const controller = new ZkpWorkerController(8);
+    const internalState = controller as unknown as {
+      activeScratchBuffer: WebAssembly.Memory | null;
+      activeJobId: string | null;
+    };
+
+    const response = await controller.handleMessage({
+      type: "prove",
+      jobId: "job-sync-failure",
+      requestedPages: 1,
+      prover: ({ memory }) => {
+        expect(internalState.activeScratchBuffer).toBe(memory);
+        expect(internalState.activeJobId).toBe("job-sync-failure");
+        throw new Error("synchronous prover failure");
+      },
+    });
+
+    expect(response).toMatchObject({
+      type: "error",
+      jobId: "job-sync-failure",
+      error: {
+        code: "PROVER_FAILED",
+        message: "synchronous prover failure",
+      },
+    });
+    expect(internalState.activeScratchBuffer).toBeNull();
+    expect(internalState.activeJobId).toBeNull();
+  });
+
   it("catches WebAssembly.Memory.grow failures and emits structured error without crashing", async () => {
     const controller = new ZkpWorkerController(16);
 

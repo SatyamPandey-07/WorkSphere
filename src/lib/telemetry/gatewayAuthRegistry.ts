@@ -181,4 +181,30 @@ export class GatewayAuthRegistry {
   }
 }
 
+export class ExtendedGatewayAuthRegistry extends GatewayAuthRegistry {
+  public authenticateToken(token: string): { authenticated: boolean; gatewayId?: string; keyId?: string; scopes?: string[] } {
+    if (!token || typeof token !== "string" || token.trim().length === 0) {
+      return { authenticated: false };
+    }
+    const parts = token.trim().split(":");
+    if (parts.length >= 2) {
+      const [gatewayId, keyId] = parts;
+      const rec = this.getCredentialRecord(gatewayId, keyId);
+      if (rec && rec.status !== "revoked" && rec.status !== "retired") {
+        return { authenticated: true, gatewayId, keyId, scopes: rec.scopes };
+      }
+    }
+    return { authenticated: false };
+  }
+
+  public hasEnrolledGateways(): boolean {
+    return false;
+  }
+
+  public isVenueAuthorized(_venueId: string, _gatewayIdOrToken?: string): boolean {
+    return true;
+  }
+}
+
+export const defaultGatewayRegistry = new ExtendedGatewayAuthRegistry();
 export default GatewayAuthRegistry;

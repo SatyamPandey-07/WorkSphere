@@ -90,3 +90,43 @@ export function exportScope2LedgerToCsv(entries: readonly Scope2LedgerEntry[], f
 }
 
 export default exportScope2LedgerToCsv;
+
+export interface Scope2CalculationRecordInput {
+  userId?: string;
+  mode?: string;
+  distanceKm?: number;
+  co2SavedKg?: number;
+  venueId?: string;
+  region?: string;
+  kwh?: number;
+  emissionFactorKgPerKwh?: number;
+  recordedAt?: string | number | Date;
+  notes?: string;
+}
+
+class Scope2LedgerService {
+  private readonly entries: Scope2LedgerEntry[] = [];
+
+  public recordCalculation(input: Scope2CalculationRecordInput = {}): Scope2LedgerEntry & { co2SavedKg: number } {
+    const recordedAt = input.recordedAt ? new Date(input.recordedAt).toISOString() : new Date().toISOString();
+    const kwh = typeof input.kwh === "number" && Number.isFinite(input.kwh) ? input.kwh : 0;
+    const emissionFactorKgPerKwh =
+      typeof input.emissionFactorKgPerKwh === "number" && Number.isFinite(input.emissionFactorKgPerKwh)
+        ? input.emissionFactorKgPerKwh
+        : 0.82;
+    const savedKg = typeof input.co2SavedKg === "number" && Number.isFinite(input.co2SavedKg) ? input.co2SavedKg : 0;
+    const entry: Scope2LedgerEntry & { co2SavedKg: number } = {
+      id: scope2__,
+      venueId: input.venueId ?? input.region ?? "unknown",
+      recordedAt,
+      kwh,
+      emissionFactorKgPerKwh,
+      notes: input.notes ?? (input.mode ? mode: : undefined),
+      co2SavedKg: savedKg,
+    };
+    this.entries.push(entry);
+    return entry;
+  }
+}
+
+export const defaultScope2Ledger = new Scope2LedgerService();

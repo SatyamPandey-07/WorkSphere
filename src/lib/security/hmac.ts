@@ -99,3 +99,24 @@ export function verifyHmacWebhookSignature(
   const expectedSignature = computeHmacSignature(rawBody, secret);
   return safeCompareSignatures(signature, expectedSignature);
 }
+
+export interface IotWebhookVerificationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+export function verifyIotWebhookSignature(
+  rawBody: string | Buffer,
+  signatureHeader: string | null | undefined,
+  secret: string | undefined,
+  options?: WebhookVerificationOptions
+): IotWebhookVerificationResult {
+  if (!secret || !signatureHeader) {
+    return { valid: false, reason: "MISSING_SECRET_OR_SIGNATURE" };
+  }
+  const normalizedHeader = signatureHeader.startsWith("sha256=")
+    ? signatureHeader.slice("sha256=".length)
+    : signatureHeader;
+  const ok = verifyHmacWebhookSignature(rawBody, normalizedHeader, secret, options);
+  return ok ? { valid: true } : { valid: false, reason: "INVALID_SIGNATURE" };
+}

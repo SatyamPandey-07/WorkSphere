@@ -1,5 +1,8 @@
 import { RecurringSeriesManager } from "@/features/seats/recurringSeriesStore";
-import { validateRecurringBookingSlots } from "@/features/seats/recurringBookingService";
+import {
+  validateRecurringBookingSlots,
+  type SeatOccupancyStore,
+} from "@/features/seats/recurringBookingService";
 import { NextRequest } from "next/server";
 import { createRecurringAvailabilityHandler } from "@/app/api/seats/recurring-availability/route";
 
@@ -120,9 +123,26 @@ describe("Recurring availability dry-run preview", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const result = await response.json();
+    expect(result).toMatchObject({
       conflictingDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
+      suggestedAlternatives: [
+        { conflictingDate: "2026-11-02", suggestedDate: "2026-11-23" },
+        { conflictingDate: "2026-11-09", suggestedDate: "2026-11-30" },
+        { conflictingDate: "2026-11-16", suggestedDate: "2026-12-07" },
+      ],
     });
+    const suggestedDates = result.suggestedAlternatives.map(
+      (alternative: { suggestedDate: string }) => alternative.suggestedDate,
+    );
+    expect(
+      suggestedDates.some((date: string) =>
+        result.conflictingDates.includes(date),
+      ),
+    ).toBe(false);
+    expect(
+      await manager.getOccupiedDates("desk-1", suggestedDates),
+    ).toEqual(new Map());
   });
 
   it("supports query-parameter dry run and returns an empty list without conflicts", async () => {
@@ -136,6 +156,7 @@ describe("Recurring availability dry-run preview", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       conflictingDates: [],
+      suggestedAlternatives: [],
       requestedDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
       availableDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
     });
@@ -157,6 +178,9 @@ describe("Recurring availability dry-run preview", () => {
       "2026-11-02",
       "2026-11-09",
       "2026-11-16",
+      "2026-11-23",
+      "2026-11-30",
+      "2026-12-07",
     ]);
 
     const handler = createRecurringAvailabilityHandler(manager);
@@ -172,8 +196,33 @@ describe("Recurring availability dry-run preview", () => {
         "2026-11-02",
         "2026-11-09",
         "2026-11-16",
+        "2026-11-23",
+        "2026-11-30",
+        "2026-12-07",
       ]),
     ).toEqual(before);
+  });
+
+  it("returns no suggestions when every future recurrence candidate is occupied", async () => {
+    const store: SeatOccupancyStore = {
+      getOccupiedDates: async (_seatId, dates) =>
+        new Map(
+          dates.map((date) => [
+            date,
+            { date, reason: "BOOKED" as const },
+          ]),
+        ),
+    };
+    const handler = createRecurringAvailabilityHandler(store);
+    const response = await handler(
+      makeAvailabilityRequest({ ...request, dryRun: true }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      conflictingDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
+      suggestedAlternatives: [],
+    });
   });
 
   it("keeps the normal response shape and series creation behavior", async () => {

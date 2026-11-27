@@ -125,6 +125,9 @@ While the binary `status` in `/api/health` indicates connectivity, external synt
 When Redis credentials are not configured (`!process.env.UPSTASH_REDIS_REST_URL`), `redisMs` is reported as `0` and `isRedisHealthy` evaluates to `true`. This allows developer local instances and CI pipelines to function without external Upstash dependency.
 
 ---
+## UI Status Badge Thresholds
+
+See [Redis Latency Status Badge](./REDIS_LATENCY_STATUS_BADGE.md) for the `healthy`, `degraded`, and `offline` ping latency thresholds, component props, and ARIA status labels rendered by `src/components/admin/RedisLatencyStatusBadge.tsx`.
 
 ## 5. Unavailability, Error Handling, and Fallbacks
 

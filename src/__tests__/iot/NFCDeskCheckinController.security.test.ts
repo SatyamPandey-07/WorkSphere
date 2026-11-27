@@ -65,6 +65,50 @@ describe('NFCDeskCheckinController cryptographic verification & durable state (#
     expect(sig).toBe(expected);
   });
 
+  it('rejects a correctly signed timestamp beyond the future clock-skew boundary', () => {
+    const now = 1_700_000_000_000;
+    const tap = signTap('user-1', 'checkin', now + 30_001, 'nonce-future-expired');
+
+    const result = controller.checkIn(tap, now);
+
+    expect(result).toEqual({
+      success: false,
+      state: DeskState.AVAILABLE,
+      error: 'Timestamp drift 30001ms exceeds max clock skew of 30000ms',
+    });
+    expect(controller.getDeskStatus(deskId)?.state).toBe(DeskState.AVAILABLE);
+  });
+
+  it('accepts a timestamp exactly at the inclusive future clock-skew boundary', () => {
+    const now = 1_700_000_000_000;
+    const tap = signTap('user-1', 'checkin', now + 30_000, 'nonce-future-boundary');
+
+    const result = controller.checkIn(tap, now);
+
+    expect(result.success).toBe(true);
+    expect(result.state).toBe(DeskState.OCCUPIED);
+  });
+
+  it('accepts a correctly signed timestamp within the future-skew window', () => {
+    const now = 1_700_000_000_000;
+    const tap = signTap('user-1', 'checkin', now + 15_000, 'nonce-future-valid');
+
+    expect(controller.checkIn(tap, now).success).toBe(true);
+  });
+
+  it('continues rejecting timestamps beyond the past-expiry boundary', () => {
+    const now = 1_700_000_000_000;
+    const tap = signTap('user-1', 'checkin', now - 30_001, 'nonce-past-expired');
+
+    const result = controller.checkIn(tap, now);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'Timestamp drift 30001ms exceeds max clock skew of 30000ms',
+    );
+    expect(controller.getDeskStatus(deskId)?.state).toBe(DeskState.AVAILABLE);
+  });
+
   it('does not consume nonce or mutate desk state when signature is invalid', () => {
     const t0 = 1_700_000_000_000;
     const forged = signTap('user-1', 'checkin', t0, 'nonce-shared');

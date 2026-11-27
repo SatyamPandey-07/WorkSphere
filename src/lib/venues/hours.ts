@@ -113,6 +113,7 @@ function getLocalClock(
     weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hourCycle: "h23",
   });
 
@@ -123,10 +124,12 @@ function getLocalClock(
   const weekdayIndex = Math.max(0, WEEKDAY_ORDER.indexOf(weekdayShort));
   const hour = Number(parts.find((p) => p.type === "hour")?.value);
   const minute = Number(parts.find((p) => p.type === "minute")?.value);
+  const second = Number(parts.find((p) => p.type === "second")?.value ?? 0);
 
   return {
     weekdayIndex,
-    minutesSinceMidnight: hour * 60 + minute,
+    minutesSinceMidnight:
+      hour * 60 + minute + (Number.isFinite(second) ? second / 60 : 0),
   };
 }
 
@@ -144,6 +147,9 @@ export function formatCountdown(
   minutes: number,
   prefix: "Closes in" | "Opens in",
 ): string {
+  if (minutes > 0 && minutes < 1) {
+    return `${prefix} < 1m`;
+  }
   const clamped = Math.max(0, Math.floor(minutes));
   const hours = Math.floor(clamped / 60);
   const mins = clamped % 60;

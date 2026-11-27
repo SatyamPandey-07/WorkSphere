@@ -10,6 +10,44 @@ Each active subscriber on a folder receives a lease scoped to `(userId, folderId
 * **Validity & Renewal Checks:** A lease is valid only when `nowMs < expiresAtMs` and `revokedAtMs === undefined`. Room coordinators renew active leases prior to `expiresAtMs`; once expired, read/write/presence operations gated by that lease are rejected until a fresh lease is minted.
 * **Monotonic ACL Version:** Every ACL mutation increments or updates the folder's `aclVersion`. Any lease bound to an older `aclVersion` or matching a revoked `(userId, folderId)` pair is immediately invalidated.
 
+### Expiring warning and renewal
+
+`FolderAclLeaseManager.checkExpiringLeases()` emits a `lease_expiring` warning when a non-revoked lease is still valid and has `remainingMs <= warningLeadMs`. The default warning lead is **30,000 ms (30 seconds)**. The check is polling-based, so a delayed check can emit the warning later than the 30-second point, but never at or after expiration. A warning is emitted once per lease renewal window; renewing the lease resets that state. Revoked or already-expired leases do not produce this warning.
+
+The warning payload contains:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `type` | `"lease_expiring"` | Event discriminator. |
+| `leaseId` | `string` | Identifier of the lease nearing expiration. |
+| `userId` | `string` | User whose lease is expiring. |
+| `folderId` | `string` | Folder covered by the lease. |
+| `roomId` | `string`, optional | Room associated with the lease, when provided. |
+| `aclVersion` | `number` | ACL version to which the lease is bound. |
+| `expiresAtMs` | `number` | Lease expiration time in Unix epoch milliseconds. |
+| `remainingMs` | `number` | Time remaining when the warning was generated, in milliseconds. |
+| `emittedAtMs` | `number` | Warning generation time in Unix epoch milliseconds. |
+
+Example warning at the default 30-second threshold:
+
+```json
+{
+  "type": "lease_expiring",
+  "leaseId": "lease-example",
+  "userId": "user-collab-1",
+  "folderId": "folder-specs",
+  "roomId": "room-specs",
+  "aclVersion": 3,
+  "expiresAtMs": 1120000,
+  "remainingMs": 30000,
+  "emittedAtMs": 1090000
+}
+```
+
+The manager delivers warnings to listeners registered with `onLeaseExpiring()`. A client that receives a warning should ask its existing room coordinator or application renewal path to renew the lease; the manager does not define a client-facing renewal endpoint. The coordinator can call `renewLease(leaseId, ttlMs?)`. A successful call returns the renewed lease record with updated issue and expiration times and resets the warning window. A missing or revoked lease returns `null`; the client must not treat that as a renewal and should follow the application's re-authorization or disconnect flow. Renewal is not guaranteed by the warning itself.
+
+The warning is advisory, not an expiration or revocation event. The lease remains valid only until `expiresAtMs` unless explicitly revoked sooner. At expiration, lease checks reject access; ACL revocation invalidates the lease independently of this warning and follows the revocation behavior below.
+
 ## 2. Revocation Broadcast & Socket Termination (`src/app/api/partykit/auth/route.ts`)
 
 When an administrator or owner revokes or downgrades a user's folder access:

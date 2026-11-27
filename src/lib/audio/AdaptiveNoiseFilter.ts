@@ -44,6 +44,7 @@ export class AdaptiveNoiseFilter {
   private isDisposed = false;
   private isGraphConnected = false;
   private lastContextState: AudioContextState;
+  private lastSampleRate: number;
   private stateListenerAttached = false;
   private ambientNoiseFloorDb: number = -60;
   private notchQ: number;
@@ -62,6 +63,7 @@ export class AdaptiveNoiseFilter {
     }
 
     if (this.lastContextState !== "running") {
+      this.resetFiltersIfSampleRateChanged();
       this.configureFilterParameters();
       this.updateGains();
       this.connectAudioGraph();
@@ -84,6 +86,7 @@ export class AdaptiveNoiseFilter {
     this.isEnabled = options.enabled ?? true;
     this.isBypassed = audioContext.state !== "running";
     this.lastContextState = audioContext.state;
+    this.lastSampleRate = audioContext.sampleRate;
     this.speechThresholdDb = options.speechThresholdDb ?? -42;
     this.notchQ = options.notchQ ?? 8.0;
 
@@ -161,9 +164,34 @@ export class AdaptiveNoiseFilter {
     this.dynamicNotchFilter.Q.setValueAtTime(this.notchQ, time);
   }
 
-  private connectAudioGraph(): void {
-    if (!this.isContextRunning() || this.isGraphConnected) return;
+  private resetFiltersIfSampleRateChanged(): void {
+    const sampleRate = this.audioContext.sampleRate;
+    if (
+      !Number.isFinite(sampleRate) ||
+      sampleRate <= 0 ||
+      sampleRate === this.lastSampleRate
+    ) {
+      return;
+    }
 
+    this.lastSampleRate = sampleRate;
+    this.highpassFilter.disconnect();
+    for (const notch of this.notchFilters) {
+      notch.disconnect();
+    }
+    this.dynamicNotchFilter.disconnect();
+
+    this.highpassFilter = this.audioContext.createBiquadFilter();
+    this.notchFilters = this.notchFrequencies.map(() => this.createNotchFilter());
+    this.dynamicNotchFilter = this.audioContext.createBiquadFilter();
+    this.configureFilterParameters();
+
+    if (this.isGraphConnected) {
+      this.connectFilterChain();
+    }
+  }
+
+  private connectFilterChain(): void {
     let lastNode: AudioNode = this.highpassFilter;
     for (const notch of this.notchFilters) {
       lastNode.connect(notch);
@@ -172,10 +200,16 @@ export class AdaptiveNoiseFilter {
 
     lastNode.connect(this.dynamicNotchFilter);
     this.dynamicNotchFilter.connect(this.gateNode);
+    this.inputNode.connect(this.highpassFilter);
+  }
+
+  private connectAudioGraph(): void {
+    if (!this.isContextRunning() || this.isGraphConnected) return;
+
+    this.connectFilterChain();
     this.gateNode.connect(this.wetGain);
 
     this.inputNode.connect(this.analyserNode);
-    this.inputNode.connect(this.highpassFilter);
     this.wetGain.connect(this.outputNode);
     this.inputNode.connect(this.dryGain);
     this.dryGain.connect(this.outputNode);
@@ -195,6 +229,8 @@ export class AdaptiveNoiseFilter {
         ambientNoiseFloorDb: Math.round(this.ambientNoiseFloorDb * 10) / 10,
       };
     }
+
+    this.resetFiltersIfSampleRateChanged();
 
     const buffer = new Float32Array(this.analyserNode.fftSize);
     this.analyserNode.getFloatTimeDomainData(buffer);

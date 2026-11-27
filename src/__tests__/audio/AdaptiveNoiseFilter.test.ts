@@ -3,6 +3,7 @@ import { AdaptiveNoiseFilter } from "@/lib/audio/AdaptiveNoiseFilter";
 type MockAudioContext = AudioContext & {
   gainNodes: any[];
   filterNodes: any[];
+  setSampleRate: (sampleRate: number) => void;
   setState: (state: AudioContextState) => void;
 };
 
@@ -10,6 +11,7 @@ function createMockAudioContext(
   initialState: AudioContextState = "running",
 ): MockAudioContext {
   let state = initialState;
+  let sampleRate = 48000;
   const stateListeners = new Set<() => void>();
   const gainNodes: any[] = [];
   const filterNodes: any[] = [];
@@ -50,7 +52,12 @@ function createMockAudioContext(
 
   return {
     currentTime: 0,
-    sampleRate: 48000,
+    get sampleRate() {
+      return sampleRate;
+    },
+    setSampleRate(nextSampleRate: number) {
+      sampleRate = nextSampleRate;
+    },
     get state() {
       return state;
     },
@@ -109,6 +116,124 @@ describe("AdaptiveNoiseFilter (Dynamic Ambient Noise Cancellation)", () => {
 
     // Highpass connects to the first notch
     expect(filter.highpassFilter.connect).toHaveBeenCalled();
+  });
+
+  it("recreates every biquad filter and reapplies coefficients after a sample-rate change", () => {
+    const filter = new AdaptiveNoiseFilter(mockContext, {
+      highPassCutoff: 150,
+      notchFrequencies: [60, 120, 2400],
+    });
+    const previousFilters = [
+      filter.highpassFilter,
+      ...filter.notchFilters,
+      filter.dynamicNotchFilter,
+    ];
+    const originalFilterCount = mockContext.filterNodes.length;
+
+    mockContext.setSampleRate(44100);
+    filter.processSample();
+
+    const replacementFilters = [
+      filter.highpassFilter,
+      ...filter.notchFilters,
+      filter.dynamicNotchFilter,
+    ];
+    const newlyCreatedFilters = mockContext.filterNodes.slice(originalFilterCount);
+
+    expect(newlyCreatedFilters).toHaveLength(previousFilters.length);
+    previousFilters.forEach((previous, index) => {
+      expect(previous.disconnect).toHaveBeenCalled();
+      expect(replacementFilters[index]).not.toBe(previous);
+    });
+    replacementFilters.forEach((replacement) => {
+      expect(replacement.frequency.setValueAtTime).toHaveBeenCalled();
+      expect(replacement.Q.setValueAtTime).toHaveBeenCalled();
+    });
+    expect(filter.highpassFilter.frequency.setValueAtTime).toHaveBeenCalledWith(
+      150,
+      mockContext.currentTime,
+    );
+    filter.notchFilters.forEach((notch, index) => {
+      expect(notch.frequency.setValueAtTime).toHaveBeenCalledWith(
+        [60, 120, 2400][index],
+        mockContext.currentTime,
+      );
+    });
+    expect(
+      filter.dynamicNotchFilter.frequency.setValueAtTime,
+    ).toHaveBeenCalledWith(2800, mockContext.currentTime);
+  });
+
+  it("preserves filter nodes and state between blocks when the sample rate is unchanged", () => {
+    const filter = new AdaptiveNoiseFilter(mockContext);
+    const filters = [
+      filter.highpassFilter,
+      ...filter.notchFilters,
+      filter.dynamicNotchFilter,
+    ];
+    const parameterCallCounts = filters.map(
+      (node) =>
+        (node.frequency.setValueAtTime as jest.Mock).mock.calls.length,
+    );
+    const createdFilterCount = mockContext.filterNodes.length;
+
+    filter.processSample();
+
+    expect(
+      [
+        filter.highpassFilter,
+        ...filter.notchFilters,
+        filter.dynamicNotchFilter,
+      ],
+    ).toEqual(filters);
+    expect(mockContext.filterNodes).toHaveLength(createdFilterCount);
+    expect(
+      filters.map(
+        (node) =>
+          (node.frequency.setValueAtTime as jest.Mock).mock.calls.length,
+      ),
+    ).toEqual(parameterCallCounts);
+  });
+
+  it("resets all biquad state again for each repeated sample-rate change", () => {
+    const filter = new AdaptiveNoiseFilter(mockContext, {
+      notchFrequencies: [60, 120],
+    });
+    const initialFilters = [
+      filter.highpassFilter,
+      ...filter.notchFilters,
+      filter.dynamicNotchFilter,
+    ];
+
+    mockContext.setSampleRate(44100);
+    filter.processSample();
+    const secondRateFilters = [
+      filter.highpassFilter,
+      ...filter.notchFilters,
+      filter.dynamicNotchFilter,
+    ];
+
+    mockContext.setSampleRate(32000);
+    filter.processSample();
+    const thirdRateFilters = [
+      filter.highpassFilter,
+      ...filter.notchFilters,
+      filter.dynamicNotchFilter,
+    ];
+
+    expect(mockContext.filterNodes).toHaveLength(initialFilters.length * 3);
+    initialFilters.forEach((node, index) => {
+      expect(node.disconnect).toHaveBeenCalled();
+      expect(secondRateFilters[index]).not.toBe(node);
+    });
+    secondRateFilters.forEach((node, index) => {
+      expect(node.disconnect).toHaveBeenCalled();
+      expect(thirdRateFilters[index]).not.toBe(node);
+    });
+    thirdRateFilters.forEach((node) => {
+      expect(node.frequency.setValueAtTime).toHaveBeenCalled();
+      expect(node.Q.setValueAtTime).toHaveBeenCalled();
+    });
   });
 
   it("provides speech detection threshold gate and detects speech", () => {

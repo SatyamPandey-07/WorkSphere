@@ -590,3 +590,52 @@ WorkSphere relies exclusively on Clerk for native password reset and verificatio
   });
   ```
 - **Legacy Endpoints Retired**: The legacy standalone endpoints `POST /api/auth/verify-otp` and `POST /api/auth/resend-otp` have been retired and return `HTTP 410 Gone` with `{ code: "ENDPOINT_RETIRED" }`. No standalone OTP generation, verification, or unauthenticated token validation is accepted outside of Clerk's native authentication pipeline.
+
+## 9. Clerk `user.updated` Email Handling
+
+`POST /api/webhooks/clerk` resolves a profile email from a Clerk `user.updated`
+payload using the primary email address ID when it matches an entry in
+`email_addresses`. If there is no usable match, the resolver falls back to the
+first entry's `email_address`. An empty, missing, or null `email_addresses`
+array resolves to `null`; if the primary entry and first entry have no usable
+email, the result is also `null`. No placeholder email is generated.
+The fallback checks the first array entry only; it does not continue searching
+later entries if that first entry has no email. The resolver uses JavaScript
+truthiness and does not trim or validate the email format.
+
+When the resolver returns `null`, the webhook does **not** treat the missing
+email as a replacement value. The `user.upsert` update data omits the `email`
+field, so an existing user's stored email is left unchanged while other profile
+fields can still be updated. For a newly created user with no usable email, the
+create data sets `email: null`.
+
+For example, a `user.updated` event with
+`primary_email_address_id: null` and `email_addresses: []` still updates the
+user's name and image, but leaves an existing database email intact. If the
+user does not yet exist, the created record has a null email instead.
+
+### Webhook processing record
+
+When Clerk supplies an `svix-id`, the in-memory webhook inbox records the event ID,
+event type, subject user ID, event timestamp, SHA-256 hash of the raw payload,
+receive/update timestamps, attempt count, processing status, and result. A
+successful user update is marked `PROCESSED` with the result
+`{ action: "updated", userId }`. The raw payload and email address are not
+stored in this inbox record. This metadata supports duplicate-delivery
+handling and lifecycle ordering; the committed event timestamp is also tracked
+so older user updates do not overwrite newer profile data. No special
+null-email audit action or substitute email value is recorded, and this inbox
+metadata is not a durable database audit log.
+
+### Relevant webhook tests
+
+The scenarios are covered in
+[`src/__tests__/api/clerkWebhook.test.ts`](../src/__tests__/api/clerkWebhook.test.ts):
+
+- **`Clerk webhook user.updated null email handling (#9267)`** verifies a
+  `user.updated` event with an empty `email_addresses` array and null primary
+  email ID returns HTTP 200, updates profile fields, and omits `email` from the
+  database update while using `email: null` for creation.
+- **`12. handles missing primary email safely (fallback to first or null)`**
+  verifies fallback to the first email when the primary ID is unmatched and a
+  null email for an empty email list.

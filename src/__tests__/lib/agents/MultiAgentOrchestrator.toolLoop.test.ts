@@ -67,6 +67,12 @@ describe('MultiAgentOrchestrator bounded schema-validated tool execution loop (#
     expect(handler).toHaveBeenCalledWith({ city: 'Austin' });
     expect(result.content).toBe('Found Cafe Alpha in Austin.');
     expect(result.toolsInvoked).toEqual(['find_venues']);
+    expect(result.toolMetrics).toEqual([
+      expect.objectContaining({ toolName: 'find_venues', ok: true }),
+    ]);
+    for (const metric of result.toolMetrics) {
+      expect(metric.durationMs).toBeGreaterThanOrEqual(0);
+    }
     expect(result.toolExecutionStats).toEqual({
       requested: 1,
       validated: 1,
@@ -75,6 +81,93 @@ describe('MultiAgentOrchestrator bounded schema-validated tool execution loop (#
       failed: 0,
       timedOut: 0,
       deduplicated: 0,
+    });
+  });
+
+  it('records a separate latency metric for every successful and failed invocation', async () => {
+    const orchestrator = new MultiAgentOrchestrator(
+      { maxTokenAllowance: 4096 },
+      'test-key',
+    );
+    const successfulHandler = jest.fn().mockResolvedValue({ result: 'ok' });
+    const failedHandler = jest.fn().mockRejectedValue(new Error('tool failed'));
+
+    orchestrator.registerTool({
+      name: 'lookup',
+      description: 'Lookup a value',
+      parameters: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+      execute: successfulHandler,
+    });
+    orchestrator.registerTool({
+      name: 'update',
+      description: 'Update a value',
+      parameters: { type: 'object', properties: {} },
+      execute: failedHandler,
+    });
+
+    mockCreate
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: '',
+              tool_calls: [
+                {
+                  id: 'lookup_1',
+                  type: 'function',
+                  function: { name: 'lookup', arguments: JSON.stringify({ id: 'a' }) },
+                },
+                {
+                  id: 'update_1',
+                  type: 'function',
+                  function: { name: 'update', arguments: '{}' },
+                },
+                {
+                  id: 'lookup_2',
+                  type: 'function',
+                  function: { name: 'lookup', arguments: JSON.stringify({ id: 'b' }) },
+                },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        choices: [{ message: { content: 'Tool calls completed.' } }],
+      });
+
+    const result = await orchestrator.invokeSubagent({
+      subagentName: 'MetricsAgent',
+      instruction: 'Run tools and report the outcome',
+    });
+
+    expect(result.toolMetrics).toHaveLength(3);
+    expect(
+      result.toolMetrics.map(({ toolName, ok }) => ({ toolName, ok })),
+    ).toEqual([
+      { toolName: 'lookup', ok: true },
+      { toolName: 'update', ok: false },
+      { toolName: 'lookup', ok: true },
+    ]);
+    for (const metric of result.toolMetrics) {
+      expect(metric.durationMs).toBeGreaterThanOrEqual(0);
+      expect(Object.keys(metric).sort()).toEqual([
+        'durationMs',
+        'ok',
+        'toolName',
+      ]);
+    }
+    expect(successfulHandler).toHaveBeenCalledTimes(2);
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+    expect(result.content).toBe('Tool calls completed.');
+    expect(result.toolExecutionStats).toMatchObject({
+      invoked: 3,
+      succeeded: 2,
+      failed: 1,
     });
   });
 

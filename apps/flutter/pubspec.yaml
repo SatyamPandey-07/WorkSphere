@@ -1,0 +1,22 @@
+name: worksphere_app
+description: WorkSphere mobile and cross-platform Flutter client.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.14.0 <4.0.0"
+  flutter: ">=3.50.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  go_router: ^14.6.0
+  http: ^1.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

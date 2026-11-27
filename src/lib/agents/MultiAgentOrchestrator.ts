@@ -53,6 +53,7 @@ export interface TokenGovernorConfig {
   maxToolRounds?: number;     // Default 5
   maxToolCalls?: number;      // Default 20
   toolTimeoutMs?: number;     // Default 10_000
+  maxTotalToolDurationMs?: number;
 }
 
 export interface ToolExecutionStats {
@@ -225,6 +226,7 @@ export class MultiAgentOrchestrator {
       maxToolRounds: config.maxToolRounds ?? 5,
       maxToolCalls: config.maxToolCalls ?? 20,
       toolTimeoutMs: config.toolTimeoutMs ?? 10_000,
+      maxTotalToolDurationMs: config.maxTotalToolDurationMs ?? Infinity,
     };
 
     const apiKey = groqApiKey || process.env.GROQ_API_KEY;
@@ -468,10 +470,13 @@ export class MultiAgentOrchestrator {
     const maxToolRounds = this.config.maxToolRounds ?? 5;
     const maxToolCalls = this.config.maxToolCalls ?? 20;
     const toolTimeoutMs = this.config.toolTimeoutMs ?? 10_000;
+    const maxTotalToolDurationMs = this.config.maxTotalToolDurationMs;
     const activeToolMap = new Map<string, AgentToolDeclaration>(
       governance.activeTools.map((t) => [t.name, t]),
     );
     const dedupeCache = new Map<string, unknown>();
+    let totalToolDurationMs = 0;
+    let toolDurationBudgetExhausted = totalToolDurationMs >= maxTotalToolDurationMs;
 
     // LLM execution via Groq if configured, otherwise high-performance fallback
     if (this.groqClient) {
@@ -493,7 +498,7 @@ export class MultiAgentOrchestrator {
           const completion = await this.groqClient.chat.completions.create({
             model: this.config.model,
             messages: conversationMessages as Parameters<typeof this.groqClient.chat.completions.create>[0]['messages'],
-            tools: groqTools.length > 0 ? groqTools : undefined,
+            tools: !toolDurationBudgetExhausted && groqTools.length > 0 ? groqTools : undefined,
             max_tokens: this.config.reserveCompletionTokens,
             temperature: 0.2,
           });
@@ -535,6 +540,16 @@ export class MultiAgentOrchestrator {
             const callId = call?.id;
             if (!toolName || !callId) {
               toolStats.failed++;
+              continue;
+            }
+
+            if (toolDurationBudgetExhausted) {
+              toolStats.failed++;
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: callId,
+                content: JSON.stringify({ error: 'Total tool execution duration budget exhausted' }),
+              });
               continue;
             }
 
@@ -630,6 +645,11 @@ export class MultiAgentOrchestrator {
                   : 0,
                 ok: toolOk,
               });
+              totalToolDurationMs += Number.isFinite(elapsedMs)
+                ? Math.max(0, elapsedMs)
+                : 0;
+              toolDurationBudgetExhausted =
+                totalToolDurationMs >= maxTotalToolDurationMs;
             }
 
             conversationMessages.push({

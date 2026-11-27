@@ -10,6 +10,7 @@ import {
 
 type SaveState = "checking" | "saving" | "saved" | "failed";
 type ExportFeedback = "idle" | "exported" | "copied" | "failed";
+type CapabilityFilter = "all" | "unsupported";
 
 const limitLabels: Array<{
   key: keyof WebGpuCapabilityReport["limits"];
@@ -25,6 +26,8 @@ export function WebGpuCapabilityPanel() {
   const [report, setReport] = useState<WebGpuCapabilityReport | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("checking");
   const [exportFeedback, setExportFeedback] = useState<ExportFeedback>("idle");
+  const [capabilityFilter, setCapabilityFilter] =
+    useState<CapabilityFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const attemptedRef = useRef(false);
 
@@ -122,6 +125,20 @@ export function WebGpuCapabilityPanel() {
     }
   }, [report, buildFormattedReport]);
 
+  const visibleFeatures = report
+    ? Object.entries(report.features).filter(
+        ([, supported]) =>
+          capabilityFilter === "all" || !supported,
+      )
+    : [];
+  const visibleLimits = report
+    ? limitLabels.filter(
+        (item) =>
+          capabilityFilter === "all" ||
+          report.limits[item.key] === "unavailable",
+      )
+    : [];
+
   return (
     <section
       className="mt-6 rounded-2xl border border-white/10 bg-zinc-950/50 p-5"
@@ -189,29 +206,68 @@ export function WebGpuCapabilityPanel() {
                 ? "WebGPU adapter available"
                 : "WebGPU adapter unavailable"}
             </span>
-            {Object.entries(report.features).map(([key, supported]) => (
-              <span
-                key={key}
-                className="rounded-lg border border-white/10 px-3 py-2 text-zinc-300"
-              >
-                {key}: {supported ? "supported" : "not reported"}
-              </span>
-            ))}
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {limitLabels.map((item) => (
-              <div
-                key={item.key}
-                className="rounded-xl border border-white/5 bg-white/[0.03] p-3"
-              >
-                <p className="text-[11px] text-zinc-500">{item.label}</p>
-                <p className="mt-1 text-sm font-semibold capitalize text-zinc-200">
-                  {report.limits[item.key].replace("-", " ")}
-                </p>
+          <fieldset className="mt-4 flex flex-wrap items-center gap-3 text-xs text-zinc-300">
+            <legend className="sr-only">Capabilities to display</legend>
+            <label className="inline-flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="webgpu-capability-filter"
+                value="all"
+                checked={capabilityFilter === "all"}
+                onChange={() => setCapabilityFilter("all")}
+                className="accent-indigo-400"
+              />
+              Show all
+            </label>
+            <label className="inline-flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="webgpu-capability-filter"
+                value="unsupported"
+                checked={capabilityFilter === "unsupported"}
+                onChange={() => setCapabilityFilter("unsupported")}
+                className="accent-indigo-400"
+              />
+              Unsupported only
+            </label>
+          </fieldset>
+
+          {visibleFeatures.length === 0 && visibleLimits.length === 0 ? (
+            <p className="mt-4 text-xs text-zinc-400" role="status">
+              No unsupported WebGPU limits or features were reported.
+            </p>
+          ) : (
+            <>
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                {visibleFeatures.map(([key, supported]) => (
+                  <span
+                    key={key}
+                    className="rounded-lg border border-white/10 px-3 py-2 text-zinc-300"
+                  >
+                    {key}: {supported ? "supported" : "not reported"}
+                  </span>
+                ))}
               </div>
-            ))}
-          </div>
+
+              {visibleLimits.length > 0 && (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {visibleLimits.map((item) => (
+                    <div
+                      key={item.key}
+                      className="rounded-xl border border-white/5 bg-white/[0.03] p-3"
+                    >
+                      <p className="text-[11px] text-zinc-500">{item.label}</p>
+                      <p className="mt-1 text-sm font-semibold capitalize text-zinc-200">
+                        {report.limits[item.key].replace("-", " ")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 

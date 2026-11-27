@@ -111,6 +111,91 @@ export type ReplayResult =
 
 type StreamSubscriber = (envelope: ReservationEventEnvelope) => void;
 
+export const DEFAULT_SSE_HEARTBEAT_INTERVAL_MS = 15_000;
+
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const SSE_HEARTBEAT_FRAME = new TextEncoder().encode(": heartbeat\n\n");
+
+function getHeartbeatIntervalMs(intervalMs: number): number {
+  return Number.isFinite(intervalMs) && intervalMs > 0 && intervalMs <= MAX_TIMEOUT_MS
+    ? intervalMs
+    : DEFAULT_SSE_HEARTBEAT_INTERVAL_MS;
+}
+
+/**
+ * Wraps an SSE byte stream with idle heartbeat comments while preserving every
+ * source frame byte-for-byte and in order.
+ */
+export function withSseHeartbeatComments(
+  source: ReadableStream<Uint8Array>,
+  intervalMs: number = DEFAULT_SSE_HEARTBEAT_INTERVAL_MS,
+): ReadableStream<Uint8Array> {
+  const reader = source.getReader();
+  const heartbeatIntervalMs = getHeartbeatIntervalMs(intervalMs);
+  let pendingRead:
+    | Promise<ReadableStreamReadResult<Uint8Array>>
+    | undefined;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+
+  const cleanup = () => {
+    stopped = true;
+    if (heartbeatTimer !== undefined) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = undefined;
+    }
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (stopped) return;
+
+      pendingRead ??= reader.read();
+      const sourceRead = pendingRead.then((value) => ({
+        kind: "source" as const,
+        value,
+      }));
+      const heartbeat = new Promise<{ kind: "heartbeat" }>((resolve) => {
+        heartbeatTimer = setTimeout(
+          () => resolve({ kind: "heartbeat" }),
+          heartbeatIntervalMs,
+        );
+      });
+
+      try {
+        const next = await Promise.race([sourceRead, heartbeat]);
+        if (stopped) return;
+
+        if (next.kind === "heartbeat") {
+          controller.enqueue(SSE_HEARTBEAT_FRAME);
+          return;
+        }
+
+        pendingRead = undefined;
+        if (next.value.done) {
+          cleanup();
+          controller.close();
+          return;
+        }
+
+        controller.enqueue(next.value.value);
+      } catch (error) {
+        cleanup();
+        controller.error(error);
+      } finally {
+        if (heartbeatTimer !== undefined) {
+          clearTimeout(heartbeatTimer);
+          heartbeatTimer = undefined;
+        }
+      }
+    },
+    async cancel(reason) {
+      cleanup();
+      await reader.cancel(reason);
+    },
+  });
+}
+
 /**
  * Shared replayable stream backend supporting multiple application instances.
  */

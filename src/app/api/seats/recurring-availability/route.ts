@@ -11,6 +11,9 @@ export function createRecurringAvailabilityHandler(
   return async function POST(req: NextRequest) {
     try {
       const body = await req.json();
+      const dryRun =
+        req.nextUrl.searchParams.get('dryRun')?.trim().toLowerCase() === 'true' ||
+        body?.dryRun === true;
       const seatId = typeof body?.seatId === 'string' ? body.seatId.trim() : '';
       const rrulePattern =
         typeof body?.rrulePattern === 'string' ? body.rrulePattern.trim() : '';
@@ -36,7 +39,17 @@ export function createRecurringAvailabilityHandler(
         store
       );
 
-      return NextResponse.json(validation, { status: 200 });
+      return NextResponse.json(
+        dryRun
+          ? {
+              ...validation,
+              conflictingDates: validation.conflictedDates.map(
+                (conflict) => conflict.date
+              ),
+            }
+          : validation,
+        { status: 200 }
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to validate recurring booking slots';

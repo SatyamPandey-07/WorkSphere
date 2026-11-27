@@ -1,5 +1,18 @@
 import { RecurringSeriesManager } from "@/features/seats/recurringSeriesStore";
 import { validateRecurringBookingSlots } from "@/features/seats/recurringBookingService";
+import { NextRequest } from "next/server";
+import { createRecurringAvailabilityHandler } from "@/app/api/seats/recurring-availability/route";
+
+function makeAvailabilityRequest(body: unknown, query = ""): NextRequest {
+  return new NextRequest(
+    `http://localhost/api/seats/recurring-availability${query}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
 
 describe("RecurringSeriesManager (#10691)", () => {
   it("creates a recurring series atomically and rejects overlapping series", async () => {
@@ -82,5 +95,102 @@ describe("RecurringSeriesManager (#10691)", () => {
       "2026-11-17",
     ]);
     expect(occAfterCancel.size).toBe(0);
+  });
+});
+
+describe("Recurring availability dry-run preview", () => {
+  const request = {
+    seatId: "desk-1",
+    rrulePattern: "FREQ=WEEKLY;BYDAY=MO",
+    dateRange: { startDate: "2026-11-02", endDate: "2026-11-16" },
+  };
+
+  it("returns conflicting occurrence dates for a body-based dry run", async () => {
+    const manager = new RecurringSeriesManager();
+    manager.createSeries({
+      seatId: "desk-1",
+      userId: "user-a",
+      rrulePattern: "FREQ=WEEKLY;BYDAY=MO",
+      dateRange: request.dateRange,
+    });
+
+    const handler = createRecurringAvailabilityHandler(manager);
+    const response = await handler(
+      makeAvailabilityRequest({ ...request, dryRun: true }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      conflictingDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
+    });
+  });
+
+  it("supports query-parameter dry run and returns an empty list without conflicts", async () => {
+    const manager = new RecurringSeriesManager();
+    const handler = createRecurringAvailabilityHandler(manager);
+
+    const response = await handler(
+      makeAvailabilityRequest(request, "?dryRun=true"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      conflictingDates: [],
+      requestedDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
+      availableDates: ["2026-11-02", "2026-11-09", "2026-11-16"],
+    });
+  });
+
+  it("does not create or mutate recurring reservations during dry run", async () => {
+    const manager = new RecurringSeriesManager();
+    const existing = manager.createSeries({
+      seatId: "desk-1",
+      userId: "user-a",
+      rrulePattern: "FREQ=WEEKLY;BYDAY=MO",
+      dateRange: {
+        startDate: "2026-11-09",
+        endDate: "2026-11-09",
+      },
+    });
+    const createSeries = jest.spyOn(manager, "createSeries");
+    const before = await manager.getOccupiedDates("desk-1", [
+      "2026-11-02",
+      "2026-11-09",
+      "2026-11-16",
+    ]);
+
+    const handler = createRecurringAvailabilityHandler(manager);
+    const response = await handler(
+      makeAvailabilityRequest({ ...request, dryRun: true }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(createSeries).not.toHaveBeenCalled();
+    expect(manager.getSeries(existing.series!.seriesId)).toEqual(existing.series);
+    expect(
+      await manager.getOccupiedDates("desk-1", [
+        "2026-11-02",
+        "2026-11-09",
+        "2026-11-16",
+      ]),
+    ).toEqual(before);
+  });
+
+  it("keeps the normal response shape and series creation behavior", async () => {
+    const manager = new RecurringSeriesManager();
+    const handler = createRecurringAvailabilityHandler(manager);
+    const response = await handler(makeAvailabilityRequest(request));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).not.toHaveProperty("conflictingDates");
+
+    const created = manager.createSeries({
+      seatId: request.seatId,
+      userId: "user-a",
+      rrulePattern: request.rrulePattern,
+      dateRange: request.dateRange,
+    });
+    expect(created.created).toBe(true);
+    expect(created.series?.occurrences).toHaveLength(3);
   });
 });

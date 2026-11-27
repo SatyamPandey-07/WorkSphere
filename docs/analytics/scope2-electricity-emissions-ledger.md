@@ -77,6 +77,44 @@ calculated product described above. An omitted note is exported as an empty
 value. Rows are separated with CRLF (`\r\n`). The module does not expose a
 separate aggregation API or return an aggregate totals object.
 
+## CSV quoting and formula-like values
+
+RFC 4180 CSV fields containing a comma, a double quote, or a line break must
+be quoted. Inside a quoted field, an embedded double quote is represented by
+two double quotes. For example, the value `North, west` is serialized as
+`"North, west"`, and `Meter "A"` as `"Meter ""A"""`.
+
+Before CSV formatting, the exporter prefixes an apostrophe to values beginning
+with `=`, `+`, `-`, or `@`. It also applies this prefix to values beginning
+with a tab or carriage return. This is intended to keep spreadsheet
+applications from interpreting exported text as a formula when a user opens
+the CSV. It changes the exported value; it does not remove or validate the
+original ledger entry.
+
+**Implementation limitation:** although the formatter detects fields
+containing commas, double quotes, line feeds, or carriage returns as needing
+RFC 4180 quoting, its current output for any such field is the literal `""`.
+It does not wrap the field's content or double embedded quotes. Consequently,
+those values are not preserved as valid RFC 4180 fields; the examples above
+describe the RFC 4180 rule, not the current formatter's output for those
+inputs. Formula-like values without those characters receive the apostrophe
+prefix as described.
+
+For example, the current exporter produces the following for these records
+(the line endings between rows are CRLF):
+
+```csv
+id,venueId,recordedAt,kwh,emissionFactorKgPerKwh,emissionsKgCo2e,notes
+scope2-01,venue-seattle-01,2026-10-12T09:30:00.000Z,125.5,0.32,40.16,October meter reading
+scope2-02,venue-seattle-01,2026-10-13T09:30:00.000Z,80,0.32,25.6,'=2+2
+scope2-03,venue-seattle-01,2026-10-14T09:30:00.000Z,12,0.32,3.84,""
+scope2-04,venue-seattle-01,2026-10-15T09:30:00.000Z,5,0.32,1.6,""
+```
+
+The third record's note is `West wing, meter`; the fourth is
+`Meter "A"`. Both trigger the formatter's quoting path, so their note contents
+are replaced by `""` in the current output.
+
 ## Illustrative aggregation
 
 For a report that totals filtered ledger entries, sum `kwh` for electricity

@@ -48,6 +48,93 @@ async function applyAudioMaxBitrate(
   }
 }
 
+export type SocketConnectionState =
+  | "DISCONNECTED"
+  | "CONNECTING"
+  | "CONNECTED"
+  | "DISCONNECTING";
+
+export const VISIBILITY_RECONNECT_DEBOUNCE_MS = 300;
+
+export function createSocketReconnectController(options: {
+  debounceMs?: number;
+  onPerformReconnect: () => void;
+  onCleanupHalfOpen?: () => void;
+}) {
+  const debounceMs = options.debounceMs ?? VISIBILITY_RECONNECT_DEBOUNCE_MS;
+  let state: SocketConnectionState = "DISCONNECTED";
+  let isConnecting = false;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearPendingTimer() {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+  }
+
+  return {
+    getState: () => state,
+    getIsConnecting: () => isConnecting,
+    markConnecting: () => {
+      if (isConnecting || state === "CONNECTING" || state === "CONNECTED") return false;
+      isConnecting = true;
+      state = "CONNECTING";
+      return true;
+    },
+    markConnected: () => {
+      clearPendingTimer();
+      isConnecting = false;
+      state = "CONNECTED";
+    },
+    markDisconnecting: () => {
+      clearPendingTimer();
+      isConnecting = false;
+      state = "DISCONNECTING";
+    },
+    markDisconnected: () => {
+      isConnecting = false;
+      state = "DISCONNECTED";
+    },
+    triggerReconnectNow: () => {
+      if (isConnecting || state === "CONNECTING" || state === "CONNECTED") return false;
+      if (state === "DISCONNECTING") options.onCleanupHalfOpen?.();
+      isConnecting = true;
+      state = "CONNECTING";
+      options.onPerformReconnect();
+      return true;
+    },
+    scheduleVisibilityReconnect: (isVisible: boolean) => {
+      if (!isVisible) {
+        clearPendingTimer();
+        if (state === "CONNECTING") {
+          isConnecting = false;
+          state = "DISCONNECTING";
+          options.onCleanupHalfOpen?.();
+          state = "DISCONNECTED";
+        }
+        return;
+      }
+      if (isConnecting || state === "CONNECTING" || state === "CONNECTED") return;
+      clearPendingTimer();
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        if (isConnecting || state === "CONNECTING" || state === "CONNECTED") return;
+        isConnecting = true;
+        state = "CONNECTING";
+        options.onPerformReconnect();
+      }, debounceMs);
+    },
+    dispose: () => {
+      clearPendingTimer();
+      isConnecting = false;
+      state = "DISCONNECTING";
+      options.onCleanupHalfOpen?.();
+      state = "DISCONNECTED";
+    },
+  };
+}
+
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 /** Binary magic header ('PI') for WebRTC DataChannel ping/pong heartbeats. */
@@ -315,6 +402,50 @@ export function useMeshDataChannels({
   const rateLimitersRef = useRef<Map<string, DataChannelRateLimiter>>(new Map());
   const peerRelayStatusRef = useRef<Map<string, TurnRelayStatus>>(new Map());
   const socketRef = useRef<{ send: (data: string) => void } | null>(null);
+  const isConnectingRef = useRef<boolean>(false);
+  const socketStateRef = useRef<SocketConnectionState>("DISCONNECTED");
+  const visibilityDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        if (visibilityDebounceTimerRef.current !== null) {
+          clearTimeout(visibilityDebounceTimerRef.current);
+          visibilityDebounceTimerRef.current = null;
+        }
+        return;
+      }
+      if (isConnectingRef.current || socketStateRef.current === "CONNECTING" || socketStateRef.current === "CONNECTED") return;
+      if (visibilityDebounceTimerRef.current !== null) clearTimeout(visibilityDebounceTimerRef.current);
+      visibilityDebounceTimerRef.current = setTimeout(() => {
+        visibilityDebounceTimerRef.current = null;
+        if (isConnectingRef.current || socketStateRef.current === "CONNECTING" || socketStateRef.current === "CONNECTED") return;
+        const sk = socketRef.current as unknown as { readyState?: number; close?: (c?: number, r?: string) => void; reconnect?: () => void } | null;
+        if (sk && sk.readyState === WebSocket.OPEN) {
+          socketStateRef.current = "CONNECTED";
+          isConnectingRef.current = false;
+          return;
+        }
+        socketStateRef.current = "DISCONNECTING";
+        if (sk && typeof sk.close === "function" && sk.readyState !== WebSocket.CLOSED) {
+          try { sk.close(1000, "Reconnect cleanup"); } catch {}
+        }
+        isConnectingRef.current = true;
+        socketStateRef.current = "CONNECTING";
+        if (sk && typeof sk.reconnect === "function") sk.reconnect();
+      }, VISIBILITY_RECONNECT_DEBOUNCE_MS);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (visibilityDebounceTimerRef.current !== null) {
+        clearTimeout(visibilityDebounceTimerRef.current);
+        visibilityDebounceTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const onDataRef = useRef<DataHandler | undefined>(onData);
   const onRelayStatusChangeRef = useRef(onRelayStatusChange);
   const nowFnRef = useRef(nowFn);

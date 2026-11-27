@@ -1,21 +1,2 @@
-import { FolderAclLeaseManager, type LeaseExpiringWarningEvent } from '@/lib/realtime/folderAclLease';
-
-describe('FolderAclLeaseManager lease_expiring warning', () => {
-  it('emits lease_expiring once 30 seconds before expiry and resets on lease renewal', () => {
-    let nowMs = 1_000_000;
-    const warnings: LeaseExpiringWarningEvent[] = [];
-    const manager = new FolderAclLeaseManager({ defaultTtlMs: 120_000, warningLeadMs: 30_000, nowFn: () => nowMs, onLeaseExpiring: (ev) => warnings.push(ev) });
-    const lease = manager.issueLease({ userId: 'user-collab-1', folderId: 'folder-specs', roomId: 'room-specs', aclVersion: 3, ttlMs: 120_000, nowMs });
-    expect(manager.checkExpiringLeases(nowMs + 80_000)).toHaveLength(0);
-    const firstBatch = manager.checkExpiringLeases(nowMs + 90_000);
-    expect(firstBatch).toHaveLength(1);
-    expect(firstBatch[0]).toMatchObject({ type: 'lease_expiring', leaseId: lease.leaseId, userId: 'user-collab-1', folderId: 'folder-specs', remainingMs: 30_000 });
-    expect(manager.checkExpiringLeases(nowMs + 95_000)).toHaveLength(0);
-    expect(manager.checkExpiringLeases(nowMs + 110_000)).toHaveLength(0);
-    expect(warnings).toHaveLength(1);
-    manager.renewLease(lease.leaseId, 120_000, nowMs + 100_000);
-    const renewedWarning = manager.checkExpiringLeases(nowMs + 190_000);
-    expect(renewedWarning).toHaveLength(1);
-    expect(warnings).toHaveLength(2);
-  });
-});
+import { FolderAclLeaseManager } from '@/lib/realtime/folderAclLease';
+describe('FolderAclLeaseManager lease_expiring renewal with ACL re-verification', () => { it('re-verifies permissions and extends TTL when access is still valid', async () => { const baseTime = 1_700_000_000_000; let verifiedCount = 0; const manager = new FolderAclLeaseManager(30_000, async ({ folderId, principalId }) => { verifiedCount += 1; return folderId === 'folder-1' && principalId === 'user-42'; }); manager.grantLease({ leaseId: 'lease-100', folderId: 'folder-1', principalId: 'user-42', permission: 'write', ttlMs: 30_000, nowMs: baseTime }); const expiringEvent = manager.buildExpiringEvent('lease-100', baseTime + 25_000); expect(expiringEvent).not.toBeNull(); expect(expiringEvent?.type).toBe('lease_expiring'); const result = await manager.handleLeaseExpiringEvent(expiringEvent!, { nowMs: baseTime + 25_000, ttlMs: 45_000 }); expect(verifiedCount).toBe(1); expect(result.renewed).toBe(true); expect(result.disconnectRequired).toBe(false); expect(result.lease?.expiresAtMs).toBe(baseTime + 25_000 + 45_000); expect(result.lease?.renewalCount).toBe(1); }); it('rejects renewal and requires disconnect when ACL permission was revoked', async () => { const baseTime = 1_700_000_000_000; let accessAllowed = true; const manager = new FolderAclLeaseManager(30_000, () => accessAllowed); manager.grantLease({ leaseId: 'lease-200', folderId: 'folder-9', principalId: 'user-99', permission: 'read', ttlMs: 30_000, nowMs: baseTime }); const expiringEvent = manager.buildExpiringEvent('lease-200', baseTime + 26_000)!; accessAllowed = false; const result = await manager.handleLeaseExpiringEvent(expiringEvent, { nowMs: baseTime + 26_000 }); expect(result.renewed).toBe(false); expect(result.reason).toBe('PERMISSION_REVOKED'); expect(result.disconnectRequired).toBe(true); expect(manager.getLease('lease-200')).toBeUndefined(); }); });

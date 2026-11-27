@@ -159,4 +159,32 @@ describe("extendSeatHoldWithFenceToken (Monotonic Fencing Enforcement)", () => {
       reason: "MISSING",
     });
   });
+  it("allows only one concurrent extension using the same fencing token", async () => {
+    const redis = createMockFenceRedis({ [lockKey]: initialLockJson });
+
+    const [first, second] = await Promise.all([
+      extendSeatHoldWithFenceToken(
+        { venueId, seatId, userId, fenceToken: 11, ttlSeconds: 300 },
+        { redis },
+      ),
+      extendSeatHoldWithFenceToken(
+        { venueId, seatId, userId, fenceToken: 11, ttlSeconds: 300 },
+        { redis },
+      ),
+    ]);
+
+    expect([first.status, second.status].filter((status) => status === "EXTENDED")).toHaveLength(1);
+    expect([first.status, second.status].filter((status) => status === "REJECTED")).toHaveLength(1);
+
+    const rejected = first.status === "REJECTED" ? first : second;
+    expect(rejected).toEqual({
+      status: "REJECTED",
+      reason: "STALE_TOKEN",
+      currentFencingToken: "11",
+    });
+
+    const stored = JSON.parse(redis.getRaw(lockKey)!);
+    expect(stored.fencingToken).toBe("11");
+    expect(stored.version).toBe(2);
+  });
 });

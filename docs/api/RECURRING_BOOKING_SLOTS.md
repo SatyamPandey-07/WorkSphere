@@ -100,6 +100,10 @@ The route passes the following values to the service:
 | `dateRange.startDate` | non-empty string | Yes               | Trimmed; must be a real calendar date in exact `YYYY-MM-DD` form. |
 | `dateRange.endDate`   | non-empty string | Yes               | Trimmed; must be a real calendar date in exact `YYYY-MM-DD` form. |
 
+The optional `dryRun` flag enables a preview response. In the JSON body it must be the boolean `true`; alternatively, set the `dryRun` query parameter to `true` (the route trims and compares it case-insensitively). If either form enables dry-run mode, the response includes additional conflict and suggested-date fields. Omitting the flag, or setting the body value to `false`, returns the normal availability response unless the query parameter is `true`.
+
+This endpoint validates availability only: neither a normal request nor a dry-run request creates or modifies reservations. Dry-run mode adds preview details to the validation result; it does not reserve suggested dates.
+
 There are no other request fields consumed by this route. Unknown fields are ignored. The service-level `DateRangeInput` type contains `startDate` and `endDate`, both strings. The service does not accept a date-time, timezone, time-of-day, duration, or desk adjacency option.
 
 An empty or missing required field returns HTTP `400`:
@@ -281,6 +285,65 @@ There is no distinct conflict HTTP status or error envelope. Conflicts are retur
 ```
 
 This is a service/handler result when an occupancy store reports those conflicts; the currently exported route's default store does not produce them.
+
+### Dry-run preview response
+
+A dry-run request returns the normal validation fields and adds:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `conflictingDates` | `string[]` | Date-only list copied from `conflictedDates[].date`. |
+| `suggestedAlternatives` | `{ conflictingDate: string; suggestedDate: string }[]` | A suggested later occurrence date for a conflicted date, when the store reports an unoccupied matching date. The search is limited to 365 days after the requested range end; the array can be empty. |
+
+The existing `conflictedDates` field still contains the full conflict objects (`date`, `reason`, and optional `referenceId`), and the other normal response fields are unchanged. The route's default occupancy store reports no conflicts or candidate dates, so its dry-run response will have empty conflict and suggestion arrays. The following representative response assumes a store that reports the shown conflicts and later dates as available:
+
+```json
+{
+  "seatId": "desk-10",
+  "rrulePattern": "FREQ=WEEKLY;BYDAY=MO,WE;INTERVAL=1",
+  "requestedDates": ["2026-11-02", "2026-11-04", "2026-11-09", "2026-11-11"],
+  "availableDates": ["2026-11-02", "2026-11-04"],
+  "conflictedDates": [
+    {
+      "date": "2026-11-09",
+      "reason": "BOOKED",
+      "referenceId": "booking-123"
+    },
+    {
+      "date": "2026-11-11",
+      "reason": "HELD",
+      "referenceId": "hold-456"
+    }
+  ],
+  "alternativeDesks": [],
+  "conflictingDates": ["2026-11-09", "2026-11-11"],
+  "suggestedAlternatives": [
+    {
+      "conflictingDate": "2026-11-09",
+      "suggestedDate": "2026-11-16"
+    },
+    {
+      "conflictingDate": "2026-11-11",
+      "suggestedDate": "2026-11-18"
+    }
+  ]
+}
+```
+
+Example request:
+
+```bash
+curl -X POST 'http://localhost:3000/api/seats/recurring-availability?dryRun=true' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "seatId": "desk-10",
+    "rrulePattern": "FREQ=WEEKLY;BYDAY=MO,WE;INTERVAL=1",
+    "dateRange": {
+      "startDate": "2026-11-02",
+      "endDate": "2026-11-15"
+    }
+  }'
+```
 
 ### Alternative desk suggestions
 

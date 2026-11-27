@@ -142,4 +142,79 @@ describe("WebGpuCapabilityPanel JSON export and sanitization (#9259)", () => {
     expect(parsed.features).toEqual(["timestampQuery", "subgroups"]);
     expect(parsed.limits.bufferSize).toBe("large");
   });
+
+  it("shows all limits and features by default", async () => {
+    render(<WebGpuCapabilityPanel />);
+
+    expect(
+      await screen.findByRole("radio", { name: "Show all" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("radio", { name: "Unsupported only" }),
+    ).not.toBeChecked();
+    expect(screen.getByText("timestampQuery: supported")).toBeInTheDocument();
+    expect(screen.getByText("shaderF16: not reported")).toBeInTheDocument();
+    expect(screen.getByText("subgroups: supported")).toBeInTheDocument();
+    expect(screen.getByText("Buffer capacity")).toBeInTheDocument();
+    expect(screen.getByText("Workgroup size X")).toBeInTheDocument();
+    expect(screen.getByText("Workgroup invocations")).toBeInTheDocument();
+    expect(screen.getByText("Workgroups per dimension")).toBeInTheDocument();
+  });
+
+  it("filters to unsupported capabilities and switches back to all", async () => {
+    (collectWebGpuCapabilityReport as jest.Mock).mockResolvedValueOnce({
+      ...mockReport,
+      limits: {
+        ...mockReport.limits,
+        workgroupSizeX: "unavailable",
+      },
+    });
+    render(<WebGpuCapabilityPanel />);
+
+    const showAll = await screen.findByRole("radio", { name: "Show all" });
+    const unsupportedOnly = screen.getByRole("radio", {
+      name: "Unsupported only",
+    });
+    fireEvent.click(unsupportedOnly);
+
+    expect(unsupportedOnly).toBeChecked();
+    expect(screen.getByText("shaderF16: not reported")).toBeInTheDocument();
+    expect(screen.getByText("Workgroup size X")).toBeInTheDocument();
+    expect(screen.getByText("unavailable")).toBeInTheDocument();
+    expect(
+      screen.queryByText("timestampQuery: supported"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Buffer capacity")).not.toBeInTheDocument();
+
+    fireEvent.click(showAll);
+    expect(showAll).toBeChecked();
+    expect(screen.getByText("timestampQuery: supported")).toBeInTheDocument();
+    expect(screen.getByText("Buffer capacity")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when unsupported-only has no unsupported capabilities", async () => {
+    (collectWebGpuCapabilityReport as jest.Mock).mockResolvedValueOnce({
+      ...mockReport,
+      features: {
+        timestampQuery: true,
+        shaderF16: true,
+        subgroups: true,
+      },
+    });
+    render(<WebGpuCapabilityPanel />);
+
+    fireEvent.click(
+      await screen.findByRole("radio", { name: "Unsupported only" }),
+    );
+
+    expect(
+      screen.getByText(
+        "No unsupported WebGPU limits or features were reported.",
+      ),
+    ).toHaveAttribute("role", "status");
+    expect(
+      screen.queryByText("timestampQuery: supported"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Buffer capacity")).not.toBeInTheDocument();
+  });
 });

@@ -751,6 +751,9 @@ export default class WorkspaceServer implements Party.Server {
   // Clear a disconnecting user's seat check-in so they don't count toward
   // a venue's availability after they've left (#703).
   onClose(conn: Party.Connection) {
+    const activeConnection = this.room.getConnection(conn.id);
+    if (activeConnection && activeConnection !== conn) return;
+
     this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
     this.holdGate.run(() => this.handleConnectionSeatHoldsCleanup(conn.id));

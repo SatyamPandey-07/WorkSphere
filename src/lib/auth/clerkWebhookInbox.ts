@@ -80,6 +80,10 @@ export class ClerkWebhookInbox {
   private readonly records = new Map<string, ClerkWebhookInboxRecord>();
   private readonly deletedUserTombstones = new Map<string, number>();
   private readonly latestUserEventTimestamps = new Map<string, number>();
+  private readonly inFlightCompletions = new Map<
+    string,
+    { promise: Promise<void>; resolve: () => void }
+  >();
   private readonly maxAttempts: number;
   private readonly processingLeaseMs: number;
   private readonly maxEntries: number;
@@ -287,7 +291,45 @@ export class ClerkWebhookInbox {
     );
   }
 
+  /**
+   * Registers an in-flight completion barrier for a claimed svixId so concurrent
+   * duplicate deliveries can await its outcome instead of racing or failing.
+   */
+  public beginInFlight(svixId: string): void {
+    if (this.inFlightCompletions.has(svixId)) return;
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    this.inFlightCompletions.set(svixId, { promise, resolve });
+  }
+
+  /**
+   * Awaits an active in-flight delivery for the given svixId. Returns true if an
+   * active barrier was awaited, or false if none was registered.
+   */
+  public async waitForInFlight(svixId: string): Promise<boolean> {
+    const entry = this.inFlightCompletions.get(svixId);
+    if (!entry) return false;
+    await entry.promise;
+    return true;
+  }
+
+  /**
+   * Releases the in-flight completion barrier for svixId once processing finishes.
+   */
+  public endInFlight(svixId: string): void {
+    const entry = this.inFlightCompletions.get(svixId);
+    if (!entry) return;
+    this.inFlightCompletions.delete(svixId);
+    entry.resolve();
+  }
+
   public clear(): void {
+    for (const entry of this.inFlightCompletions.values()) {
+      entry.resolve();
+    }
+    this.inFlightCompletions.clear();
     this.records.clear();
     this.deletedUserTombstones.clear();
     this.latestUserEventTimestamps.clear();

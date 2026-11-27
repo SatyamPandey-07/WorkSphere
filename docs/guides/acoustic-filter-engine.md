@@ -113,6 +113,12 @@ $$\text{gain}(t) = \text{target} + (\text{current} - \text{target}) \cdot e^{-\f
 
 where $\tau$ (`transitionTimeConstant`) defaults to $50\text{ ms}$.
 
+### `AdaptiveNoiseFilter` Sample-Rate Changes
+
+The biquad coefficients are calculated for the current `AudioContext.sampleRate`. If the context's sample rate changes, the filter nodes are recreated and reconfigured before the graph is reconnected. This resets their internal delay-line state: samples retained from the old filters were produced under the previous sample rate and are not valid state for the new coefficients. Reusing that stale state can introduce transient audio artifacts during the change.
+
+The documented audio-context examples use 44.1 kHz and 48 kHz. `AdaptiveNoiseFilter` does not define a narrower fixed sample-rate range; it handles a changed rate when `AudioContext.sampleRate` is finite and greater than zero. An unchanged rate, or a non-finite or non-positive rate, does not trigger a reset.
+
 ---
 
 ## 4. Developer Configuration & Usage Examples

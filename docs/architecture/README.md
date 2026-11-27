@@ -19,6 +19,7 @@ Architecture decisions, implementation notes, and system-level design references
 
 ## Application architecture
 
+- [Flutter web-to-mobile route parity and deep-link contract](./flutter-migration-blueprint.md) — current Next.js-to-GoRouter mappings, access classification, authentication redirects, URI schemes, and known mobile parity gaps.
 - [ADR-004: Dual PostGIS spatial and trigram venue search](./ADR-004-spatial-phonetic-venue-search.md)
 - [Distributed WebRTC mesh signaling and STUN/TURN fallback](./WEBRTC_MESH_SIGNALING.md)
 - [WebRTC TURN Relay Bandwidth Throttle & Backpressure Specification](./WEBRTC_TURN_RELAY_THROTTLE.md)

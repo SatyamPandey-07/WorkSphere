@@ -111,9 +111,13 @@ export type ReplayResult =
 
 type StreamSubscriber = (envelope: ReservationEventEnvelope) => void;
 
+export const DEFAULT_SSE_RETRY_INTERVAL_MS = 3_000;
 export const DEFAULT_SSE_HEARTBEAT_INTERVAL_MS = 15_000;
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
+const SSE_RETRY_FRAME = new TextEncoder().encode(
+  `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+);
 const SSE_HEARTBEAT_FRAME = new TextEncoder().encode(": heartbeat\n\n");
 
 function getHeartbeatIntervalMs(intervalMs: number): number {
@@ -137,6 +141,7 @@ export function withSseHeartbeatComments(
     | undefined;
   let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let initialFrameSent = false;
   let readerLockReleased = false;
 
   const releaseReaderLock = () => {
@@ -203,6 +208,12 @@ export function withSseHeartbeatComments(
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (stopped) return;
+
+      if (!initialFrameSent) {
+        initialFrameSent = true;
+        enqueueIfWritable(controller, SSE_RETRY_FRAME);
+        return;
+      }
 
       pendingRead ??= reader.read();
       const sourceRead = pendingRead.then((value) => ({

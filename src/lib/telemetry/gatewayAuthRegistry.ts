@@ -1,246 +1,167 @@
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+export type GatewayKeyStatus = 'active' | 'grace' | 'retired' | 'revoked';
 
-export type GatewayCredentialStatus = "active" | "revoked";
-
-export interface GatewayAuditEvent {
-  timestamp: number;
+export interface GatewayCredentialRecord {
+  keyId: string;
   gatewayId: string;
-  venueId: string;
-  event:
-    | "enrolled"
-    | "rotated"
-    | "revoked"
-    | "auth_success"
-    | "auth_failure"
-    | "scope_denied";
-  detail?: string;
+  secretOrVerifier: string;
+  scopes: string[];
+  status: GatewayKeyStatus;
+  issuedAtMs: number;
+  expiresAtMs?: number;
+  graceUntilMs?: number;
+  revokedAtMs?: number;
+  revokedReason?: string;
+  lastUsedAtMs?: number;
+  lastUsedAt?: string;
 }
 
-export interface StoredGatewayRecord {
+export interface GatewayVerifyRequest {
   gatewayId: string;
-  venueId: string;
-  activeKeyHash: string;
-  retiringKeyHash?: string;
-  retiringExpiresAt?: number;
-  status: GatewayCredentialStatus;
-  createdAt: number;
-  lastUsedAt?: number;
-  revokedAt?: number;
+  keyId: string;
+  tokenSecret: string;
+  requiredScopes?: readonly string[];
+  nowMs?: number;
 }
 
-export interface GatewayAuthResult {
-  authenticated: boolean;
-  gatewayId?: string;
-  venueId?: string;
-  keyRole?: "active" | "retiring";
+export interface GatewayVerifyResult {
+  valid: boolean;
+  gatewayId: string;
+  keyId: string;
+  status?: GatewayKeyStatus;
+  lastUsedAtMs?: number;
   reason?: string;
 }
 
-export const MAX_ROTATION_OVERLAP_MS = 24 * 60 * 60 * 1000;
-export const DEFAULT_ROTATION_OVERLAP_MS = 60 * 60 * 1000;
-
-function hashToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
+export interface GatewayAuthRegistryOptions {
+  nowFn?: () => number;
+  lastUsedFlushIntervalMs?: number;
+  onLastUsedRecorded?: (record: GatewayCredentialRecord) => void | Promise<void>;
 }
 
-function safeEqualHex(aHex: string, bHex: string): boolean {
-  const bufA = Buffer.from(aHex, "hex");
-  const bufB = Buffer.from(bHex, "hex");
-  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+interface InternalGatewayRecord extends GatewayCredentialRecord {
+  scopesSet: Set<string>;
 }
 
-/**
- * Per-gateway credential registry supporting venue-scoped authorization,
- * bounded key rotation overlap, and immediate revocation without storing
- * plaintext credentials.
- */
 export class GatewayAuthRegistry {
-  private records = new Map<string, StoredGatewayRecord>();
-  private auditEvents: GatewayAuditEvent[] = [];
+  private readonly nowFn: () => number;
+  private readonly lastUsedFlushIntervalMs: number;
+  private readonly onLastUsedRecorded?: (record: GatewayCredentialRecord) => void | Promise<void>;
+  private readonly records = new Map<string, InternalGatewayRecord>();
+  private readonly revokedGateways = new Set<string>();
 
-  public enrollGateway(
-    gatewayId: string,
-    venueId: string,
-    nowMs: number = Date.now(),
-  ): { gatewayId: string; venueId: string; token: string } {
-    if (!gatewayId.trim() || !venueId.trim()) {
-      throw new Error("gatewayId and venueId are required");
-    }
-    const token = `gw_${randomBytes(32).toString("hex")}`;
-    const record: StoredGatewayRecord = {
-      gatewayId,
-      venueId,
-      activeKeyHash: hashToken(token),
-      status: "active",
-      createdAt: nowMs,
-    };
-    this.records.set(gatewayId, record);
-    this.auditEvents.push({
-      timestamp: nowMs,
-      gatewayId,
-      venueId,
-      event: "enrolled",
-    });
-    return { gatewayId, venueId, token };
+  constructor(options: GatewayAuthRegistryOptions = {}) {
+    this.nowFn = options.nowFn ?? Date.now;
+    this.lastUsedFlushIntervalMs = typeof options.lastUsedFlushIntervalMs === 'number' && Number.isFinite(options.lastUsedFlushIntervalMs) && options.lastUsedFlushIntervalMs >= 0 ? Math.floor(options.lastUsedFlushIntervalMs) : 0;
+    this.onLastUsedRecorded = options.onLastUsedRecorded;
   }
 
-  public rotateGatewayKey(
-    gatewayId: string,
-    overlapWindowMs: number = DEFAULT_ROTATION_OVERLAP_MS,
-    nowMs: number = Date.now(),
-  ): { gatewayId: string; venueId: string; token: string; overlapExpiresAt: number } {
-    const existing = this.records.get(gatewayId);
-    if (!existing) {
-      throw new Error(`Gateway ${gatewayId} is not enrolled`);
-    }
-    if (existing.status === "revoked") {
-      throw new Error(`Cannot rotate key for revoked gateway ${gatewayId}`);
-    }
-
-    const boundedOverlap = Math.max(
-      0,
-      Math.min(overlapWindowMs, MAX_ROTATION_OVERLAP_MS),
-    );
-    const token = `gw_${randomBytes(32).toString("hex")}`;
-    const overlapExpiresAt = nowMs + boundedOverlap;
-
-    existing.retiringKeyHash =
-      boundedOverlap > 0 ? existing.activeKeyHash : undefined;
-    existing.retiringExpiresAt =
-      boundedOverlap > 0 ? overlapExpiresAt : undefined;
-    existing.activeKeyHash = hashToken(token);
-
-    this.auditEvents.push({
-      timestamp: nowMs,
-      gatewayId,
-      venueId: existing.venueId,
-      event: "rotated",
-      detail: `overlapMs=${boundedOverlap}`,
-    });
-
-    return {
-      gatewayId,
-      venueId: existing.venueId,
-      token,
-      overlapExpiresAt,
-    };
+  private compositeKey(gatewayId: string, keyId: string): string {
+    return `::`;
   }
 
-  public revokeGateway(gatewayId: string, nowMs: number = Date.now()): void {
-    const existing = this.records.get(gatewayId);
-    if (!existing) return;
-
-    existing.status = "revoked";
-    existing.activeKeyHash = "";
-    existing.retiringKeyHash = undefined;
-    existing.retiringExpiresAt = undefined;
-    existing.revokedAt = nowMs;
-
-    this.auditEvents.push({
-      timestamp: nowMs,
-      gatewayId,
-      venueId: existing.venueId,
-      event: "revoked",
-    });
+  private refreshLifecycle(record: InternalGatewayRecord, nowMs: number): void {
+    if (record.status === 'revoked') return;
+    if (typeof record.expiresAtMs === 'number' && nowMs >= record.expiresAtMs) {
+      record.status = 'retired';
+      return;
+    }
+    if (record.status === 'grace' && typeof record.graceUntilMs === 'number' && nowMs >= record.graceUntilMs) {
+      record.status = 'retired';
+    }
   }
 
-  public authenticateToken(
-    token: string,
-    nowMs: number = Date.now(),
-  ): GatewayAuthResult {
-    if (!token) {
-      return { authenticated: false, reason: "Missing gateway token" };
-    }
+  public enrollGatewayCredential(params: { gatewayId: string; keyId: string; secretOrVerifier: string; scopes?: readonly string[]; ttlMs?: number; status?: Extract<GatewayKeyStatus, 'active' | 'grace'>; nowMs?: number }): GatewayCredentialRecord {
+    const now = params.nowMs ?? this.nowFn();
+    const scopes = Array.from(new Set((params.scopes ?? []).map((s) => s.trim()).filter(Boolean)));
+    const expiresAtMs = typeof params.ttlMs === 'number' && Number.isFinite(params.ttlMs) && params.ttlMs > 0 ? now + Math.floor(params.ttlMs) : undefined;
+    const internal: InternalGatewayRecord = { gatewayId: params.gatewayId.trim(), keyId: params.keyId.trim(), secretOrVerifier: params.secretOrVerifier, scopes, scopesSet: new Set(scopes), status: params.status ?? 'active', issuedAtMs: now, expiresAtMs };
+    this.records.set(this.compositeKey(internal.gatewayId, internal.keyId), internal);
+    return this.toPublicRecord(internal);
+  }
 
-    const presentedHash = hashToken(token);
-
-    for (const record of this.records.values()) {
-      if (record.status === "revoked") continue;
-
-      if (
-        record.activeKeyHash &&
-        safeEqualHex(presentedHash, record.activeKeyHash)
-      ) {
-        record.lastUsedAt = nowMs;
-        this.auditEvents.push({
-          timestamp: nowMs,
-          gatewayId: record.gatewayId,
-          venueId: record.venueId,
-          event: "auth_success",
-          detail: "active",
-        });
-        return {
-          authenticated: true,
-          gatewayId: record.gatewayId,
-          venueId: record.venueId,
-          keyRole: "active",
-        };
-      }
-
-      if (
-        record.retiringKeyHash &&
-        record.retiringExpiresAt !== undefined &&
-        nowMs <= record.retiringExpiresAt &&
-        safeEqualHex(presentedHash, record.retiringKeyHash)
-      ) {
-        record.lastUsedAt = nowMs;
-        this.auditEvents.push({
-          timestamp: nowMs,
-          gatewayId: record.gatewayId,
-          venueId: record.venueId,
-          event: "auth_success",
-          detail: "retiring",
-        });
-        return {
-          authenticated: true,
-          gatewayId: record.gatewayId,
-          venueId: record.venueId,
-          keyRole: "retiring",
-        };
+  public rotateGatewayKey(params: { gatewayId: string; newKeyId: string; newSecretOrVerifier: string; scopes?: readonly string[]; graceWindowMs?: number; ttlMs?: number; nowMs?: number }): GatewayCredentialRecord {
+    const now = params.nowMs ?? this.nowFn();
+    const gwId = params.gatewayId.trim();
+    const graceMs = typeof params.graceWindowMs === 'number' && Number.isFinite(params.graceWindowMs) && params.graceWindowMs >= 0 ? Math.floor(params.graceWindowMs) : 60_000;
+    for (const [key, rec] of this.records.entries()) {
+      if (rec.gatewayId === gwId && rec.status === 'active') {
+        rec.status = 'grace';
+        rec.graceUntilMs = now + graceMs;
+        this.records.set(key, rec);
       }
     }
-
-    this.auditEvents.push({
-      timestamp: nowMs,
-      gatewayId: "unknown",
-      venueId: "unknown",
-      event: "auth_failure",
-    });
-    return { authenticated: false, reason: "Invalid or expired gateway token" };
+    return this.enrollGatewayCredential({ gatewayId: gwId, keyId: params.newKeyId, secretOrVerifier: params.newSecretOrVerifier, scopes: params.scopes, ttlMs: params.ttlMs, status: 'active', nowMs: now });
   }
 
-  public isVenueAuthorized(
-    gatewayId: string,
-    targetVenueId: string,
-    nowMs: number = Date.now(),
-  ): boolean {
-    const record = this.records.get(gatewayId);
-    if (!record || record.status === "revoked") return false;
-    const allowed = record.venueId === targetVenueId;
-    if (!allowed) {
-      this.auditEvents.push({
-        timestamp: nowMs,
-        gatewayId,
-        venueId: record.venueId,
-        event: "scope_denied",
-        detail: `requestedVenue=${targetVenueId}`,
+  public revokeKey(gatewayId: string, keyId: string, reason = 'Credential revoked', nowMs: number = this.nowFn()): boolean {
+    const rec = this.records.get(this.compositeKey(gatewayId, keyId));
+    if (!rec) return false;
+    rec.status = 'revoked';
+    rec.revokedAtMs = nowMs;
+    rec.revokedReason = reason;
+    return true;
+  }
+
+  public revokeGateway(gatewayId: string): void {
+    this.revokedGateways.add(gatewayId.trim());
+  }
+
+  private scheduleLastUsedAudit(record: InternalGatewayRecord, nowMs: number): void {
+    const previousMs = record.lastUsedAtMs ?? 0;
+    if (this.lastUsedFlushIntervalMs > 0 && previousMs > 0 && nowMs - previousMs < this.lastUsedFlushIntervalMs) return;
+    record.lastUsedAtMs = nowMs;
+    record.lastUsedAt = new Date(nowMs).toISOString();
+    if (this.onLastUsedRecorded) {
+      const snapshot = this.toPublicRecord(record);
+      queueMicrotask(() => {
+        try {
+          const maybePromise = this.onLastUsedRecorded?.(snapshot);
+          if (maybePromise && typeof (maybePromise as Promise<unknown>).catch === 'function') {
+            void (maybePromise as Promise<unknown>).catch(() => undefined);
+          }
+        } catch {
+          // Non-blocking audit listener
+        }
       });
     }
-    return allowed;
   }
 
-  public getRecord(gatewayId: string): StoredGatewayRecord | undefined {
-    const r = this.records.get(gatewayId);
-    return r ? { ...r } : undefined;
+  public verifyCredential(request: GatewayVerifyRequest): GatewayVerifyResult {
+    const now = typeof request.nowMs === 'number' && Number.isFinite(request.nowMs) ? Math.floor(request.nowMs) : this.nowFn();
+    const gwId = request.gatewayId.trim();
+    const kId = request.keyId.trim();
+    if (this.revokedGateways.has(gwId)) {
+      return { valid: false, gatewayId: gwId, keyId: kId, status: 'revoked', reason: `Gateway "" is revoked` };
+    }
+    const record = this.records.get(this.compositeKey(gwId, kId));
+    if (!record) {
+      return { valid: false, gatewayId: gwId, keyId: kId, reason: `Unknown credential "" for gateway ""` };
+    }
+    this.refreshLifecycle(record, now);
+    if (record.status === 'revoked' || record.status === 'retired') {
+      return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: `Credential "" is ` };
+    }
+    if (record.secretOrVerifier !== request.tokenSecret) {
+      return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: 'Invalid credential secret' };
+    }
+    for (const scope of request.requiredScopes ?? []) {
+      const trimmed = scope.trim();
+      if (trimmed && !record.scopesSet.has(trimmed)) {
+        return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: `Missing required scope ""` };
+      }
+    }
+    this.scheduleLastUsedAudit(record, now);
+    return { valid: true, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs };
   }
 
-  public getAuditEvents(): GatewayAuditEvent[] {
-    return [...this.auditEvents];
+  public getCredentialRecord(gatewayId: string, keyId: string): GatewayCredentialRecord | undefined {
+    const rec = this.records.get(this.compositeKey(gatewayId, keyId));
+    return rec ? this.toPublicRecord(rec) : undefined;
   }
 
-  public hasEnrolledGateways(): boolean {
-    return this.records.size > 0;
+  private toPublicRecord(rec: InternalGatewayRecord): GatewayCredentialRecord {
+    return { keyId: rec.keyId, gatewayId: rec.gatewayId, secretOrVerifier: rec.secretOrVerifier, scopes: [...rec.scopes], status: rec.status, issuedAtMs: rec.issuedAtMs, expiresAtMs: rec.expiresAtMs, graceUntilMs: rec.graceUntilMs, revokedAtMs: rec.revokedAtMs, revokedReason: rec.revokedReason, lastUsedAtMs: rec.lastUsedAtMs, lastUsedAt: rec.lastUsedAt };
   }
 }
 
-export const defaultGatewayRegistry = new GatewayAuthRegistry();
+export default GatewayAuthRegistry;

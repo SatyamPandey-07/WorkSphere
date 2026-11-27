@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SSE_RETRY_INTERVAL_MS,
   DEFAULT_SSE_HEARTBEAT_INTERVAL_MS,
   SharedReservationReplayLog,
   normalizeCdcToReservationEvent,
@@ -103,10 +104,30 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
       return { stream, controller: () => controller };
     }
 
+    it("emits the retry hint once in the initial connection frame", async () => {
+      const source = createSource();
+      const reader = withSseHeartbeatComments(source.stream).getReader();
+
+      const initialFrame = await reader.read();
+      expect(new TextDecoder().decode(initialFrame.value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
+
+      const eventFrame = "event: connected\ndata: ready\n\n";
+      const eventRead = reader.read();
+      source.controller().enqueue(new TextEncoder().encode(eventFrame));
+      expect(new TextDecoder().decode((await eventRead).value)).toBe(eventFrame);
+      await reader.cancel();
+    });
+
     it("uses the default idle interval when configuration is invalid", async () => {
       jest.useFakeTimers();
       const source = createSource();
       const reader = withSseHeartbeatComments(source.stream, 0).getReader();
+      const initialFrame = await reader.read();
+      expect(new TextDecoder().decode(initialFrame.value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       let received = false;
       const read = reader.read().then((result) => {
         received = true;
@@ -132,6 +153,10 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
       jest.useFakeTimers();
       const source = createSource();
       const reader = withSseHeartbeatComments(source.stream, 250).getReader();
+      const initialFrame = await reader.read();
+      expect(new TextDecoder().decode(initialFrame.value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       let received = false;
       const read = reader.read().then((result) => {
         received = true;
@@ -161,6 +186,10 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
         new TextEncoder().encode(
           `id: ${event.cursor}\nevent: availability\ndata: ${JSON.stringify(event.payload)}\n\n`,
         );
+      const initialFrame = await reader.read();
+      expect(new TextDecoder().decode(initialFrame.value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       const first = log.publish({
         eventId: "event-1",
         venueId: "venue-1",
@@ -208,6 +237,9 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
         cancelledSource.stream,
         100,
       ).getReader();
+      expect(new TextDecoder().decode((await cancelledReader.read()).value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       const pendingRead = cancelledReader.read();
       await Promise.resolve();
       await cancelledReader.cancel();
@@ -219,6 +251,9 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
         closedSource.stream,
         100,
       ).getReader();
+      expect(new TextDecoder().decode((await closedReader.read()).value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       const closedRead = closedReader.read();
       await Promise.resolve();
       closedSource.controller().close();
@@ -230,6 +265,9 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
         erroredSource.stream,
         100,
       ).getReader();
+      expect(new TextDecoder().decode((await erroredReader.read()).value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       const erroredRead = erroredReader.read();
       await Promise.resolve();
       erroredSource.controller().error(new Error("source failed"));
@@ -256,6 +294,10 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
       });
       const reader = withSseHeartbeatComments(source, 100).getReader();
 
+      const initialFrame = await reader.read();
+      expect(new TextDecoder().decode(initialFrame.value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       const firstFrame = await reader.read();
       expect(new TextDecoder().decode(firstFrame.value)).toContain('"seq":1');
 
@@ -283,6 +325,10 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
       });
       const reader = withSseHeartbeatComments(source, 100).getReader();
 
+      const initialFrame = await reader.read();
+      expect(new TextDecoder().decode(initialFrame.value)).toBe(
+        `retry: ${DEFAULT_SSE_RETRY_INTERVAL_MS}\n\n`,
+      );
       const first = await reader.read();
       expect(first.done).toBe(false);
       expect(new TextDecoder().decode(first.value)).toBe(frame);

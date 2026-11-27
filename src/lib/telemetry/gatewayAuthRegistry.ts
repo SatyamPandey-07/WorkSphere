@@ -103,7 +103,14 @@ export class GatewayAuthRegistry {
   }
 
   public revokeGateway(gatewayId: string): void {
-    this.revokedGateways.add(gatewayId.trim());
+    const normalizedGatewayId = gatewayId.trim();
+    this.revokedGateways.add(normalizedGatewayId);
+    for (const record of this.records.values()) {
+      if (record.gatewayId === normalizedGatewayId) {
+        delete record.lastUsedAtMs;
+        delete record.lastUsedAt;
+      }
+    }
   }
 
   private scheduleLastUsedAudit(record: InternalGatewayRecord, nowMs: number): void {

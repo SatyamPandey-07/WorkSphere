@@ -1,4 +1,9 @@
-import { DTNBundlesInbox } from "@/core/network/DTNBundlesInbox";
+import { NextRequest } from "next/server";
+import { POST } from "@/app/api/network/dtn/route";
+import {
+  DTNBundlesInbox,
+  defaultDtnInbox,
+} from "@/core/network/DTNBundlesInbox";
 
 describe("DTNBundlesInbox (#10688)", () => {
   it("assembles out-of-order fragments, survives snapshot restart, and issues application_delivery receipt only after commit", async () => {
@@ -143,5 +148,143 @@ describe("DTNBundlesInbox (#10688)", () => {
     );
     expect(conflict.accepted).toBe(false);
     expect(conflict.error).toContain("Conflicting");
+  });
+
+  it("orders fragment ingestion and ready bundle delivery by priority tier (critical > normal > bulk)", async () => {
+    const inbox = new DTNBundlesInbox();
+    const t0 = 200_000;
+    const makeFrag = (
+      id: string,
+      priority: "critical" | "normal" | "bulk",
+      createdAt = t0,
+    ) => {
+      const payload = Buffer.from(`payload-${id}`, "utf8");
+      return {
+        logicalBundleId: id,
+        source: "mesh-node-1",
+        destination: "worksphere-core",
+        fragmentOffset: 0,
+        totalPayloadLength: payload.length,
+        payloadBase64: payload.toString("base64"),
+        creationTimestamp: createdAt,
+        lifetimeMs: 60_000,
+        priority,
+      };
+    };
+
+    const batchResults = inbox.ingestFragmentsPrioritized(
+      [
+        makeFrag("bulk-telemetry-1", "bulk", t0),
+        makeFrag("normal-checkin-1", "normal", t0 + 5),
+        makeFrag("critical-emergency-1", "critical", t0 + 10),
+        makeFrag("normal-checkin-2", "normal", t0 + 15),
+      ],
+      t0 + 20,
+    );
+
+    expect(batchResults.map((r) => r.logicalBundleId)).toEqual([
+      "critical-emergency-1",
+      "normal-checkin-1",
+      "normal-checkin-2",
+      "bulk-telemetry-1",
+    ]);
+    expect(batchResults.map((r) => r.priority)).toEqual([
+      "critical",
+      "normal",
+      "normal",
+      "bulk",
+    ]);
+
+    // Snapshot preserves priority ordering
+    const restored = new DTNBundlesInbox();
+    restored.importSnapshot(inbox.exportSnapshot());
+
+    expect(
+      restored.getPrioritizedReadyBundles().map((b) => b.logicalBundleId),
+    ).toEqual([
+      "critical-emergency-1",
+      "normal-checkin-1",
+      "normal-checkin-2",
+      "bulk-telemetry-1",
+    ]);
+
+    const deliveredOrder: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const res = await restored.deliverNextReady(
+        "worker-1",
+        async (_payload, record) => {
+          deliveredOrder.push(record.logicalBundleId);
+        },
+        t0 + 30 + i,
+      );
+      expect(res.delivered).toBe(true);
+    }
+
+    expect(deliveredOrder).toEqual([
+      "critical-emergency-1",
+      "normal-checkin-1",
+      "normal-checkin-2",
+      "bulk-telemetry-1",
+    ]);
+  });
+
+  it("prioritizes emergency and check-in bundles ahead of bulk telemetry in POST /api/network/dtn", async () => {
+    const ingestSpy = jest.spyOn(defaultDtnInbox, "ingestFragment");
+    const now = Date.now();
+    const mkPayload = (text: string) => Buffer.from(text, "utf8").toString("base64");
+
+    const req = new NextRequest("http://localhost:3000/api/network/dtn", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        userId: "user_dtn_1",
+        bundles: [
+          {
+            logicalBundleId: `bulk-${now}`,
+            priority: "bulk",
+            payloadBase64: mkPayload("telemetry"),
+            creationTimestamp: now,
+          },
+          {
+            logicalBundleId: `checkin-${now}`,
+            priority: "normal",
+            payloadBase64: mkPayload("checkin"),
+            creationTimestamp: now,
+          },
+          {
+            logicalBundleId: `emergency-${now}`,
+            priority: "critical",
+            payloadBase64: mkPayload("sos"),
+            creationTimestamp: now,
+          },
+        ],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+
+    expect(json.success).toBe(true);
+    expect(json.processedCount).toBe(3);
+    expect(
+      json.results.map((r: { logicalBundleId: string }) => r.logicalBundleId),
+    ).toEqual([
+      `emergency-${now}`,
+      `checkin-${now}`,
+      `bulk-${now}`,
+    ]);
+    expect(
+      json.results.map((r: { priority: string }) => r.priority),
+    ).toEqual(["critical", "normal", "bulk"]);
+    expect(
+      ingestSpy.mock.calls.map((call) => call[0].logicalBundleId),
+    ).toEqual([
+      `emergency-${now}`,
+      `checkin-${now}`,
+      `bulk-${now}`,
+    ]);
+
+    ingestSpy.mockRestore();
   });
 });

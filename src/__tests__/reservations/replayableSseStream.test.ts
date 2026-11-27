@@ -236,5 +236,60 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
       await expect(erroredRead).rejects.toThrow("source failed");
       expect(jest.getTimerCount()).toBe(0);
     });
+
+    it("cancels the replay source and stops reading when the client disconnects", async () => {
+      jest.useFakeTimers();
+      let pullCount = 0;
+      let sourceCancelled = false;
+      const source = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pullCount++;
+          controller.enqueue(
+            new TextEncoder().encode(
+              `id: ${pullCount}\nevent: availability\ndata: {"seq":${pullCount}}\n\n`,
+            ),
+          );
+        },
+        cancel() {
+          sourceCancelled = true;
+        },
+      });
+      const reader = withSseHeartbeatComments(source, 100).getReader();
+
+      const firstFrame = await reader.read();
+      expect(new TextDecoder().decode(firstFrame.value)).toContain('"seq":1');
+
+      const pendingRead = reader.read();
+      await Promise.resolve();
+      const pullsAtCancellation = pullCount;
+      await reader.cancel();
+      await pendingRead;
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+
+      expect(sourceCancelled).toBe(true);
+      expect(pullCount).toBe(pullsAtCancellation);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it("forwards the final replay frame and closes without enqueueing after source closure", async () => {
+      const frame =
+        'id: 7\nevent: availability\ndata: {"seatId":"seat-7"}\n\n';
+      const source = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(frame));
+          controller.close();
+        },
+      });
+      const reader = withSseHeartbeatComments(source, 100).getReader();
+
+      const first = await reader.read();
+      expect(first.done).toBe(false);
+      expect(new TextDecoder().decode(first.value)).toBe(frame);
+      await expect(reader.read()).resolves.toEqual({
+        done: true,
+        value: undefined,
+      });
+    });
   });
 });

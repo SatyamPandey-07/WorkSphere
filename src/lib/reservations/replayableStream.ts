@@ -137,12 +137,66 @@ export function withSseHeartbeatComments(
     | undefined;
   let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let readerLockReleased = false;
+
+  const releaseReaderLock = () => {
+    if (readerLockReleased) return;
+    readerLockReleased = true;
+    reader.releaseLock();
+  };
 
   const cleanup = () => {
     stopped = true;
     if (heartbeatTimer !== undefined) {
       clearTimeout(heartbeatTimer);
       heartbeatTimer = undefined;
+    }
+  };
+
+  const enqueueIfWritable = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    chunk: Uint8Array,
+  ): boolean => {
+    if (stopped) return false;
+    try {
+      controller.enqueue(chunk);
+      return true;
+    } catch {
+      cleanup();
+      void reader
+        .cancel()
+        .finally(releaseReaderLock)
+        .catch(() => undefined);
+      return false;
+    }
+  };
+
+  const closeIfWritable = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ): void => {
+    if (stopped) return;
+    cleanup();
+    try {
+      controller.close();
+    } catch {
+      // The consumer may have cancelled while the stream was closing.
+    } finally {
+      releaseReaderLock();
+    }
+  };
+
+  const errorIfWritable = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    error: unknown,
+  ): void => {
+    if (stopped) return;
+    cleanup();
+    try {
+      controller.error(error);
+    } catch {
+      // The consumer may have cancelled while the stream was failing.
+    } finally {
+      releaseReaderLock();
     }
   };
 
@@ -167,21 +221,19 @@ export function withSseHeartbeatComments(
         if (stopped) return;
 
         if (next.kind === "heartbeat") {
-          controller.enqueue(SSE_HEARTBEAT_FRAME);
+          enqueueIfWritable(controller, SSE_HEARTBEAT_FRAME);
           return;
         }
 
         pendingRead = undefined;
         if (next.value.done) {
-          cleanup();
-          controller.close();
+          closeIfWritable(controller);
           return;
         }
 
-        controller.enqueue(next.value.value);
+        enqueueIfWritable(controller, next.value.value);
       } catch (error) {
-        cleanup();
-        controller.error(error);
+        errorIfWritable(controller, error);
       } finally {
         if (heartbeatTimer !== undefined) {
           clearTimeout(heartbeatTimer);
@@ -191,7 +243,11 @@ export function withSseHeartbeatComments(
     },
     async cancel(reason) {
       cleanup();
-      await reader.cancel(reason);
+      try {
+        await reader.cancel(reason);
+      } finally {
+        releaseReaderLock();
+      }
     },
   });
 }

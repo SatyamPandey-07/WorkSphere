@@ -1,5 +1,9 @@
-﻿import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  getOfflinePasscardRecord,
+  saveOfflinePasscard,
+} from '@/lib/security/offlinePasscardStore';
 import {
   buildDeskPassPngFilename,
   NomadDeskPass,
@@ -7,6 +11,10 @@ import {
   sanitizeFilenameSegment,
   type NomadDeskBooking,
 } from '@/components/bookings/NomadDeskPass';
+jest.mock('@/lib/security/offlinePasscardStore', () => ({
+  getOfflinePasscardRecord: jest.fn().mockImplementation(() => new Promise(() => {})),
+  saveOfflinePasscard: jest.fn().mockResolvedValue(undefined),
+}));
 
 describe('NomadDeskPass Location Subtitle and Neighborhood Fallback', () => {
   const baseBooking: NomadDeskBooking = {
@@ -211,5 +219,45 @@ describe('NomadDeskPass PNG filename sanitization and export', () => {
     expect(onDownloadPng.mock.calls[0]?.[0]).toBe(
       'nomad-desk-pass-Andheri-East-Loft-WS-99-01.png'
     );
+  });
+  it('keeps the QR and PNG download available when offline passcard caching exceeds storage quota', async () => {
+    const originalFetch = global.fetch;
+    const onDownloadPng = jest.fn();
+
+    (getOfflinePasscardRecord as jest.Mock).mockResolvedValueOnce(null);
+    (saveOfflinePasscard as jest.Mock).mockRejectedValueOnce(
+      new DOMException('Storage quota exceeded', 'QuotaExceededError')
+    );
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ offlinePasscard: 'fresh-test-passcard-token' }),
+    }) as typeof fetch;
+
+    try {
+      render(
+        <NomadDeskPass
+          venueName="Andheri Workspace"
+          confirmationId="WS-QUOTA-01"
+          onDownloadPng={onDownloadPng}
+        />
+      );
+
+      expect(await screen.findByTestId('nomad-desk-pass-qr')).toBeInTheDocument();
+
+      await waitFor(() => {
+        expect(saveOfflinePasscard).toHaveBeenCalledWith(
+          'fresh-test-passcard-token'
+        );
+      });
+
+      fireEvent.click(screen.getByTestId('download-pass-png-btn'));
+      expect(onDownloadPng).toHaveBeenCalledTimes(1);
+      expect(onDownloadPng.mock.calls[0]?.[0]).toBe(
+        'nomad-desk-pass-Andheri-Workspace-WS-QUOTA-01.png'
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

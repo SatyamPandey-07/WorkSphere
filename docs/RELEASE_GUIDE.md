@@ -1,4 +1,7 @@
+ docs/flutter-migration-architecture
+
  docs/maintainer-release-checklist
+ main
 # Maintainer Release Checklist & Guide
 
 Step-by-step maintainer checklist for cutting a GitHub Release, selecting a previous tag for generated release notes, writing release descriptions, and attaching build artifacts.
@@ -11,6 +14,8 @@ Step-by-step maintainer checklist for cutting a GitHub Release, selecting a prev
 4. **Write Release Description:** Title the release (`vMAJOR.MINOR.PATCH — <Summary>`) and organize notes into **Breaking Changes**, **Features**, **Bug Fixes & Security**, and **Documentation** with PR/issue links.
 5. **Attach Build Artifacts & Checksums:** Upload Web/Flutter build artifacts and `SHA256SUMS.txt` under **Attach binaries** and verify file integrity.
 6. **Configure Release Flags & Publish:** Check **This is a pre-release** (and uncheck **Set as the latest release**) for `-alpha`/`-beta`/`-rc` builds; check **Set as the latest release** only for active-line production releases, then click **Publish release**.
+ docs/flutter-migration-architecture
+
 
  docs/release-guide-prerelease-vs-latest
 # Release Guide & Pre-Release vs. Latest Resolution
@@ -61,5 +66,6 @@ Documents the `vMAJOR.MINOR.PATCH` Semantic Versioning standard, `v`-prefixed Gi
 
 * **Stable Releases:** `vMAJOR.MINOR.PATCH — <Short Highlight Summary>` (e.g., `v2.3.4 — Solana RPC Failover & ZKP Worker Stability`) or `vMAJOR.MINOR.PATCH`.
 * **Pre-Releases:** `vMAJOR.MINOR.PATCH-<suffix> (Pre-release)` (e.g., `v2.4.0-rc.1 (Pre-release)`).
+ main
  main
  main

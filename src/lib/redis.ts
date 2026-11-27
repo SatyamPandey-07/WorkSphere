@@ -2,35 +2,42 @@ import { Redis } from "@upstash/redis";
 
 type RedisGlobal = typeof globalThis & {
   __workSphereRedis?: Redis;
+  __workSphereRedisUrl?: string;
 };
 
 const globalForRedis = globalThis as RedisGlobal;
 let redisInstance: Redis | null = null;
+let redisInstanceUrl: string | null = null;
 
 export function getRedis(): Redis | null {
-  if (
-    !process.env.UPSTASH_REDIS_REST_URL ||
-    !process.env.UPSTASH_REDIS_REST_TOKEN
-  ) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
     return null;
   }
 
   if (process.env.NODE_ENV !== "production") {
-    if (!globalForRedis.__workSphereRedis) {
+    if (
+      !globalForRedis.__workSphereRedis ||
+      globalForRedis.__workSphereRedisUrl !== url
+    ) {
       globalForRedis.__workSphereRedis = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+        url,
+        token,
       });
+      globalForRedis.__workSphereRedisUrl = url;
     }
 
     return globalForRedis.__workSphereRedis;
   }
 
-  if (!redisInstance) {
+  if (!redisInstance || redisInstanceUrl !== url) {
     redisInstance = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      url,
+      token,
     });
+    redisInstanceUrl = url;
   }
 
   return redisInstance;

@@ -5,6 +5,7 @@
  */
 
 import Groq from 'groq-sdk';
+import { performance } from 'node:perf_hooks';
 import { estimateTokens } from '@/lib/context-compression/tokens';
 import { isRetryableLlmError } from '@/lib/ai/retryWithBackoff';
 
@@ -62,6 +63,12 @@ export interface ToolExecutionStats {
   failed: number;
   timedOut: number;
   deduplicated: number;
+}
+
+export interface ToolMetric {
+  toolName: string;
+  durationMs: number;
+  ok: boolean;
 }
 
 export interface TokenTelemetryRecord {
@@ -137,6 +144,7 @@ export interface SubagentExecutionResult {
    */
   toolsUsed: string[];
   toolExecutionStats?: ToolExecutionStats;
+  toolMetrics: ToolMetric[];
   telemetry: TokenTelemetryRecord;
 }
 
@@ -446,6 +454,7 @@ export class MultiAgentOrchestrator {
     let completionTokens = 0;
     /** Tool names that were actually invoked and completed. */
     const toolsInvoked: string[] = [];
+    const toolMetrics: ToolMetric[] = [];
     const toolStats: ToolExecutionStats = {
       requested: 0,
       validated: 0,
@@ -586,6 +595,8 @@ export class MultiAgentOrchestrator {
             let toolResult: unknown;
             toolStats.invoked++;
             let timerId: ReturnType<typeof setTimeout> | undefined;
+            const startedAt = performance.now();
+            let toolOk = false;
             try {
               toolResult = await Promise.race([
                 Promise.resolve(registeredTool.execute(validation.value)),
@@ -599,6 +610,7 @@ export class MultiAgentOrchestrator {
               toolStats.succeeded++;
               toolsInvoked.push(toolName);
               dedupeCache.set(canonicalKey, toolResult);
+              toolOk = true;
             } catch (handlerErr: unknown) {
               const msg =
                 handlerErr instanceof Error ? handlerErr.message : 'Tool execution failed';
@@ -610,6 +622,14 @@ export class MultiAgentOrchestrator {
               toolResult = { error: msg };
             } finally {
               if (timerId !== undefined) clearTimeout(timerId);
+              const elapsedMs = performance.now() - startedAt;
+              toolMetrics.push({
+                toolName,
+                durationMs: Number.isFinite(elapsedMs)
+                  ? Math.max(0, elapsedMs)
+                  : 0,
+                ok: toolOk,
+              });
             }
 
             conversationMessages.push({
@@ -674,6 +694,7 @@ export class MultiAgentOrchestrator {
       toolsInvoked,
       toolsUsed: toolsInvoked, // backwards-compat alias
       toolExecutionStats: toolStats,
+      toolMetrics,
       prunedTools: governance.prunedTools.map((t) => t.name),
       telemetry,
     };

@@ -102,7 +102,7 @@ export class TokenBucketLimiter implements IRateLimiter {
           const edgeRedis = await import("@upstash/redis/cloudflare");
           RedisClass = edgeRedis.Redis;
         } catch {
-          const defaultRedis = await import("@upstash/redis");
+          const defaultRedis = await import("@upstash/redis/cloudflare");
           RedisClass = defaultRedis.Redis;
         }
         const ratelimitPkg = await import("@upstash/ratelimit");

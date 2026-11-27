@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Rate limiting utilities imported via `@/lib/rateLimit`.
  *
  * This file is what `@/lib/rateLimit` resolves to (a file takes precedence over
@@ -37,7 +37,7 @@ function getRedisClient() {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Redis } = require("@upstash/redis");
+    const { Redis } = require("@upstash/redis/cloudflare");
     redisClient = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,

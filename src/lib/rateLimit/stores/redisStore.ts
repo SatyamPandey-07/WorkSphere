@@ -14,7 +14,7 @@ export function getRedisClient() {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Redis } = require("@upstash/redis");
+    const { Redis } = require("@upstash/redis/cloudflare");
     redisClientInstance = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,

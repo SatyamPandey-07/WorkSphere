@@ -7,11 +7,20 @@
  * while passing clear human vocal frequencies (300Hz - 3400Hz). Includes a speech detection gate.
  */
 
+export const NOTCH_Q_PRESETS = Object.freeze({
+  narrow: 12,
+  balanced: 8,
+  wide: 4,
+} as const);
+
+export type NotchQPreset = keyof typeof NOTCH_Q_PRESETS;
+
 export interface AdaptiveNoiseFilterOptions {
   speechThresholdDb?: number; // Threshold in dB to distinguish speech from ambient noise (default: -42 dB)
   highPassCutoff?: number; // Cutoff for HVAC rumble (default: 150 Hz)
   notchFrequencies?: number[]; // Fixed or initial notch frequencies (e.g. 60Hz hum, 2400Hz espresso whine)
   notchQ?: number; // Quality factor for notch filters (default: 8.0)
+  notchQPreset?: NotchQPreset; // Preset used when notchQ is not provided.
   attenuationDb?: number; // Target attenuation for noise bands (default: 15 dB, within 12-18 dB target)
   enabled?: boolean;
 }
@@ -88,7 +97,9 @@ export class AdaptiveNoiseFilter {
     this.lastContextState = audioContext.state;
     this.lastSampleRate = audioContext.sampleRate;
     this.speechThresholdDb = options.speechThresholdDb ?? -42;
-    this.notchQ = options.notchQ ?? 8.0;
+    this.notchQ =
+      options.notchQ ??
+      NOTCH_Q_PRESETS[options.notchQPreset ?? "balanced"];
 
     const highPassFreq = options.highPassCutoff ?? 150;
     this.highPassCutoff = highPassFreq;

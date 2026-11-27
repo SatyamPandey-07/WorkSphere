@@ -84,6 +84,7 @@ export function RedisLatencyStatusBadge({
   className = "",
 }: RedisLatencyStatusBadgeProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTier = useMemo(
     () =>
@@ -114,20 +115,25 @@ export function RedisLatencyStatusBadge({
     const summaryText = `Redis Status: ${tierMeta.label} (${statusTier}) | Latency: ${formattedLatency} | Timestamp: ${resolvedTimestamp} | NODE_ENV: ${nodeEnvironment}`;
     try {
       if (onCopyText) await onCopyText(summaryText);
-      else if (
-        typeof navigator !== "undefined" &&
-        navigator.clipboard &&
-        typeof navigator.clipboard.writeText === "function"
-      ) {
+      else {
+        if (
+          typeof navigator === "undefined" ||
+          !navigator.clipboard ||
+          typeof navigator.clipboard.writeText !== "function"
+        ) {
+          throw new Error("Clipboard API unavailable");
+        }
         await navigator.clipboard.writeText(summaryText);
       }
       setCopied(true);
+      setCopyError(false);
       if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
       resetTimerRef.current = setTimeout(() => {
         setCopied(false);
       }, copiedFeedbackMs);
     } catch {
       setCopied(false);
+      setCopyError(true);
     }
   }, [
     copiedFeedbackMs,
@@ -160,12 +166,14 @@ export function RedisLatencyStatusBadge({
         aria-label={
           copied
             ? "Copied Redis latency diagnostic"
+            : copyError
+              ? "Copy Redis latency diagnostic failed"
             : "Copy Redis latency diagnostic"
         }
-        title={copied ? "Copied!" : "Copy latency, status, and timestamp"}
+        title={copied ? "Copied!" : copyError ? "Copy unavailable" : "Copy latency, status, and timestamp"}
         className="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold underline-offset-2 hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/10"
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? "Copied" : copyError ? "Copy unavailable" : "Copy"}
       </button>
     </span>
   );

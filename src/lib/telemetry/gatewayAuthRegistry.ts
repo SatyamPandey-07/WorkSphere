@@ -159,6 +159,16 @@ export class GatewayAuthRegistry {
     return rec ? this.toPublicRecord(rec) : undefined;
   }
 
+  public listStaleCredentials(maxIdleMs: number, now?: number): GatewayCredentialRecord[] {
+    const nowMs = now ?? this.nowFn();
+    return Array.from(this.records.values())
+      .filter((record) => {
+        if (typeof record.lastUsedAtMs !== 'number' || !Number.isFinite(record.lastUsedAtMs)) return false;
+        return nowMs - record.lastUsedAtMs > maxIdleMs;
+      })
+      .map((record) => this.toPublicRecord(record));
+  }
+
   private toPublicRecord(rec: InternalGatewayRecord): GatewayCredentialRecord {
     return { keyId: rec.keyId, gatewayId: rec.gatewayId, secretOrVerifier: rec.secretOrVerifier, scopes: [...rec.scopes], status: rec.status, issuedAtMs: rec.issuedAtMs, expiresAtMs: rec.expiresAtMs, graceUntilMs: rec.graceUntilMs, revokedAtMs: rec.revokedAtMs, revokedReason: rec.revokedReason, lastUsedAtMs: rec.lastUsedAtMs, lastUsedAt: rec.lastUsedAt };
   }

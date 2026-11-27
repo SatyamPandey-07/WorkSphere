@@ -19,6 +19,7 @@ import { WebVitalsWidget } from "@/components/admin/WebVitalsWidget";
 import { RouteLatencyHeatmap } from "@/components/admin/RouteLatencyHeatmap";
 import { BulkVenuePartitionManager } from "@/components/admin/BulkVenuePartitionManager";
 import { RedisLatencyStatusBadge } from "@/components/admin/RedisLatencyStatusBadge";
+import { GatewayAuthRegistryPanel } from "@/components/admin/GatewayAuthRegistryPanel";
 import {
   Area,
   AreaChart,
@@ -638,6 +639,10 @@ export default function AdminSystemDashboard() {
             initialData={partitionsData as any}
             onRefresh={loadPartitions}
           />
+        </div>
+
+        <div className="mt-6">
+          <GatewayAuthRegistryPanel />
         </div>
 
         <p className="mt-6 text-xs text-zinc-600">

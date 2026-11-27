@@ -1,235 +1,115 @@
-/**
- * Versioned Folder ACL Leases & Live Revocation Enforcer (#10690)
- *
- * Ensures long-lived PartyKit / multi-region collaborative sessions do not
- * retain stale write capabilities after folder membership revocation or
- * role downgrade, and fail closed when leases expire without refresh.
- */
-
-export type AclRole = "OWNER" | "EDITOR" | "VIEWER";
-export type AclOperation = "read" | "write" | "delete";
-
-export const DEFAULT_LEASE_TTL_MS = 60_000;
-export const MAX_LEASE_TTL_MS = 5 * 60_000;
-
-export interface FolderAclLease {
+export interface FolderAclLeaseRecord {
+  leaseId: string;
   userId: string;
   folderId: string;
-  role: AclRole;
-  isMember: boolean;
+  roomId?: string;
   aclVersion: number;
   issuedAtMs: number;
   expiresAtMs: number;
+  ttlMs: number;
+  revokedAtMs?: number;
+  revokedReason?: string;
 }
 
-export interface AclInvalidationEvent {
-  folderId: string;
+export interface LeaseExpiringWarningEvent {
+  type: 'lease_expiring';
+  leaseId: string;
   userId: string;
-  newRole: AclRole;
-  isMember: boolean;
+  folderId: string;
+  roomId?: string;
   aclVersion: number;
-  revoked: boolean;
-  timestampMs: number;
+  expiresAtMs: number;
+  remainingMs: number;
+  emittedAtMs: number;
 }
 
-export type AclInvalidationListener = (event: AclInvalidationEvent) => void;
+export type LeaseExpiringListener = (event: LeaseExpiringWarningEvent) => void;
 
-function keyFor(folderId: string, userId: string): string {
-  return `${folderId}::${userId}`;
+export interface FolderAclLeaseManagerOptions {
+  defaultTtlMs?: number;
+  warningLeadMs?: number;
+  nowFn?: () => number;
+  onLeaseExpiring?: LeaseExpiringListener;
 }
 
-export function isOperationAllowedForRole(
-  role: AclRole,
-  isMember: boolean,
-  operation: AclOperation,
-): boolean {
-  if (!isMember) return false;
-  if (operation === "read") return true;
-  if (operation === "write") return role === "OWNER" || role === "EDITOR";
-  if (operation === "delete") return role === "OWNER";
-  return false;
+export const DEFAULT_LEASE_TTL_MS = 120_000;
+export const DEFAULT_LEASE_WARNING_LEAD_MS = 30_000;
+
+interface ManagedLeaseState {
+  record: FolderAclLeaseRecord;
+  warningEmittedForWindow: boolean;
 }
 
-/**
- * Authoritative ACL version store and invalidation broadcaster.
- */
-export class FolderAclCoordinator {
-  private versions = new Map<string, number>();
-  private subscribers = new Map<string, Set<AclInvalidationListener>>();
+export class FolderAclLeaseManager {
+  public readonly defaultTtlMs: number;
+  public readonly warningLeadMs: number;
+  private readonly nowFn: () => number;
+  private readonly leases = new Map<string, ManagedLeaseState>();
+  private readonly listeners = new Set<LeaseExpiringListener>();
+  private leaseSeq = 0;
 
-  public getCurrentVersion(folderId: string, userId: string): number {
-    return this.versions.get(keyFor(folderId, userId)) ?? 1;
+  constructor(options: FolderAclLeaseManagerOptions = {}) {
+    this.defaultTtlMs = typeof options.defaultTtlMs === 'number' && Number.isFinite(options.defaultTtlMs) && options.defaultTtlMs > 0 ? Math.floor(options.defaultTtlMs) : DEFAULT_LEASE_TTL_MS;
+    this.warningLeadMs = typeof options.warningLeadMs === 'number' && Number.isFinite(options.warningLeadMs) && options.warningLeadMs >= 0 ? Math.floor(options.warningLeadMs) : DEFAULT_LEASE_WARNING_LEAD_MS;
+    this.nowFn = options.nowFn ?? Date.now;
+    if (options.onLeaseExpiring) this.listeners.add(options.onLeaseExpiring);
   }
 
-  public issueLease(
-    userId: string,
-    folderId: string,
-    role: AclRole,
-    isMember: boolean,
-    ttlMs: number = DEFAULT_LEASE_TTL_MS,
-    nowMs: number = Date.now(),
-  ): FolderAclLease {
-    const boundedTtl = Math.max(1_000, Math.min(ttlMs, MAX_LEASE_TTL_MS));
-    const aclVersion = this.getCurrentVersion(folderId, userId);
-    return {
-      userId,
-      folderId,
-      role,
-      isMember,
-      aclVersion,
-      issuedAtMs: nowMs,
-      expiresAtMs: nowMs + boundedTtl,
-    };
+  public onLeaseExpiring(listener: LeaseExpiringListener): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
   }
 
-  public subscribe(
-    folderId: string,
-    listener: AclInvalidationListener,
-  ): () => void {
-    let set = this.subscribers.get(folderId);
-    if (!set) {
-      set = new Set();
-      this.subscribers.set(folderId, set);
-    }
-    set.add(listener);
-    return () => {
-      set?.delete(listener);
-    };
+  public issueLease(params: { userId: string; folderId: string; roomId?: string; aclVersion?: number; ttlMs?: number; nowMs?: number }): FolderAclLeaseRecord {
+    const now = typeof params.nowMs === 'number' && Number.isFinite(params.nowMs) ? Math.floor(params.nowMs) : this.nowFn();
+    const ttlMs = typeof params.ttlMs === 'number' && Number.isFinite(params.ttlMs) && params.ttlMs > 0 ? Math.floor(params.ttlMs) : this.defaultTtlMs;
+    this.leaseSeq += 1;
+    const leaseId = `lease___`;
+    const record: FolderAclLeaseRecord = { leaseId, userId: params.userId, folderId: params.folderId, roomId: params.roomId, aclVersion: typeof params.aclVersion === 'number' && Number.isFinite(params.aclVersion) ? params.aclVersion : 1, issuedAtMs: now, expiresAtMs: now + ttlMs, ttlMs };
+    this.leases.set(leaseId, { record, warningEmittedForWindow: false });
+    return { ...record };
   }
 
-  /**
-   * Publishes a membership revocation or role downgrade.
-   * Monotonically increments the ACL version and notifies all subscribed regions/rooms.
-   */
-  public publishMembershipChange(
-    folderId: string,
-    userId: string,
-    newRole: AclRole,
-    isMember: boolean,
-    nowMs: number = Date.now(),
-  ): AclInvalidationEvent {
-    const k = keyFor(folderId, userId);
-    const nextVersion = (this.versions.get(k) ?? 1) + 1;
-    this.versions.set(k, nextVersion);
+  public renewLease(leaseId: string, ttlMs: number = this.defaultTtlMs, nowMs: number = this.nowFn()): FolderAclLeaseRecord | null {
+    const state = this.leases.get(leaseId);
+    if (!state || state.record.revokedAtMs !== undefined) return null;
+    const safeTtl = typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0 ? Math.floor(ttlMs) : this.defaultTtlMs;
+    state.record.issuedAtMs = nowMs;
+    state.record.ttlMs = safeTtl;
+    state.record.expiresAtMs = nowMs + safeTtl;
+    state.warningEmittedForWindow = false;
+    return { ...state.record };
+  }
 
-    const event: AclInvalidationEvent = {
-      folderId,
-      userId,
-      newRole,
-      isMember,
-      aclVersion: nextVersion,
-      revoked: !isMember,
-      timestampMs: nowMs,
-    };
+  public revokeLease(leaseId: string, reason = 'ACL revoked', nowMs: number = this.nowFn()): boolean {
+    const state = this.leases.get(leaseId);
+    if (!state) return false;
+    state.record.revokedAtMs = nowMs;
+    state.record.revokedReason = reason;
+    return true;
+  }
 
-    const listeners = this.subscribers.get(folderId);
-    if (listeners) {
-      for (const listener of listeners) {
-        listener(event);
+  public checkExpiringLeases(nowMs: number = this.nowFn()): LeaseExpiringWarningEvent[] {
+    const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? Math.floor(nowMs) : this.nowFn();
+    const emittedEvents: LeaseExpiringWarningEvent[] = [];
+    for (const state of this.leases.values()) {
+      const { record } = state;
+      if (record.revokedAtMs !== undefined || state.warningEmittedForWindow || now >= record.expiresAtMs) continue;
+      const remainingMs = record.expiresAtMs - now;
+      if (remainingMs <= this.warningLeadMs) {
+        state.warningEmittedForWindow = true;
+        const event: LeaseExpiringWarningEvent = { type: 'lease_expiring', leaseId: record.leaseId, userId: record.userId, folderId: record.folderId, roomId: record.roomId, aclVersion: record.aclVersion, expiresAtMs: record.expiresAtMs, remainingMs, emittedAtMs: now };
+        emittedEvents.push(event);
+        for (const listener of this.listeners) listener(event);
       }
     }
+    return emittedEvents;
+  }
 
-    return event;
+  public getLease(leaseId: string): FolderAclLeaseRecord | undefined {
+    const state = this.leases.get(leaseId);
+    return state ? { ...state.record } : undefined;
   }
 }
 
-/**
- * Per-region/per-server active socket lease enforcer.
- * Ignores duplicate or out-of-order invalidations and fails closed on expired leases.
- */
-export class ActiveConnectionLeaseEnforcer {
-  private connectionLeases = new Map<string, FolderAclLease>();
-  private latestKnownVersions = new Map<string, number>();
-
-  public registerConnection(
-    connectionId: string,
-    lease: FolderAclLease,
-  ): void {
-    const k = keyFor(lease.folderId, lease.userId);
-    const knownVersion = this.latestKnownVersions.get(k) ?? 0;
-    if (lease.aclVersion > knownVersion) {
-      this.latestKnownVersions.set(k, lease.aclVersion);
-    }
-    this.connectionLeases.set(connectionId, { ...lease });
-  }
-
-  public removeConnection(connectionId: string): void {
-    this.connectionLeases.delete(connectionId);
-  }
-
-  public getConnectionLease(connectionId: string): FolderAclLease | undefined {
-    const lease = this.connectionLeases.get(connectionId);
-    return lease ? { ...lease } : undefined;
-  }
-
-  /**
-   * Applies an ACL invalidation event to all matching active connections.
-   * Out-of-order or duplicate events (aclVersion <= knownVersion) are ignored
-   * so stale permissions can never be restored.
-   */
-  public applyInvalidation(event: AclInvalidationEvent): {
-    applied: boolean;
-    affectedConnections: string[];
-  } {
-    const k = keyFor(event.folderId, event.userId);
-    const knownVersion = this.latestKnownVersions.get(k) ?? 0;
-
-    if (event.aclVersion <= knownVersion) {
-      return { applied: false, affectedConnections: [] };
-    }
-
-    this.latestKnownVersions.set(k, event.aclVersion);
-    const affectedConnections: string[] = [];
-
-    for (const [connId, lease] of this.connectionLeases.entries()) {
-      if (
-        lease.folderId === event.folderId &&
-        lease.userId === event.userId &&
-        lease.aclVersion < event.aclVersion
-      ) {
-        lease.aclVersion = event.aclVersion;
-        lease.role = event.newRole;
-        lease.isMember = event.isMember && !event.revoked;
-        affectedConnections.push(connId);
-      }
-    }
-
-    return { applied: true, affectedConnections };
-  }
-
-  /**
-   * Enforces operation-level authorization. Fails closed if the lease is
-   * missing, expired, superseded by a newer ACL version, or lacks permission.
-   */
-  public authorizeOperation(
-    connectionId: string,
-    operation: AclOperation,
-    nowMs: number = Date.now(),
-  ): { allowed: boolean; reason?: string } {
-    const lease = this.connectionLeases.get(connectionId);
-    if (!lease) {
-      return { allowed: false, reason: "Missing connection ACL lease" };
-    }
-
-    if (nowMs > lease.expiresAtMs) {
-      return { allowed: false, reason: "ACL lease expired (fail-closed)" };
-    }
-
-    const latestVersion =
-      this.latestKnownVersions.get(keyFor(lease.folderId, lease.userId)) ?? 0;
-    if (lease.aclVersion < latestVersion) {
-      return { allowed: false, reason: "ACL lease superseded by newer version" };
-    }
-
-    if (!isOperationAllowedForRole(lease.role, lease.isMember, operation)) {
-      return {
-        allowed: false,
-        reason: `Operation '${operation}' denied for role '${lease.role}' (member=${lease.isMember})`,
-      };
-    }
-
-    return { allowed: true };
-  }
-}
-
-export const defaultFolderAclCoordinator = new FolderAclCoordinator();
+export default FolderAclLeaseManager;

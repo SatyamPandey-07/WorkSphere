@@ -317,4 +317,111 @@ describe('MultiAgentOrchestrator bounded schema-validated tool execution loop (#
       deduplicated: 1,
     });
   });
+
+  it('stops after the cumulative tool duration budget and retains completed tool results', async () => {
+    const orchestrator = new MultiAgentOrchestrator(
+      { maxTokenAllowance: 4096, maxTotalToolDurationMs: 100 },
+      'test-key',
+    );
+    const firstHandler = jest.fn().mockResolvedValue({ result: 'partial result' });
+    const slowHandler = jest.fn(
+      () => new Promise((resolve) => setTimeout(() => resolve({ result: 'slow result' }), 150)),
+    );
+    const blockedHandler = jest.fn().mockResolvedValue({ result: 'should not run' });
+
+    for (const [name, execute] of [
+      ['first_tool', firstHandler],
+      ['slow_tool', slowHandler],
+      ['blocked_tool', blockedHandler],
+    ] as const) {
+      orchestrator.registerTool({
+        name,
+        description: name,
+        parameters: { type: 'object', properties: {} },
+        execute,
+      });
+    }
+
+    mockCreate
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: '',
+              tool_calls: [
+                { id: 'first', type: 'function', function: { name: 'first_tool', arguments: '{}' } },
+                { id: 'slow', type: 'function', function: { name: 'slow_tool', arguments: '{}' } },
+                { id: 'blocked', type: 'function', function: { name: 'blocked_tool', arguments: '{}' } },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        choices: [{ message: { content: 'Completed with the partial results.' } }],
+      });
+
+    const result = await orchestrator.invokeSubagent({
+      subagentName: 'BudgetedAgent',
+      instruction: 'Run tools within the cumulative duration budget',
+    });
+
+    expect(firstHandler).toHaveBeenCalledTimes(1);
+    expect(slowHandler).toHaveBeenCalledTimes(1);
+    expect(blockedHandler).not.toHaveBeenCalled();
+    expect(result.toolsInvoked).toEqual(['first_tool', 'slow_tool']);
+    expect(result.content).toBe('Completed with the partial results.');
+    const followupMessages = mockCreate.mock.calls[1][0].messages;
+    expect(followupMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'tool', content: expect.stringContaining('partial result') }),
+      ]),
+    );
+  });
+
+  it('keeps executing tools when no cumulative duration budget is configured', async () => {
+    const orchestrator = new MultiAgentOrchestrator({ maxTokenAllowance: 4096 }, 'test-key');
+    const firstHandler = jest.fn().mockResolvedValue({ result: 'first' });
+    const secondHandler = jest.fn().mockResolvedValue({ result: 'second' });
+
+    for (const [name, execute] of [
+      ['first_tool', firstHandler],
+      ['second_tool', secondHandler],
+    ] as const) {
+      orchestrator.registerTool({
+        name,
+        description: name,
+        parameters: { type: 'object', properties: {} },
+        execute,
+      });
+    }
+
+    mockCreate
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: '',
+              tool_calls: [
+                { id: 'first', type: 'function', function: { name: 'first_tool', arguments: '{}' } },
+                { id: 'second', type: 'function', function: { name: 'second_tool', arguments: '{}' } },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        choices: [{ message: { content: 'Both tools completed.' } }],
+      });
+
+    const result = await orchestrator.invokeSubagent({
+      subagentName: 'UnbudgetedAgent',
+      instruction: 'Run both tools',
+    });
+
+    expect(firstHandler).toHaveBeenCalledTimes(1);
+    expect(secondHandler).toHaveBeenCalledTimes(1);
+    expect(result.toolsInvoked).toEqual(['first_tool', 'second_tool']);
+    expect(result.content).toBe('Both tools completed.');
+  });
 });

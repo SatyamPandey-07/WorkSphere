@@ -1,12 +1,165 @@
-'use client';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-export type RedisHealthTier = 'healthy' | 'degraded' | 'offline';
-export interface RedisLatencyStatusBadgeProps { pingMs?: number | null; degradedThresholdMs?: number; offlineThresholdMs?: number; showLatencyValue?: boolean; timestamp?: string | number | Date; onCopyText?: (text: string) => void | Promise<void>; copiedFeedbackMs?: number; className?: string; }
+"use client";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+export type RedisHealthTier = "healthy" | "degraded" | "offline";
+export interface RedisLatencyStatusBadgeProps {
+  pingMs?: number | null;
+  degradedThresholdMs?: number;
+  offlineThresholdMs?: number;
+  showLatencyValue?: boolean;
+  timestamp?: string | number | Date;
+  onCopyText?: (text: string) => void | Promise<void>;
+  copiedFeedbackMs?: number;
+  className?: string;
+}
 export const DEFAULT_DEGRADED_THRESHOLD_MS = 50;
 export const DEFAULT_OFFLINE_THRESHOLD_MS = 250;
 export const DEFAULT_COPIED_FEEDBACK_MS = 2_000;
-export function resolveRedisHealthTier(pingMs: number | null | undefined, degradedThresholdMs: number = DEFAULT_DEGRADED_THRESHOLD_MS, offlineThresholdMs: number = DEFAULT_OFFLINE_THRESHOLD_MS): RedisHealthTier { if (typeof pingMs !== 'number' || !Number.isFinite(pingMs) || pingMs < 0 || pingMs >= offlineThresholdMs) return 'offline'; if (pingMs >= degradedThresholdMs) return 'degraded'; return 'healthy'; }
-function formatSnapshotTimestamp(timestamp?: string | number | Date): string { if (timestamp instanceof Date) return Number.isNaN(timestamp.getTime()) ? new Date().toISOString() : timestamp.toISOString(); if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return new Date(timestamp).toISOString(); if (typeof timestamp === 'string' && timestamp.trim().length > 0) return timestamp.trim(); return new Date().toISOString(); }
-const TIER_STYLES: Record<RedisHealthTier, { label: string; badgeClass: string; dotClass: string }> = { healthy: { label: 'Healthy', badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', dotClass: 'bg-emerald-500' }, degraded: { label: 'Degraded', badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300', dotClass: 'bg-amber-500' }, offline: { label: 'Offline', badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300', dotClass: 'bg-rose-500' } };
-export function RedisLatencyStatusBadge({ pingMs = null, degradedThresholdMs = DEFAULT_DEGRADED_THRESHOLD_MS, offlineThresholdMs = DEFAULT_OFFLINE_THRESHOLD_MS, showLatencyValue = true, timestamp, onCopyText, copiedFeedbackMs = DEFAULT_COPIED_FEEDBACK_MS, className = '' }: RedisLatencyStatusBadgeProps): React.ReactElement { const [copied, setCopied] = useState(false); const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); const statusTier = useMemo(() => resolveRedisHealthTier(pingMs, degradedThresholdMs, offlineThresholdMs), [pingMs, degradedThresholdMs, offlineThresholdMs]); const tierMeta = TIER_STYLES[statusTier]; const hasNumericPing = typeof pingMs === 'number' && Number.isFinite(pingMs) && pingMs >= 0; const formattedLatency = hasNumericPing ? ${Math.round(pingMs)} ms : 'N/A'; const ariaStatusLabel = hasNumericPing ? Redis status:  () : Redis status: ; useEffect(() => () => { if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current); }, []); const handleCopyDiagnostic = useCallback(async () => { const resolvedTimestamp = formatSnapshotTimestamp(timestamp); const summaryText = Redis Status:  () | Latency:  | Timestamp: ; try { if (onCopyText) await onCopyText(summaryText); else if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') await navigator.clipboard.writeText(summaryText); setCopied(true); if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current); resetTimerRef.current = setTimeout(() => { setCopied(false); }, copiedFeedbackMs); } catch { setCopied(false); } }, [copiedFeedbackMs, formattedLatency, onCopyText, statusTier, tierMeta.label, timestamp]); return (<span role="status" aria-live="polite" aria-label={ariaStatusLabel} data-status={statusTier} className={inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium  .trim()}><span aria-hidden="true" className={h-2 w-2 rounded-full } /><span>{tierMeta.label}</span>{showLatencyValue && hasNumericPing ? <span className="font-mono opacity-80">({formattedLatency})</span> : null}<button type="button" onClick={handleCopyDiagnostic} aria-label={copied ? 'Copied Redis latency diagnostic' : 'Copy Redis latency diagnostic'} title={copied ? 'Copied!' : 'Copy latency, status, and timestamp'} className="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold underline-offset-2 hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/10">{copied ? 'Copied' : 'Copy'}</button></span>); }
+export function resolveRedisHealthTier(
+  pingMs: number | null | undefined,
+  degradedThresholdMs: number = DEFAULT_DEGRADED_THRESHOLD_MS,
+  offlineThresholdMs: number = DEFAULT_OFFLINE_THRESHOLD_MS,
+): RedisHealthTier {
+  if (
+    typeof pingMs !== "number" ||
+    !Number.isFinite(pingMs) ||
+    pingMs < 0 ||
+    pingMs >= offlineThresholdMs
+  )
+    return "offline";
+  if (pingMs >= degradedThresholdMs) return "degraded";
+  return "healthy";
+}
+function formatSnapshotTimestamp(timestamp?: string | number | Date): string {
+  if (timestamp instanceof Date)
+    return Number.isNaN(timestamp.getTime())
+      ? new Date().toISOString()
+      : timestamp.toISOString();
+  if (typeof timestamp === "number" && Number.isFinite(timestamp))
+    return new Date(timestamp).toISOString();
+  if (typeof timestamp === "string" && timestamp.trim().length > 0)
+    return timestamp.trim();
+  return new Date().toISOString();
+}
+const TIER_STYLES: Record<
+  RedisHealthTier,
+  { label: string; badgeClass: string; dotClass: string }
+> = {
+  healthy: {
+    label: "Healthy",
+    badgeClass:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    dotClass: "bg-emerald-500",
+  },
+  degraded: {
+    label: "Degraded",
+    badgeClass:
+      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    dotClass: "bg-amber-500",
+  },
+  offline: {
+    label: "Offline",
+    badgeClass:
+      "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+    dotClass: "bg-rose-500",
+  },
+};
+export function RedisLatencyStatusBadge({
+  pingMs = null,
+  degradedThresholdMs = DEFAULT_DEGRADED_THRESHOLD_MS,
+  offlineThresholdMs = DEFAULT_OFFLINE_THRESHOLD_MS,
+  showLatencyValue = true,
+  timestamp,
+  onCopyText,
+  copiedFeedbackMs = DEFAULT_COPIED_FEEDBACK_MS,
+  className = "",
+}: RedisLatencyStatusBadgeProps): React.ReactElement {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusTier = useMemo(
+    () =>
+      resolveRedisHealthTier(pingMs, degradedThresholdMs, offlineThresholdMs),
+    [pingMs, degradedThresholdMs, offlineThresholdMs],
+  );
+  const tierMeta = TIER_STYLES[statusTier];
+  const hasNumericPing =
+    typeof pingMs === "number" && Number.isFinite(pingMs) && pingMs >= 0;
+  const formattedLatency = hasNumericPing ? `${Math.round(pingMs)} ms` : "N/A";
+  const ariaStatusLabel = hasNumericPing
+    ? `Redis status: ${tierMeta.label} (${formattedLatency})`
+    : `Redis status: ${tierMeta.label}`;
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
+    },
+    [],
+  );
+
+  const handleCopyDiagnostic = useCallback(async () => {
+    const resolvedTimestamp = formatSnapshotTimestamp(timestamp);
+    const summaryText = `Redis Status: ${tierMeta.label} (${statusTier}) | Latency: ${formattedLatency} | Timestamp: ${resolvedTimestamp}`;
+    try {
+      if (onCopyText) await onCopyText(summaryText);
+      else if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(summaryText);
+      }
+      setCopied(true);
+      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = setTimeout(() => {
+        setCopied(false);
+      }, copiedFeedbackMs);
+    } catch {
+      setCopied(false);
+    }
+  }, [
+    copiedFeedbackMs,
+    formattedLatency,
+    onCopyText,
+    statusTier,
+    tierMeta.label,
+    timestamp,
+  ]);
+
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      aria-label={ariaStatusLabel}
+      data-status={statusTier}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${tierMeta.badgeClass} ${className}`.trim()}
+    >
+      <span
+        aria-hidden="true"
+        className={`h-2 w-2 rounded-full ${tierMeta.dotClass}`}
+      />
+      <span>{tierMeta.label}</span>
+      {showLatencyValue && hasNumericPing ? (
+        <span className="font-mono opacity-80">({formattedLatency})</span>
+      ) : null}
+      <button
+        type="button"
+        onClick={handleCopyDiagnostic}
+        aria-label={
+          copied
+            ? "Copied Redis latency diagnostic"
+            : "Copy Redis latency diagnostic"
+        }
+        title={copied ? "Copied!" : "Copy latency, status, and timestamp"}
+        className="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold underline-offset-2 hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/10"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </span>
+  );
+}
 export default RedisLatencyStatusBadge;

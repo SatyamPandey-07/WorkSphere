@@ -42,8 +42,12 @@ function formatSnapshotTimestamp(timestamp?: string | number | Date): string {
       : timestamp.toISOString();
   if (typeof timestamp === "number" && Number.isFinite(timestamp))
     return new Date(timestamp).toISOString();
-  if (typeof timestamp === "string" && timestamp.trim().length > 0)
-    return timestamp.trim();
+  if (typeof timestamp === "string" && timestamp.trim().length > 0) {
+    const parsedTimestamp = Date.parse(timestamp.trim());
+    if (!Number.isNaN(parsedTimestamp)) {
+      return new Date(parsedTimestamp).toISOString();
+    }
+  }
   return new Date().toISOString();
 }
 const TIER_STYLES: Record<
@@ -103,7 +107,11 @@ export function RedisLatencyStatusBadge({
 
   const handleCopyDiagnostic = useCallback(async () => {
     const resolvedTimestamp = formatSnapshotTimestamp(timestamp);
-    const summaryText = `Redis Status: ${tierMeta.label} (${statusTier}) | Latency: ${formattedLatency} | Timestamp: ${resolvedTimestamp}`;
+    const nodeEnvironment =
+      typeof process !== "undefined" && process.env.NODE_ENV
+        ? process.env.NODE_ENV
+        : "unset";
+    const summaryText = `Redis Status: ${tierMeta.label} (${statusTier}) | Latency: ${formattedLatency} | Timestamp: ${resolvedTimestamp} | NODE_ENV: ${nodeEnvironment}`;
     try {
       if (onCopyText) await onCopyText(summaryText);
       else if (

@@ -165,3 +165,5 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [NotificationBell Component Guide](./NOTIFICATION_BELL_GUIDE.md) — Top navigation notification bell, live polling, optimistic mark-as-read, undo restoration, and backend API contract.
 - [Bounded Texture Cache LRU Eviction & WebGL Lifecycle](./webgl/BOUNDED_TEXTURE_CACHE.md) — Bounded WebGL texture cache, LRU eviction policies, 64MB memory budgets, and WebGL context restoration handling.
+
+- [Student Batch Verification NDJSON Streaming](./api/STUDENT_VERIFY_BATCH_NDJSON.md) � Accept negotiation, progress/completion/error event schemas, and a browser ReadableStream client example.

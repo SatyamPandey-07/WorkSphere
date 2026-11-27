@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toPng } from 'html-to-image';
 import {
   getOfflinePasscardRecord,
   saveOfflinePasscard,
@@ -14,6 +15,9 @@ import {
 jest.mock('@/lib/security/offlinePasscardStore', () => ({
   getOfflinePasscardRecord: jest.fn().mockImplementation(() => new Promise(() => {})),
   saveOfflinePasscard: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('html-to-image', () => ({
+  toPng: jest.fn(),
 }));
 
 describe('NomadDeskPass Location Subtitle and Neighborhood Fallback', () => {
@@ -337,6 +341,62 @@ describe('NomadDeskPass confirmation ID copy action', () => {
       ).toHaveTextContent('Copy failed');
     } finally {
       restoreClipboard(originalClipboard);
+    }
+  });
+});
+
+describe('NomadDeskPass PNG export retry', () => {
+  it('shows an accessible error and retries the current passcard after toPng rejects', async () => {
+    const toPngMock = toPng as jest.MockedFunction<typeof toPng>;
+    toPngMock
+      .mockReset()
+      .mockRejectedValueOnce(new Error('Canvas export failed'))
+      .mockResolvedValueOnce('data:image/png;base64,recovered');
+    (getOfflinePasscardRecord as jest.Mock).mockResolvedValueOnce({
+      token: 'cached-passcard-token',
+    });
+    const anchorClick = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    const initialBooking: NomadDeskBooking = {
+      id: 'retry-test-booking',
+      confirmationId: 'CONF-RETRY-01',
+      date: '2026-11-27',
+      time: '10:00 AM',
+      venue: { name: 'Retry Workspace' },
+    };
+    const { rerender } = render(<NomadDeskPass booking={initialBooking} />);
+
+    try {
+      const downloadButton = await screen.findByTestId('download-pass-png-btn');
+      await waitFor(() => expect(downloadButton).toBeEnabled());
+      fireEvent.click(downloadButton);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Could not export the pass as an image. Please try again.',
+      );
+      expect(toPngMock).toHaveBeenCalledTimes(1);
+
+      const updatedBooking: NomadDeskBooking = {
+        ...initialBooking,
+        confirmationId: 'CONF-RETRY-UPDATED',
+      };
+      rerender(<NomadDeskPass booking={updatedBooking} />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Retry PNG export' }),
+      );
+
+      await waitFor(() => {
+        expect(toPngMock).toHaveBeenCalledTimes(2);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      });
+      const retriedCard = toPngMock.mock.calls[1]?.[0];
+      expect(retriedCard).toBeDefined();
+      expect(retriedCard?.textContent).toContain('CONF-RETRY-UPDATED');
+      expect(anchorClick).toHaveBeenCalledTimes(1);
+    } finally {
+      anchorClick.mockRestore();
     }
   });
 });

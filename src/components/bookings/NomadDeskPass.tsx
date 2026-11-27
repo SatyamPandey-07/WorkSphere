@@ -159,6 +159,7 @@ export function NomadDeskPass({
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pngExportError, setPngExportError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<
     "idle" | "copied" | "failed"
   >("idle");
@@ -233,19 +234,20 @@ export function NomadDeskPass({
       effectiveBooking.confirmationId,
     );
 
-    if (onDownloadPng) {
-      const dataUrl = `data:image/png;base64,${Buffer.from(
-        encodeURIComponent(
-          `NomadDeskPass:${effectiveBooking.venue?.name}:${effectiveBooking.confirmationId}`,
-        ),
-        "utf8",
-      ).toString("base64")}`;
-      onDownloadPng(filename, dataUrl);
-      return;
-    }
-
-    if (!cardRef.current) return;
     try {
+      if (onDownloadPng) {
+        const dataUrl = `data:image/png;base64,${Buffer.from(
+          encodeURIComponent(
+            `NomadDeskPass:${effectiveBooking.venue?.name}:${effectiveBooking.confirmationId}`,
+          ),
+          "utf8",
+        ).toString("base64")}`;
+        onDownloadPng(filename, dataUrl);
+        setPngExportError(null);
+        return;
+      }
+
+      if (!cardRef.current) return;
       const image = await toPng(cardRef.current, {
         cacheBust: true,
         pixelRatio: 2,
@@ -254,8 +256,11 @@ export function NomadDeskPass({
       link.download = filename;
       link.href = image;
       link.click();
+      setPngExportError(null);
     } catch {
-      setError("Could not export the pass as an image. Please try again.");
+      setPngExportError(
+        "Could not export the pass as an image. Please try again.",
+      );
     }
   };
 
@@ -466,6 +471,21 @@ export function NomadDeskPass({
           >
             {error}
           </p>
+        )}
+        {pngExportError && (
+          <div
+            role="alert"
+            className="mb-3 rounded-lg bg-red-950/60 p-3 text-sm text-red-300"
+          >
+            <p>{pngExportError}</p>
+            <button
+              type="button"
+              onClick={() => void handleSavePng()}
+              className="mt-2 rounded-md border border-red-300/40 px-3 py-1.5 font-semibold text-red-200 underline-offset-2 hover:bg-red-900/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+            >
+              Retry PNG export
+            </button>
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-3">

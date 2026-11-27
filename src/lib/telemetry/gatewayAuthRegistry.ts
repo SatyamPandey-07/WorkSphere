@@ -103,7 +103,14 @@ export class GatewayAuthRegistry {
   }
 
   public revokeGateway(gatewayId: string): void {
-    this.revokedGateways.add(gatewayId.trim());
+    const normalizedGatewayId = gatewayId.trim();
+    this.revokedGateways.add(normalizedGatewayId);
+    for (const record of this.records.values()) {
+      if (record.gatewayId === normalizedGatewayId) {
+        delete record.lastUsedAtMs;
+        delete record.lastUsedAt;
+      }
+    }
   }
 
   private scheduleLastUsedAudit(record: InternalGatewayRecord, nowMs: number): void {
@@ -157,6 +164,16 @@ export class GatewayAuthRegistry {
   public getCredentialRecord(gatewayId: string, keyId: string): GatewayCredentialRecord | undefined {
     const rec = this.records.get(this.compositeKey(gatewayId, keyId));
     return rec ? this.toPublicRecord(rec) : undefined;
+  }
+
+  public listStaleCredentials(maxIdleMs: number, now?: number): GatewayCredentialRecord[] {
+    const nowMs = now ?? this.nowFn();
+    return Array.from(this.records.values())
+      .filter((record) => {
+        if (typeof record.lastUsedAtMs !== 'number' || !Number.isFinite(record.lastUsedAtMs)) return false;
+        return nowMs - record.lastUsedAtMs > maxIdleMs;
+      })
+      .map((record) => this.toPublicRecord(record));
   }
 
   private toPublicRecord(rec: InternalGatewayRecord): GatewayCredentialRecord {

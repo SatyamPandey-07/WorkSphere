@@ -19,6 +19,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Normalize SHA256SUMS.txt line endings
+        shell: bash
+        run: |
+          while IFS= read -r -d '' file; do
+            tr -d '\r' < "$file" > "${file}.lf"
+            mv "${file}.lf" "$file"
+          done < <(find . -type f -name 'SHA256SUMS.txt' -print0)
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:

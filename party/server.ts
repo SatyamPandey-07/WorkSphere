@@ -1,5 +1,7 @@
 import type * as Party from "partykit/server";
 import { onConnect as onConnectYjs } from "y-partykit";
+import { verifyToken } from "@clerk/backend";
+import { HydrationGate, SEAT_HOLDS_STORAGE_KEY } from "./holdHydration";
 
 /** Yjs rooms for collaborative collection notes: `folder-notes-{folderId}` (#3360). */
 export const FOLDER_NOTES_ROOM_PREFIX = "folder-notes-";
@@ -17,14 +19,17 @@ export function folderIdFromRoom(roomId: string): string {
   if (roomId.startsWith("folder-")) return roomId.slice("folder-".length);
   return roomId;
 }
-import { verifyToken } from "@clerk/backend";
-import { HydrationGate, SEAT_HOLDS_STORAGE_KEY } from "./holdHydration";
 
 type SeatStatus = "green" | "yellow" | "red";
 
 // Music genre options for the quick-select dropdown (issue #2077)
 export type MusicGenre =
-  "Lo-Fi" | "Jazz" | "Pop" | "Classical" | "None" | "Loud";
+  | "Lo-Fi"
+  | "Jazz"
+  | "Pop"
+  | "Classical"
+  | "None"
+  | "Loud";
 
 const VALID_MUSIC_GENRES: readonly MusicGenre[] = [
   "Lo-Fi",
@@ -203,6 +208,27 @@ export default class WorkspaceServer implements Party.Server {
     }, 15000);
   }
 
+  /**
+   * Evicts any stale presence entries belonging to `userId` on other connection IDs
+   * so rapid tab switches / reconnects never create duplicate peer entries (#9266).
+   */
+  private evictDuplicateUserPresence(userId: string, activeConnId: string): void {
+    for (const [existingConnId, existingUser] of this.roomPresence.entries()) {
+      if (existingConnId !== activeConnId && existingUser.userId === userId) {
+        this.roomPresence.delete(existingConnId);
+        this.room.broadcast(
+          JSON.stringify({
+            type: "presence_remove",
+            userId: existingUser.userId,
+            userName: existingUser.userName,
+            connId: existingConnId,
+          }),
+          [activeConnId],
+        );
+      }
+    }
+  }
+
   pruneInactivePresence(now: number = Date.now()): number {
     let pruned = 0;
     for (const [connId, presence] of this.roomPresence.entries()) {
@@ -300,6 +326,10 @@ export default class WorkspaceServer implements Party.Server {
       role: isViewer ? "VIEWER" : "EDITOR",
       userId: verifiedUserId,
     });
+
+    if (verifiedUserId) {
+      this.evictDuplicateUserPresence(verifiedUserId, conn.id);
+    }
 
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
@@ -416,7 +446,7 @@ export default class WorkspaceServer implements Party.Server {
         return;
       }
 
-      // Room awareness presence updates (#3438)
+      // Room awareness presence updates (#3438, #9266)
       if (parsed.type === "presence_update") {
         const authenticatedUserId = state?.userId;
 
@@ -426,6 +456,8 @@ export default class WorkspaceServer implements Party.Server {
         ) {
           return;
         }
+
+        this.evictDuplicateUserPresence(authenticatedUserId, sender.id);
 
         const presence: PresenceUser = {
           userId: authenticatedUserId,
@@ -454,7 +486,7 @@ export default class WorkspaceServer implements Party.Server {
         return;
       }
 
-      // Presence heartbeat (every 5s from client) (#3438)
+      // Presence heartbeat (every 5s from client) (#3438, #9266)
       if (parsed.type === "presence_heartbeat") {
         const authenticatedUserId = state?.userId;
 
@@ -464,6 +496,8 @@ export default class WorkspaceServer implements Party.Server {
         ) {
           return;
         }
+
+        this.evictDuplicateUserPresence(authenticatedUserId, sender.id);
 
         const now = Date.now();
         const existing = this.roomPresence.get(sender.id);

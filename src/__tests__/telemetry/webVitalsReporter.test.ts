@@ -390,6 +390,41 @@ describe("client Web Vitals reporter", () => {
     expect(mockSendBeacon).not.toHaveBeenCalled();
   });
 
+  it("derives INP rating when optional rating metadata is missing", () => {
+    const good = createWebVitalsPayload(
+      makeMetric({
+        name: "INP",
+        value: 180,
+        rating: undefined as unknown as Metric["rating"],
+      }),
+    );
+
+    const needsImprovement = createWebVitalsPayload(
+      makeMetric({
+        name: "INP",
+        value: 350,
+        rating: undefined as unknown as Metric["rating"],
+      }),
+    );
+
+    const poor = createWebVitalsPayload(
+      makeMetric({
+        name: "INP",
+        value: 600,
+        rating: undefined as unknown as Metric["rating"],
+      }),
+    );
+
+    expect(good).toEqual(expect.objectContaining({ value: 180, rating: "good" }));
+    expect(needsImprovement).toEqual(
+      expect.objectContaining({
+        value: 350,
+        rating: "needs-improvement",
+      }),
+    );
+    expect(poor).toEqual(expect.objectContaining({ value: 600, rating: "poor" }));
+  });
+
   it("clamps negative metric values to zero and rounds floating values", () => {
     const negativePayload = createWebVitalsPayload(
       makeMetric({ value: -12.4 }),

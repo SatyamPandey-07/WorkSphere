@@ -148,9 +148,7 @@ export function createWebVitalsPayload(
     !METRIC_NAMES.has(candidate.name) ||
     typeof candidate.value !== "number" ||
     !Number.isFinite(candidate.value) ||
-    Number.isNaN(candidate.value) ||
-    typeof candidate.rating !== "string" ||
-    !RATINGS.has(candidate.rating)
+    Number.isNaN(candidate.value)
   ) {
     return null;
   }
@@ -162,10 +160,23 @@ export function createWebVitalsPayload(
 
   const clampedValue = Math.max(0, Math.round(candidate.value * 100) / 100);
 
+  const rating =
+    typeof candidate.rating === "string" && RATINGS.has(candidate.rating)
+      ? (candidate.rating as WebVitalsRating)
+      : candidate.rating === undefined && candidate.name === "INP"
+        ? clampedValue <= 200
+          ? "good"
+          : clampedValue <= 500
+            ? "needs-improvement"
+            : "poor"
+        : null;
+
+  if (!rating) return null;
+
   return {
     name: candidate.name as WebVitalsMetricName,
     value: clampedValue,
-    rating: candidate.rating as WebVitalsRating,
+    rating,
     navigationType: getNavigationType(candidate.navigationType),
     deviceType: getDeviceType(),
     ...(metricId ? { metricId } : {}),

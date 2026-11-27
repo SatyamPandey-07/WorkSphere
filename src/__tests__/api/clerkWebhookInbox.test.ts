@@ -198,4 +198,75 @@ describe("ClerkWebhookInbox & lifecycle ordering (#10689)", () => {
     inbox.markFailed("svix_1", "bad payload", false);
     expect(inbox.getQuarantinedRecords()).toHaveLength(1);
   });
+
+  it("serializes concurrent Svix deliveries of the same svix-id and returns idempotent 200 OK", async () => {
+    const payload = {
+      type: "user.created",
+      data: {
+        id: "user_concurrent_1",
+        first_name: "Bob",
+        email_addresses: [{ id: "e1", email_address: "bob@example.com" }],
+        created_at: 1_700_000_000_000,
+      },
+    };
+
+    let resolveUpsert!: (val: { id: string }) => void;
+    const upsertGate = new Promise<{ id: string }>((resolve) => {
+      resolveUpsert = resolve;
+    });
+    (prisma.user.upsert as jest.Mock).mockImplementationOnce(() => upsertGate);
+
+    const req1 = createSignedReq(payload, "msg_concurrent_1");
+    const req2 = createSignedReq(payload, "msg_concurrent_1");
+    const req3 = createSignedReq(payload, "msg_concurrent_1");
+
+    const p1 = POST(req1);
+    const p2 = POST(req2);
+    const p3 = POST(req3);
+
+    // Yield briefly so all three enter POST and req2/req3 observe IN_FLIGHT
+    await new Promise((r) => setTimeout(r, 15));
+    resolveUpsert({ id: "user_concurrent_1" });
+
+    const [res1, res2, res3] = await Promise.all([p1, p2, p3]);
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    expect(res3.status).toBe(200);
+
+    const [json1, json2, json3] = await Promise.all([
+      res1.json(),
+      res2.json(),
+      res3.json(),
+    ]);
+    expect(json1.action).toBe("created");
+    expect(json2.idempotent).toBe(true);
+    expect(json3.idempotent).toBe(true);
+    expect(prisma.user.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns idempotent 200 OK when svix-id insert conflicts with an active external claim", async () => {
+    const payload = {
+      type: "user.updated",
+      data: {
+        id: "user_conflict_1",
+        first_name: "Cara",
+        updated_at: 1_700_000_005_000,
+      },
+    };
+    const rawBody = JSON.stringify(payload);
+    defaultClerkWebhookInbox.claim({
+      svixId: "msg_conflict_1",
+      eventType: "user.updated",
+      subjectId: "user_conflict_1",
+      eventTimestampMs: 1_700_000_005_000,
+      payloadHash: hashWebhookPayload(rawBody),
+    });
+
+    const res = await POST(createSignedReq(payload, "msg_conflict_1"));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.idempotent).toBe(true);
+    expect(prisma.user.upsert).not.toHaveBeenCalled();
+  });
 });

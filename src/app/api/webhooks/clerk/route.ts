@@ -12,6 +12,18 @@ import {
   hashWebhookPayload,
 } from "@/lib/auth/clerkWebhookInbox";
 
+function idempotentDeduplicatedResponse(subjectId?: string) {
+  return NextResponse.json(
+    {
+      success: true,
+      action: "deduplicated",
+      ...(subjectId ? { userId: subjectId } : {}),
+      idempotent: true,
+    },
+    { status: 200 },
+  );
+}
+
 export async function POST(req: Request) {
   let rawBody: string;
   try {
@@ -54,40 +66,57 @@ export async function POST(req: Request) {
   const payloadHash = hashWebhookPayload(rawBody);
 
   if (svixId) {
-    const claim = defaultClerkWebhookInbox.claim({
-      svixId,
-      eventType,
-      subjectId,
-      eventTimestampMs: eventTs,
-      payloadHash,
-      allowDifferentPayloadSameId: true,
-    });
+    const MAX_IN_FLIGHT_WAITS = 10;
+    let claimed = false;
 
-    if (claim.kind === "DUPLICATE" && claim.record.result) {
-      return NextResponse.json({
-        success: true,
-        ...claim.record.result,
-        idempotent: true,
+    for (let waitAttempt = 0; waitAttempt <= MAX_IN_FLIGHT_WAITS; waitAttempt += 1) {
+      const claim = defaultClerkWebhookInbox.claim({
+        svixId,
+        eventType,
+        subjectId,
+        eventTimestampMs: eventTs,
+        payloadHash,
+        allowDifferentPayloadSameId: true,
       });
-    }
 
-    if (claim.kind === "IN_FLIGHT") {
-      return NextResponse.json(
-        { error: "Webhook event is currently being processed" },
-        { status: 409 },
-      );
-    }
-
-    if (claim.kind === "QUARANTINED") {
-      return NextResponse.json(
-        {
+      if (claim.kind === "DUPLICATE") {
+        return NextResponse.json({
           success: true,
-          action: "quarantined",
-          reason: "max_retries_exceeded",
-          userId: subjectId,
-        },
-        { status: 202 },
-      );
+          ...(claim.record.result ?? {
+            action: "deduplicated",
+            ...(subjectId ? { userId: subjectId } : {}),
+          }),
+          idempotent: true,
+        });
+      }
+
+      if (claim.kind === "QUARANTINED") {
+        return NextResponse.json(
+          {
+            success: true,
+            action: "quarantined",
+            reason: "max_retries_exceeded",
+            userId: subjectId,
+          },
+          { status: 202 },
+        );
+      }
+
+      if (claim.kind === "IN_FLIGHT") {
+        const awaited = await defaultClerkWebhookInbox.waitForInFlight(svixId);
+        if (!awaited || waitAttempt === MAX_IN_FLIGHT_WAITS) {
+          return idempotentDeduplicatedResponse(subjectId);
+        }
+        continue;
+      }
+
+      defaultClerkWebhookInbox.beginInFlight(svixId);
+      claimed = true;
+      break;
+    }
+
+    if (!claimed) {
+      return idempotentDeduplicatedResponse(subjectId);
     }
   }
 
@@ -169,5 +198,9 @@ export async function POST(req: Request) {
       { error: "Failed to process user synchronization" },
       { status: 500 },
     );
+  } finally {
+    if (svixId) {
+      defaultClerkWebhookInbox.endInFlight(svixId);
+    }
   }
 }

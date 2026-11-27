@@ -429,8 +429,12 @@ export class NFCDeskCheckinController {
     }
 
     // 1. Timestamp Freshness Guard (Anti-Relay)
-    const drift = Math.abs(currentTimeMs - payload.timestamp);
-    if (drift > this.maxClockSkewMs) {
+    const timestampOffset = payload.timestamp - currentTimeMs;
+    if (
+      timestampOffset < -this.maxClockSkewMs ||
+      timestampOffset > this.maxClockSkewMs
+    ) {
+      const drift = Math.abs(timestampOffset);
       return {
         valid: false,
         error: `Timestamp drift ${drift}ms exceeds max clock skew of ${this.maxClockSkewMs}ms`,

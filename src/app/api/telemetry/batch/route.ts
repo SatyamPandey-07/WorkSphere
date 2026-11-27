@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export const DEFAULT_TELEMETRY_MAX_PAST_SKEW_MS = 30 * 24 * 60 * 60 * 1000;
 export const DEFAULT_TELEMETRY_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+export const MIN_TELEMETRY_BATCH_SIZE = 1;
+export const MAX_TELEMETRY_BATCH_SIZE = 100;
 const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 
 type TelemetryTimestampInput = number | string | Date;
@@ -81,9 +83,12 @@ const telemetryTimestampSchema = z.union([
     .refine((value) => parseTelemetryTimestampMs(value) !== null, {
       message: "timestamp must be a valid epoch-millisecond value",
     }),
-  z.string().min(1).refine((value) => parseTelemetryTimestampMs(value) !== null, {
-    message: "timestamp must be a valid date string",
-  }),
+  z
+    .string()
+    .min(1)
+    .refine((value) => parseTelemetryTimestampMs(value) !== null, {
+      message: "timestamp must be a valid date string",
+    }),
   z.date().refine((value) => parseTelemetryTimestampMs(value) !== null, {
     message: "timestamp must be a valid date",
   }),
@@ -97,7 +102,10 @@ export const telemetryReadingSchema = z
     type: z.string().min(1).optional(),
     value: z.number().optional(),
     decibels: z.number().min(0, "decibels must be non-negative").optional(),
-    peakDecibels: z.number().min(0, "peakDecibels must be non-negative").optional(),
+    peakDecibels: z
+      .number()
+      .min(0, "peakDecibels must be non-negative")
+      .optional(),
     timestamp: telemetryTimestampSchema.optional(),
     recordedAt: telemetryTimestampSchema.optional(),
   })
@@ -397,7 +405,8 @@ export async function POST(req: NextRequest) {
       if (unauthorizedReading) {
         return NextResponse.json(
           {
-            error: "Forbidden: Gateway credential is not authorized for target venue",
+            error:
+              "Forbidden: Gateway credential is not authorized for target venue",
           },
           { status: 403 },
         );

@@ -68,20 +68,61 @@ export async function POST(req: NextRequest) {
     if (!body || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
         {
-          error: "Invalid request payload. 'items' or 'studentProofs' array is required.",
+          error:
+            "Invalid request payload. 'items' or 'studentProofs' array is required.",
         },
         { status: 400 },
       );
     }
 
-    const verification = await verifyBatchStudentDiscountProofs(
-      body,
-      req.signal,
-    );
+    // Standard JSON response behavior when NDJSON is not requested
+    if (!isNdjsonPreferred(req)) {
+      const verification = await verifyBatchStudentDiscountProofs(
+        body,
+        req.signal,
+      );
 
-    if (req.signal.aborted) {
-      return new Response(null, { status: 499 });
+      if (req.signal.aborted) {
+        return new Response(null, { status: 499 });
+      }
+
+      return NextResponse.json(verification, {
+        status: verification.valid ? 200 : 207,
+      });
     }
+
+    // NDJSON streaming response
+    const encoder = new TextEncoder();
+    const totalCount = items.length;
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        let isClosed = false;
+
+        const safeClose = () => {
+          if (!isClosed) {
+            isClosed = true;
+            try {
+              controller.close();
+            } catch {
+              // Ignore close error if stream is already closed/errored
+            }
+          }
+        };
+
+        const safeEnqueue = (payload: any) => {
+          if (isClosed || req.signal.aborted) return;
+          try {
+            const line = JSON.stringify(payload) + "\n";
+            controller.enqueue(encoder.encode(line));
+          } catch (enqueueErr) {
+            if (isAbortOrDisconnectError(enqueueErr, req.signal)) {
+              safeClose();
+            } else {
+              throw enqueueErr;
+            }
+          }
+        };
 
         const abortHandler = () => {
           safeClose();
@@ -114,7 +155,8 @@ export async function POST(req: NextRequest) {
                 items: [item],
               };
 
-              const singleVerify = await verifyBatchStudentDiscountProofs(singleItemBatch);
+              const singleVerify =
+                await verifyBatchStudentDiscountProofs(singleItemBatch);
               const res = singleVerify.results[0];
 
               if (res) {
@@ -166,7 +208,9 @@ export async function POST(req: NextRequest) {
 
           if (!isClosed && !req.signal.aborted) {
             const batchHash = computeClusterMerkleHash(
-              items.map((it, i) => it.id || it.studentId || it.userId || String(i)),
+              items.map(
+                (it, i) => it.id || it.studentId || it.userId || String(i),
+              ),
             );
 
             const completion = {

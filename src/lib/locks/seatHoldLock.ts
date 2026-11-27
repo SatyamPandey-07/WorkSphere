@@ -513,7 +513,6 @@ const memoryLocks = new Map<string, SeatLockData>();
  * ARGV[2] = JSON payload for a brand-new lock
  * ARGV[3] = TTL in seconds
  */
-import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
 
 export const SEAT_LOCK_ACQUIRE_LUA = `
 local current = redis.call('GET', KEYS[1])
@@ -1064,7 +1063,10 @@ export class HashedTimingWheel {
   constructor(options?: HashedTimingWheelOptions) {
     this.wheelSize = Math.max(1, options?.wheelSize ?? 60);
     this.tickDurationMs = Math.max(1, options?.tickDurationMs ?? 1000);
-    this.slots = Array.from({ length: this.wheelSize }, () => new Map<string, TimingWheelTask>());
+    this.slots = Array.from(
+      { length: this.wheelSize },
+      () => new Map<string, TimingWheelTask>(),
+    );
   }
 
   /**
@@ -1099,7 +1101,10 @@ export class HashedTimingWheel {
       try {
         callback();
       } catch (err) {
-        console.error(`[HashedTimingWheel] Task ${id} immediate execution error:`, err);
+        console.error(
+          `[HashedTimingWheel] Task ${id} immediate execution error:`,
+          err,
+        );
       }
       return task;
     }
@@ -1113,9 +1118,12 @@ export class HashedTimingWheel {
     // When the wheel visits slotIndex, targetTick may still be in a future revolution.
     const ticksUntilTarget = targetTick - this.currentTick;
     // Difference between target slot and current slot (modulo wheelSize)
-    const slotDistance = (slotIndex - this.currentSlot + this.wheelSize) % this.wheelSize;
+    const slotDistance =
+      (slotIndex - this.currentSlot + this.wheelSize) % this.wheelSize;
     const remainingRotations = Math.floor(
-      (ticksUntilTarget - (slotDistance === 0 ? this.wheelSize : slotDistance)) / this.wheelSize,
+      (ticksUntilTarget -
+        (slotDistance === 0 ? this.wheelSize : slotDistance)) /
+        this.wheelSize,
     );
 
     const task: TimingWheelTask = {
@@ -1330,7 +1338,10 @@ export class HashedTimingWheel {
       this.advanceTicks(ticksElapsed);
     }, this.tickDurationMs);
     // Unref timer in Node environment so it doesn't block process exit
-    if (this.timerHandle && typeof (this.timerHandle as any).unref === "function") {
+    if (
+      this.timerHandle &&
+      typeof (this.timerHandle as any).unref === "function"
+    ) {
       (this.timerHandle as any).unref();
     }
   }

@@ -1,4 +1,8 @@
-import { AdaptiveNoiseFilter } from "@/lib/audio/AdaptiveNoiseFilter";
+import {
+  AdaptiveNoiseFilter,
+  NOTCH_Q_PRESETS,
+  type NotchQPreset,
+} from "@/lib/audio/AdaptiveNoiseFilter";
 
 type MockAudioContext = AudioContext & {
   gainNodes: any[];
@@ -116,6 +120,55 @@ describe("AdaptiveNoiseFilter (Dynamic Ambient Noise Cancellation)", () => {
 
     // Highpass connects to the first notch
     expect(filter.highpassFilter.connect).toHaveBeenCalled();
+  });
+
+  it("maps named notch Q presets deterministically to distinct values", () => {
+    const presets: NotchQPreset[] = ["narrow", "balanced", "wide"];
+    const mappedValues = presets.map((preset) => {
+      const filter = new AdaptiveNoiseFilter(mockContext, {
+        notchQPreset: preset,
+      });
+      const expectedQ = NOTCH_Q_PRESETS[preset];
+
+      expect(filter.notchFilters[0]?.Q.setValueAtTime).toHaveBeenCalledWith(
+        expectedQ,
+        mockContext.currentTime,
+      );
+      expect(
+        filter.dynamicNotchFilter.Q.setValueAtTime,
+      ).toHaveBeenCalledWith(expectedQ, mockContext.currentTime);
+      return expectedQ;
+    });
+
+    expect(new Set(mappedValues).size).toBe(3);
+    expect(NOTCH_Q_PRESETS.narrow).toBeGreaterThan(
+      NOTCH_Q_PRESETS.balanced,
+    );
+    expect(NOTCH_Q_PRESETS.balanced).toBeGreaterThan(NOTCH_Q_PRESETS.wide);
+
+    const repeatedNarrowFilter = new AdaptiveNoiseFilter(mockContext, {
+      notchQPreset: "narrow",
+    });
+    expect(
+      repeatedNarrowFilter.dynamicNotchFilter.Q.setValueAtTime,
+    ).toHaveBeenCalledWith(NOTCH_Q_PRESETS.narrow, mockContext.currentTime);
+  });
+
+  it("preserves the default and explicit numeric notch Q configuration", () => {
+    const defaultFilter = new AdaptiveNoiseFilter(mockContext);
+    expect(defaultFilter.dynamicNotchFilter.Q.setValueAtTime).toHaveBeenCalledWith(
+      NOTCH_Q_PRESETS.balanced,
+      mockContext.currentTime,
+    );
+
+    const numericFilter = new AdaptiveNoiseFilter(mockContext, {
+      notchQ: 6.5,
+      notchQPreset: "narrow",
+    });
+    expect(numericFilter.dynamicNotchFilter.Q.setValueAtTime).toHaveBeenCalledWith(
+      6.5,
+      mockContext.currentTime,
+    );
   });
 
   it("recreates every biquad filter and reapplies coefficients after a sample-rate change", () => {

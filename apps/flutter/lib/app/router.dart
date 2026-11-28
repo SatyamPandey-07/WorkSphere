@@ -57,6 +57,138 @@ typedef VenuesScreenBuilder = Widget Function(
   Map<String, String> queryParameters,
 );
 
+const String homeRouteName = 'home';
+const String venueDetailsRouteName = 'venueDetails';
+const String reservationRouteName = 'reservation';
+
+class VenueId {
+  const VenueId._(this.value);
+
+  final String value;
+
+  static VenueId? tryParse(String? value) {
+    if (value == null ||
+        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$').hasMatch(value)) {
+      return null;
+    }
+    return VenueId._(value);
+  }
+
+  factory VenueId.parse(String value) {
+    final id = tryParse(value);
+    if (id == null) {
+      throw FormatException('Invalid venue ID', value);
+    }
+    return id;
+  }
+}
+
+void goToVenue(BuildContext context, VenueId venueId) {
+  context.goNamed(
+    venueDetailsRouteName,
+    pathParameters: <String, String>{'id': venueId.value},
+  );
+}
+
+void goToReservation(BuildContext context, VenueId venueId) {
+  context.goNamed(
+    reservationRouteName,
+    pathParameters: <String, String>{'venueId': venueId.value},
+  );
+}
+
+class VenueDetailsScreen extends StatelessWidget {
+  const VenueDetailsScreen({required this.venueId, super.key});
+
+  final VenueId venueId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Venue details')),
+      body: Center(
+        child: Text('Venue ID: ${venueId.value}'),
+      ),
+    );
+  }
+}
+
+class ReservationScreen extends StatelessWidget {
+  const ReservationScreen({required this.venueId, super.key});
+
+  final VenueId venueId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Reserve a venue')),
+      body: Center(
+        child: Text('Reservation venue ID: ${venueId.value}'),
+      ),
+    );
+  }
+}
+
+class InvalidRouteScreen extends StatelessWidget {
+  const InvalidRouteScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Invalid link')),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('This link does not contain a valid venue ID.'),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Return to WorkSphere'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class NotFoundScreen extends StatelessWidget {
+  const NotFoundScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Page not found')),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("We couldn't find that WorkSphere page."),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Go to home'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class WorkSphereHomeScreen extends StatelessWidget {
+  const WorkSphereHomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('WorkSphere')),
+      body: const Center(child: Text('Find your next workspace.')),
+    );
+  }
+}
+
 /// Builds the application [GoRouter] preserving query parameters across
 /// deep-link redirects.
 GoRouter createAppRouter({
@@ -68,6 +200,7 @@ GoRouter createAppRouter({
   return GoRouter(
     initialLocation: initialLocation,
     refreshListenable: isAuthenticated,
+    errorBuilder: (context, state) => const NotFoundScreen(),
     redirect: (context, state) => buildRedirectLocation(
       state.uri,
       isAuthenticated: isAuthenticated.value,
@@ -75,7 +208,8 @@ GoRouter createAppRouter({
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const SizedBox.shrink(),
+        name: homeRouteName,
+        builder: (context, state) => const WorkSphereHomeScreen(),
       ),
       GoRoute(
         path: '/sign-in',
@@ -94,13 +228,25 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/venues/:id',
-        builder: (context, state) =>
-            Text('venue:${state.pathParameters['id'] ?? ''}'),
+        name: venueDetailsRouteName,
+        builder: (context, state) {
+          final venueId = VenueId.tryParse(state.pathParameters['id']);
+          if (venueId == null) {
+            return const InvalidRouteScreen();
+          }
+          return VenueDetailsScreen(venueId: venueId);
+        },
       ),
       GoRoute(
         path: '/reserve/:venueId',
-        builder: (context, state) =>
-            Text('reserve:${state.pathParameters['venueId'] ?? ''}'),
+        name: reservationRouteName,
+        builder: (context, state) {
+          final venueId = VenueId.tryParse(state.pathParameters['venueId']);
+          if (venueId == null) {
+            return const InvalidRouteScreen();
+          }
+          return ReservationScreen(venueId: venueId);
+        },
       ),
     ],
   );

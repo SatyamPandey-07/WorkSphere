@@ -20,7 +20,8 @@ function getCorsHeaders(req: NextRequest): HeadersInit {
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers":
+      "Authorization, Content-Type, User-Agent, X-WorkSphere-Platform, X-WorkSphere-App-Version",
     "Access-Control-Max-Age": "86400",
   };
 }

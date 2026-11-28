@@ -298,11 +298,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (rawReadings.length > 100) {
+    if (rawReadings.length > MAX_TELEMETRY_BATCH_SIZE) {
       return NextResponse.json(
         {
           error: "Validation failed",
-          details: "readings array cannot exceed 100 items",
+          details: `readings array cannot exceed ${MAX_TELEMETRY_BATCH_SIZE} items`,
         },
         { status: 400 },
       );

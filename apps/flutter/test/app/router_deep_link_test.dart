@@ -83,5 +83,95 @@ void main() {
       expect(find.text('Category: quiet'), findsOneWidget);
       expect(capturedParams, {'category': 'quiet'});
     });
+
+    testWidgets('navigates to venue details with a typed named parameter',
+        (tester) async {
+      final authState = ValueNotifier<bool>(true);
+      addTearDown(authState.dispose);
+      final router = createAppRouter(isAuthenticated: authState);
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      router.goNamed(
+        venueDetailsRouteName,
+        pathParameters: {'id': VenueId.parse('venue-123').value},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Venue ID: venue-123'), findsOneWidget);
+    });
+
+    testWidgets('navigates to a reservation with a typed named parameter',
+        (tester) async {
+      final authState = ValueNotifier<bool>(true);
+      addTearDown(authState.dispose);
+      final router = createAppRouter(isAuthenticated: authState);
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      router.goNamed(
+        reservationRouteName,
+        pathParameters: {'venueId': VenueId.parse('venue-456').value},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reservation venue ID: venue-456'), findsOneWidget);
+    });
+
+    testWidgets('resolves a venue path from an incoming app link',
+        (tester) async {
+      final authState = ValueNotifier<bool>(true);
+      addTearDown(authState.dispose);
+      final incomingLink =
+          Uri.parse('https://worksphere.app/venues/linked-venue');
+      final router = createAppRouter(
+        isAuthenticated: authState,
+        initialLocation: incomingLink.path,
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Venue ID: linked-venue'), findsOneWidget);
+    });
+
+    testWidgets('shows a 404 screen and can return home for unknown routes',
+        (tester) async {
+      final authState = ValueNotifier<bool>(true);
+      addTearDown(authState.dispose);
+      final router = createAppRouter(
+        isAuthenticated: authState,
+        initialLocation: '/not-a-route',
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Page not found'), findsOneWidget);
+      await tester.tap(find.text('Go to home'));
+      await tester.pumpAndSettle();
+      expect(find.text('Find your next workspace.'), findsOneWidget);
+    });
+
+    testWidgets('handles missing and invalid venue IDs gracefully',
+        (tester) async {
+      final authState = ValueNotifier<bool>(true);
+      addTearDown(authState.dispose);
+      final router = createAppRouter(
+        isAuthenticated: authState,
+        initialLocation: '/venues/%20',
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+      expect(find.text('Invalid link'), findsOneWidget);
+
+      router.go('/venues/');
+      await tester.pumpAndSettle();
+      expect(find.text('Page not found'), findsOneWidget);
+    });
   });
 }

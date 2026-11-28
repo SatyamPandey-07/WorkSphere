@@ -203,4 +203,124 @@ describe("WhatsNewDialog", () => {
       screen.getByRole("button", { name: "Copy SHA-256 verification command" }),
     ).toHaveTextContent("Copy SHA-256 command");
   });
+
+  it("restores focus and preserves Escape handling after successful clipboard fallback", async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    const originalExecCommand = Object.getOwnPropertyDescriptor(
+      document,
+      "execCommand",
+    );
+    const execCommandMock = jest.fn().mockReturnValue(true);
+
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(document, "execCommand", {
+      value: execCommandMock,
+      configurable: true,
+    });
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => releasePayload,
+    } as Response);
+
+    try {
+      render(<WhatsNewDialog />);
+      const copyTagButton = await screen.findByRole("button", {
+        name: "Copy release tag v2.5.0",
+      });
+
+      copyTagButton.focus();
+      expect(document.activeElement).toBe(copyTagButton);
+
+      fireEvent.click(copyTagButton);
+
+      await waitFor(() => {
+        expect(execCommandMock).toHaveBeenCalledWith("copy");
+        expect(
+          screen.getByRole("button", { name: "Copied release tag v2.5.0" }),
+        ).toHaveTextContent("Copied tag");
+      });
+      expect(document.activeElement).toBe(copyTagButton);
+
+      fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      if (originalClipboard) {
+        Object.defineProperty(navigator, "clipboard", originalClipboard);
+      } else {
+        delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+      }
+      if (originalExecCommand) {
+        Object.defineProperty(document, "execCommand", originalExecCommand);
+      } else {
+        delete (document as unknown as { execCommand?: unknown }).execCommand;
+      }
+    }
+  });
+
+  it("restores focus and preserves Escape handling when clipboard fallback fails", async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    const originalExecCommand = Object.getOwnPropertyDescriptor(
+      document,
+      "execCommand",
+    );
+    const writeText = jest.fn().mockRejectedValue(new Error("Denied"));
+    const execCommandMock = jest.fn().mockReturnValue(false);
+
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    Object.defineProperty(document, "execCommand", {
+      value: execCommandMock,
+      configurable: true,
+    });
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => releasePayload,
+    } as Response);
+
+    try {
+      render(<WhatsNewDialog />);
+      const copyCommandButton = await screen.findByRole("button", {
+        name: "Copy SHA-256 verification command",
+      });
+
+      copyCommandButton.focus();
+      expect(document.activeElement).toBe(copyCommandButton);
+
+      fireEvent.click(copyCommandButton);
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("sha256sum -c SHA256SUMS.txt");
+        expect(execCommandMock).toHaveBeenCalledWith("copy");
+      });
+      expect(
+        screen.getByRole("button", { name: "Copy SHA-256 verification command" }),
+      ).toHaveTextContent("Copy SHA-256 command");
+      expect(document.activeElement).toBe(copyCommandButton);
+
+      fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      if (originalClipboard) {
+        Object.defineProperty(navigator, "clipboard", originalClipboard);
+      } else {
+        delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+      }
+      if (originalExecCommand) {
+        Object.defineProperty(document, "execCommand", originalExecCommand);
+      } else {
+        delete (document as unknown as { execCommand?: unknown }).execCommand;
+      }
+    }
+  });
 });

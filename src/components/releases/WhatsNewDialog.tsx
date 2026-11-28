@@ -48,8 +48,13 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   textArea.style.left = "0";
   textArea.style.opacity = "0";
 
+  let previouslyFocused: HTMLElement | null = null;
   try {
     document.body.appendChild(textArea);
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     textArea.focus();
     textArea.select();
     return document.execCommand("copy");
@@ -57,6 +62,9 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     return false;
   } finally {
     textArea.parentNode?.removeChild(textArea);
+    if (previouslyFocused && previouslyFocused.isConnected) {
+      previouslyFocused.focus();
+    }
   }
 }
 

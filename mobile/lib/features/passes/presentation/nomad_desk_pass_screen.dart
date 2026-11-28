@@ -1,24 +1,36 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../data/nomad_desk_pass.dart';
 import '../data/nomad_desk_pass_cache.dart';
 
 typedef NomadDeskPassLoader = Future<NomadDeskPass> Function(String bookingId);
+typedef NomadDeskPassShareHandler = Future<void> Function({
+  required String bookingId,
+  required String text,
+  required String qrPayload,
+  required Uint8List? qrImageBytes,
+});
 
 class NomadDeskPassScreen extends StatefulWidget {
   const NomadDeskPassScreen({
     required this.bookingId,
     required this.cache,
     this.loadPass,
+    this.sharePass,
     super.key,
   });
 
   final String bookingId;
   final NomadDeskPassCache cache;
   final NomadDeskPassLoader? loadPass;
+  final NomadDeskPassShareHandler? sharePass;
 
   @override
   State<NomadDeskPassScreen> createState() => _NomadDeskPassScreenState();
@@ -81,6 +93,92 @@ class _NomadDeskPassScreenState extends State<NomadDeskPassScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _sharePass(NomadDeskPass pass) async {
+    final venueName = pass.venueName.trim().isEmpty
+        ? 'Venue details unavailable'
+        : pass.venueName;
+    final address = pass.venueAddress?.trim();
+    final message = [
+      'WorkSphere booking confirmation',
+      'Booking ID: ${pass.bookingId}',
+      'Venue: $venueName',
+      if (address != null && address.isNotEmpty) 'Venue address: $address',
+    ].join('\n');
+
+    final qrImageBytes = await _createQrImage(pass.qrPayload);
+    if (!mounted) return;
+
+    try {
+      final shareHandler = widget.sharePass;
+      ShareResult? shareResult;
+      if (shareHandler != null) {
+        await shareHandler(
+          bookingId: pass.bookingId,
+          text: message,
+          qrPayload: pass.qrPayload,
+          qrImageBytes: qrImageBytes,
+        );
+      } else {
+        shareResult = await Share.shareXFiles(
+          [
+            if (qrImageBytes != null)
+              XFile.fromData(
+                qrImageBytes,
+                name: 'worksphere-pass-${Uri.encodeComponent(pass.bookingId)}.png',
+                mimeType: 'image/png',
+              ),
+          ],
+          text: message,
+          subject: 'NomadDesk pass',
+        );
+      }
+
+      if (mounted && shareResult?.status == ShareResultStatus.unavailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sharing is unavailable on this device.'),
+          ),
+        );
+        return;
+      }
+
+      if (mounted && qrImageBytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Booking details shared. The QR image could not be attached.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to share the pass. Please try again.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Uint8List?> _createQrImage(String payload) async {
+    try {
+      final imageData = await QrPainter(
+        data: payload,
+        version: QrVersions.auto,
+        gapless: true,
+      ).toImageData(512, format: ui.ImageByteFormat.png);
+      if (imageData == null) return null;
+      return imageData.buffer.asUint8List(
+        imageData.offsetInBytes,
+        imageData.lengthInBytes,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -183,6 +281,13 @@ class _NomadDeskPassScreenState extends State<NomadDeskPassScreen> {
                                             ?.copyWith(
                                               color: colors.onSurfaceVariant,
                                             ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      OutlinedButton.icon(
+                                            key: const ValueKey('pass-share'),
+                                            onPressed: () => _sharePass(pass),
+                                            icon: const Icon(Icons.share_outlined),
+                                            label: const Text('Share Pass'),
                                       ),
                                     ],
                                   ),

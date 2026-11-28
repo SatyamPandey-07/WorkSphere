@@ -47,6 +47,7 @@ For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB,
   - [Common Setup FAQs](#common-setup-faqs)
 
 1. [Git Workflow & PRs](#1-git-workflow--prs)
+   - [Contribution and Review Governance](#11-contribution-and-review-governance)
    - [Advanced Git Workflow (Git Worktree)](#17-advanced-git-workflow-git-worktree--branch-isolation)
 2. [Code Style & Quality Checks](#2-code-style--quality-checks)
 3. [Testing Conventions (Jest & RTL)](#3-testing-conventions-jest--rtl)
@@ -250,6 +251,48 @@ To keep the repository clean and manageable, please follow this flow:
    - `test/topic-name` for test-related changes.
 
    Use lowercase words separated by hyphens, and keep the branch name short and descriptive.
+
+### 1.1 Contribution and Review Governance
+
+#### CodeRabbit pull request reviews
+
+CodeRabbit provides automated pull request reviews. Repository configuration enables automatic reviews for pull requests targeting `main`; draft pull requests are excluded. Contributors should expect automated feedback after opening a non-draft PR to `main` and after updating it with commits. CodeRabbit may also reply to review discussions.
+
+Read each actionable comment, make the relevant scoped change or explain why it does not apply, and reply in the discussion where clarification is useful. Resolve outstanding actionable findings before merging. The configured request-changes workflow does not replace human review, CI, or repository merge rules.
+
+#### Documentation-only changes and WOCS level 1
+
+The CodeRabbit instructions for Markdown files cap documentation-only changes at WOCS `level 1`. This is the WOCS difficulty classification for a change limited to documentation, not permission to skip review or validation. Documentation should still be concise, accurate, and consistent with the implementation; reviewers should flag unsupported claims and inflated difficulty claims.
+
+Treat a pull request as documentation-only when its changes are limited to documentation/Markdown files. If it also changes application code, review and classify the code changes according to their actual scope; the documentation-only cap does not apply to the code portion. A Markdown-only PR may not trigger the main Continuous Integration workflow because its configured path filters exclude `docs/**` and `**.md`. That does not count as a passing check and does not override any review or status checks required by branch protection.
+
+#### `main` branch protection and merge expectations
+
+Contributions should reach `main` through pull requests, not direct pushes. Branch protection and repository rules determine which reviews and status checks are required for a particular PR. Follow the requirements shown by GitHub for that PR: do not merge until required reviews are complete, required status checks have passed, and actionable review findings have been addressed. Do not bypass branch protection or merge with unresolved required checks. This guide does not prescribe a review count or approval threshold; those are determined by the configured repository rules.
+
+#### WOCS contribution workflow
+
+1. Choose an available issue and create a focused branch using the naming conventions above.
+2. Make changes limited to the issue's scope. For documentation-only work, edit and review the documentation; for code changes, include the appropriate implementation and tests.
+3. Open a pull request against `main` with a clear description and the related issue link.
+4. Allow the applicable CodeRabbit review, GitHub Actions workflows, and other required checks to complete. A skipped workflow has not run and is not a pass.
+5. Address actionable review feedback and resolve findings. Re-run or await checks affected by new commits.
+6. Merge only after the PR satisfies the applicable review and branch-protection requirements.
+
+For WOCS tracking, eligible PRs must have the `wocs` label and exactly one WOCS difficulty label before merge. Documentation-only PRs are capped at `level 1`; classify code contributions by their substantive scope using the [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md).
+
+#### Configured pull request checks
+
+The repository's GitHub Actions configuration includes these checks; whether a status is a required branch-protection check is determined by the repository rules:
+
+| Workflow / job | What it checks | Configured behavior |
+|---|---|---|
+| **Continuous Integration** — `build-and-test` | Dependency installation, Prisma client generation, lint (`npm run lint`), TypeScript (`npx tsc --noEmit`), Jest (`npm test`), and the production build (`npm run build`). | Dependency installation, Prisma generation, and build are blocking workflow steps. Lint, TypeScript, and Jest are advisory steps configured to continue on error. |
+| **Continuous Integration** — **PostgreSQL Migration & Database Integration Checks** (`postgres-migration-and-integration`) | Prisma migrations and PostgreSQL integration tests (`npm run test:integration`). | The job is advisory (`continue-on-error`). |
+| **Continuous Integration** — **Run Playwright E2E Tests** (`e2e-test`) | Browser end-to-end tests (`npm run test:e2e`). | The job is advisory (`continue-on-error`). |
+| **PR Quality Check** — `check-pr` | Pull request issue-link validation and configured author checks. | A missing issue link produces a warning; the configured blocked-author check can fail the job. |
+
+The main Continuous Integration workflow excludes `docs/**` and Markdown-only changes through path filters, while the PR Quality Check has no such path exclusion. Required checks must pass before merging; advisory failures should still be reviewed and addressed, and a workflow skipped by its filters must not be reported as passed. See the [GitHub Actions CI Workflow Guide](docs/contributing/CI_WORKFLOW.md) for triggers and failure-handling details.
 
 3. **Write code** and ensure all [testing](#3-testing-conventions-jest--rtl) and [pre-commit checks](#5-pre-commit-quality-verification-checklist) pass.
 4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.

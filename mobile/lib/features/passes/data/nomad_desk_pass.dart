@@ -5,23 +5,27 @@ class NomadDeskPass {
     required this.bookingId,
     required this.venueName,
     required this.qrPayload,
+    this.venueAddress,
     this.expiresAt,
   });
 
   final String bookingId;
   final String venueName;
   final String qrPayload;
+  final String? venueAddress;
   final DateTime? expiresAt;
 
   factory NomadDeskPass.forBooking({
     required String bookingId,
     required String venueName,
+    String? venueAddress,
     DateTime? expiresAt,
   }) {
     return NomadDeskPass(
       bookingId: bookingId,
       venueName: venueName,
       qrPayload: 'worksphere://pass/${Uri.encodeComponent(bookingId)}',
+      venueAddress: venueAddress,
       expiresAt: expiresAt,
     );
   }
@@ -30,6 +34,7 @@ class NomadDeskPass {
         'bookingId': bookingId,
         'venueName': venueName,
         'qrPayload': qrPayload,
+        'venueAddress': venueAddress,
         'expiresAt': expiresAt?.toUtc().toIso8601String(),
       };
 
@@ -44,12 +49,14 @@ class NomadDeskPass {
     final bookingId = decoded['bookingId'];
     final venueName = decoded['venueName'];
     final qrPayload = decoded['qrPayload'];
+    final venueAddress = decoded['venueAddress'];
     final expiresAtValue = decoded['expiresAt'];
     if (bookingId is! String ||
         bookingId.trim().isEmpty ||
         venueName is! String ||
         qrPayload is! String ||
         qrPayload.trim().isEmpty ||
+        (venueAddress != null && venueAddress is! String) ||
         (expiresAtValue != null && expiresAtValue is! String)) {
       throw const FormatException('Pass cache contains invalid fields.');
     }
@@ -65,6 +72,7 @@ class NomadDeskPass {
       bookingId: bookingId,
       venueName: venueName,
       qrPayload: qrPayload,
+      venueAddress: venueAddress as String?,
       expiresAt: expiresAt,
     );
   }

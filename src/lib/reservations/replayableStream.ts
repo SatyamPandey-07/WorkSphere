@@ -133,6 +133,7 @@ function getHeartbeatIntervalMs(intervalMs: number): number {
 export function withSseHeartbeatComments(
   source: ReadableStream<Uint8Array>,
   intervalMs: number = DEFAULT_SSE_HEARTBEAT_INTERVAL_MS,
+  signal?: AbortSignal,
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader();
   const heartbeatIntervalMs = getHeartbeatIntervalMs(intervalMs);
@@ -143,6 +144,7 @@ export function withSseHeartbeatComments(
   let stopped = false;
   let initialFrameSent = false;
   let readerLockReleased = false;
+  let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
 
   const releaseReaderLock = () => {
     if (readerLockReleased) return;
@@ -152,10 +154,25 @@ export function withSseHeartbeatComments(
 
   const cleanup = () => {
     stopped = true;
+    signal?.removeEventListener("abort", onAbort);
     if (heartbeatTimer !== undefined) {
       clearTimeout(heartbeatTimer);
       heartbeatTimer = undefined;
     }
+  };
+
+  const onAbort = () => {
+    if (stopped) return;
+    const reason = signal?.reason ?? new DOMException("Stream aborted", "AbortError");
+    cleanup();
+
+    try {
+      streamController?.error(reason);
+    } catch {
+      // The consumer may already have cancelled the stream.
+    }
+
+    void reader.cancel(reason).catch(() => undefined).finally(releaseReaderLock);
   };
 
   const enqueueIfWritable = (
@@ -206,6 +223,14 @@ export function withSseHeartbeatComments(
   };
 
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+      if (signal?.aborted) {
+        onAbort();
+      } else {
+        signal?.addEventListener("abort", onAbort, { once: true });
+      }
+    },
     async pull(controller) {
       if (stopped) return;
 

@@ -17,25 +17,22 @@ changelog:
       - github-actions[bot]
 
   categories:
-    - title: Breaking Changes
-      labels:
-        - breaking
-        - breaking-change
     - title: Features
       labels:
         - feature
         - enhancement
-        - feat
-    - title: Bug Fixes & Security
+    - title: Bug Fixes
       labels:
         - bug
         - fix
+    - title: Security
+      labels:
         - security
-        - resilience
     - title: Documentation
       labels:
         - documentation
         - docs
-    - title: Other Changes
+    - title: Flutter Transition
       labels:
-        - "*"
+        - flutter
+        - flutter-transition

@@ -87,8 +87,28 @@ describe("WebGpuCapabilityPanel JSON export and sanitization (#9259)", () => {
     expect(() => JSON.parse(formatted)).not.toThrow();
   });
 
+  it("serializes BigInt values in diagnostic JSON exports without losing precision", () => {
+    const basePayload = buildWebGpuDiagnosticExportPayload(mockReport);
+    const payload = {
+      ...basePayload,
+      limits: {
+        ...basePayload.limits,
+        maxBufferSize: 18446744073709551615n,
+      },
+    } as unknown as Parameters<typeof formatWebGpuDiagnosticJson>[0];
+
+    const formatted = formatWebGpuDiagnosticJson(payload);
+
+    expect(() => JSON.parse(formatted)).not.toThrow();
+    expect(JSON.parse(formatted).limits.maxBufferSize).toBe(
+      "18446744073709551615",
+    );
+  });
+
   it("triggers browser JSON file download and revokes Blob URL when Export Diagnostic Report (.json) is clicked", async () => {
-    const createObjectURLMock = jest.fn(() => "blob:http://localhost/mock-uuid");
+    const createObjectURLMock = jest.fn(
+      () => "blob:http://localhost/mock-uuid",
+    );
     const revokeObjectURLMock = jest.fn();
     URL.createObjectURL = createObjectURLMock;
     URL.revokeObjectURL = revokeObjectURLMock;

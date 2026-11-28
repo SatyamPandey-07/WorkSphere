@@ -1,9 +1,5 @@
 export type WebGpuLimitBucket =
-  | "small"
-  | "medium"
-  | "large"
-  | "very-large"
-  | "unavailable";
+  "small" | "medium" | "large" | "very-large" | "unavailable";
 
 export interface WebGpuCapabilityReport {
   version: 1;
@@ -71,23 +67,25 @@ function bucket(
 export function sanitizeDiagnosticString(input: string): string {
   if (!input) return "";
 
-  return input
-    // Redact private IPv4 ranges (10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x)
-    .replace(
-      /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g,
-      "[REDACTED_IP]",
-    )
-    // Redact Bearer / API / JWT-like tokens
-    .replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi, "Bearer [REDACTED_TOKEN]")
-    .replace(
-      /\b(?:sk|pk|whsec|tok|api|secret|token)[_-][A-Za-z0-9\-._]{8,}\b/gi,
-      "[REDACTED_TOKEN]",
-    )
-    // Redact sensitive query parameters (?token=..., &api_key=..., etc.)
-    .replace(
-      /([?&](?:token|api_key|apikey|secret|password|auth|session)=)[^&\s]+/gi,
-      "$1[REDACTED]",
-    );
+  return (
+    input
+      // Redact private IPv4 ranges (10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x)
+      .replace(
+        /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g,
+        "[REDACTED_IP]",
+      )
+      // Redact Bearer / API / JWT-like tokens
+      .replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi, "Bearer [REDACTED_TOKEN]")
+      .replace(
+        /\b(?:sk|pk|whsec|tok|api|secret|token)[_-][A-Za-z0-9\-._]{8,}\b/gi,
+        "[REDACTED_TOKEN]",
+      )
+      // Redact sensitive query parameters (?token=..., &api_key=..., etc.)
+      .replace(
+        /([?&](?:token|api_key|apikey|secret|password|auth|session)=)[^&\s]+/gi,
+        "$1[REDACTED]",
+      )
+  );
 }
 
 /**
@@ -205,7 +203,12 @@ export function buildWebGpuDiagnosticExportPayload(
 export function formatWebGpuDiagnosticJson(
   payload: WebGpuDiagnosticExportPayload,
 ): string {
-  return JSON.stringify(payload, null, 2);
+  return JSON.stringify(
+    payload,
+    (_key, value: unknown) =>
+      typeof value === "bigint" ? value.toString() : value,
+    2,
+  );
 }
 
 /** Strictly accepts only the allowlisted, coarse capability schema from clients. */

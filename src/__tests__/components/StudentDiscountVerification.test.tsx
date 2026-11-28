@@ -80,3 +80,28 @@ describe("ZKP proof localStorage cache", () => {
     }).not.toThrow();
   });
 });
+
+describe("StudentDiscountVerification worker module resolution (#10544)", () => {
+  it("resolves zkpWorker from src/workers/zkpWorker.ts via createZkpWorker without invalid @/worker/zkpWorker path", () => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+
+    const componentPath = path.join(
+      process.cwd(),
+      "src/components/student/StudentDiscountVerification.tsx",
+    );
+    const factoryPath = path.join(
+      process.cwd(),
+      "src/components/student/createZkpWorker.ts",
+    );
+    const workerPath = path.join(process.cwd(), "src/workers/zkpWorker.ts");
+
+    const componentSource = fs.readFileSync(componentPath, "utf8");
+    const factorySource = fs.readFileSync(factoryPath, "utf8");
+
+    expect(componentSource).not.toContain("@/worker/zkpWorker");
+    expect(componentSource).toContain('import("./createZkpWorker")');
+    expect(factorySource).toContain("../../workers/zkpWorker.ts");
+    expect(fs.existsSync(workerPath)).toBe(true);
+  });
+});

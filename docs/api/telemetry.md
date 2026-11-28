@@ -779,3 +779,86 @@ curl -X POST "https://api.worksphere.dev/api/telemetry/batch" \
     ]
   }'
 ```
+
+---
+
+## 13. Canonical Device Event Identity and Tie-Breaking
+
+The device-event reconciliation helpers in
+`src/lib/telemetry/canonicalEventIdentity.ts` create a deterministic
+`canonicalKey` and ordering for telemetry events. Despite sometimes being
+described as a key hash, the implementation does **not** hash the input: there
+is no digest algorithm, byte encoding, or fixed-length hash output. The key is
+a readable composite string:
+
+```text
+<trimmedDeviceId>::<timestampMs>::<tieBreaker>
+```
+
+### 13.1 Canonical Key Inputs and Serialization
+
+The key uses these event fields:
+
+| Input field | Normalization used in the key |
+| :--- | :--- |
+| `deviceId` | Trim surrounding whitespace. |
+| `timestamp` | A finite number is floored to an integer. A trimmed integer string is parsed as an integer; another parseable date string is converted with `Date.parse`. Invalid values become `0`. |
+| `sequence` | A finite number is floored and converted to an integer string. A string is accepted only when it is a signed integer; its leading sign/zeros are canonicalized and negative zero becomes `0`. Missing or invalid values have no sequence text. |
+| `eventType` | Trim surrounding whitespace; missing values become an empty string. |
+| `eventId` | Trim surrounding whitespace; missing values become an empty string. |
+| `payload` | `null` and `undefined` both become `null`, then the value is stably serialized as described below. |
+
+The tie-breaker is assembled without hashing:
+
+```text
+<sequencePart>|<trimmedEventType>|<trimmedEventId>|<stableSerializedPayload>
+```
+
+`sequencePart` is empty for a missing or invalid sequence; otherwise it is the
+normalized sequence left-padded with zeroes to at least 16 characters (never
+truncated). Stable payload serialization uses these rules: `null` becomes
+`null`, `undefined` becomes `undefined`, strings use `JSON.stringify`, and
+numbers and booleans use their string form. Arrays retain their element order
+and serialize each element recursively. Objects serialize their own
+enumerable keys in lexicographic order, then JSON-quote each key and pair it
+with its recursively serialized value. Other values use `String(value)`. The
+resulting `tieBreaker` is appended after the normalized device ID and
+timestamp using the `::` separators shown above.
+
+For example, an event with device ID `" sensor-17 "`, timestamp
+`1767225600000`, sequence `"02"`, type `"noise"`, ID `"evt-a"`, and payload
+`{ "level": 41 }` has a key of this form:
+
+```text
+sensor-17::1767225600000::0000000000000002|noise|evt-a|{"level":41}
+```
+
+This example shows the composite key format; the payload object is serialized
+with its keys in sorted order. No cryptographic hash is produced.
+
+### 13.2 Ordering Events with the Same Timestamp
+
+`compareCanonicalEvents` applies the following order, stopping at the first
+difference:
+
+1. Trimmed `deviceId`, lexicographically ascending.
+2. Normalized `timestampMs`, numerically ascending.
+3. Normalized `sequence`, numerically ascending. Missing or invalid sequence
+   values sort before valid values; valid integer strings are compared by sign
+   and magnitude, not as ordinary text.
+4. The `tieBreaker` suffix after the first `|` (the trimmed event type, trimmed
+   event ID, and serialized payload), lexicographically ascending.
+
+Therefore, events for the same device with identical timestamps are ordered
+first by their normalized sequence. For example, sequence `"2"` sorts before
+sequence `"10"` even though a text comparison would put `"10"` first. If the
+sequences compare equal, the event type, event ID, and stable payload string
+determine the order.
+
+This ordering is deterministic but is not a rule to discard every event that
+shares a timestamp. `reconcileDuplicateDeviceEvents` removes only events with
+the exact same `canonicalKey`; when two inputs have that same key, the first
+input is retained. Distinct events at the same timestamp (for example,
+different sequences or payloads) both remain in the result and are returned
+in the ordering above. Thus, the lower-sorting event comes first; it is not
+silently treated as the only timestamp winner.

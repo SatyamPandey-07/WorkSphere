@@ -1114,6 +1114,11 @@ A massive thank you to all **149 brilliant contributors and bots** building Work
 - **Bounded Solana RPC Latency Window & DTN Digest Verification**: Sliding-window per-endpoint latency tracking in `rpcClusterPool` and SHA-256 payload integrity checks in `DTNBundlesInbox`.
 - **Multi-Agent Cumulative Tool Budget Guard & ACL Lease Renewal**: `maxTotalToolDurationMs` execution budget enforcement (`src/lib/agents/MultiAgentOrchestrator.ts`) and permission-verified folder ACL lease renewals (`src/lib/realtime/folderAclLease.ts`).
 - **Stale Gateway Auditing & BookingDatePicker Today Shortcut**: Idle credential pruning via `listStaleCredentials` (`src/lib/telemetry/gatewayAuthRegistry.ts`) and DST-safe `T` today-jump shortcut (`src/components/bookings/BookingDatePicker.tsx`).
+- **WorkSphere Flutter Mobile & Desktop App**: Material 3 Flutter workspace (`mobile/`), GoRouter deep links, MapLibre spatial clustering, offline booking draft sync, NomadDeskPass QR passcard, and Flutter CORS support.
+- **Automated Web & Flutter GitHub Release Pipelines**: Categorized `.github/release.yml` changelogs, pre-tag release validation, checksummed web/Flutter artifact workflows, `/api/releases/latest`, and in-app What's New changelog modal.
+- **Deterministic Offline Conflict Surfacing & Idempotent DTN Replay**: Explicit conflict surfacing, backoff observability, and idempotent DTN replay guarantees (`#10975`).
+- **Single-Instance Yjs Resolution & Hardened Telemetry Ingestion**: Deduplicated Yjs bundle resolution (`#10972`) and hardened telemetry batch validation/auth (`#10973`).
+- **CodeRabbit Automated PR Review & WOCS Governance**: `.coderabbit.yaml` pre-merge review enforcement, `level 1` documentation label capping, and `main` branch protection.
 
 - **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
 - **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).

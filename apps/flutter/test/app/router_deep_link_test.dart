@@ -30,6 +30,31 @@ void main() {
       expect(redirect, '/venues?category=quiet');
     });
 
+    test(
+        'preserves multi-value query parameters and fragment across auth redirect',
+        () {
+      final incoming =
+          Uri.parse('/venues?category=quiet&amenity=wifi&amenity=power#map');
+      final redirect = buildRedirectLocation(
+        incoming,
+        isAuthenticated: false,
+      );
+
+      expect(redirect, isNotNull);
+      final redirectUri = Uri.parse(redirect!);
+      expect(redirectUri.path, '/sign-in');
+      expect(
+        redirectUri.queryParameters['redirect'],
+        '/venues?category=quiet&amenity=wifi&amenity=power#map',
+      );
+
+      final restored = buildRedirectLocation(
+        redirectUri,
+        isAuthenticated: true,
+      );
+      expect(restored, '/venues?category=quiet&amenity=wifi&amenity=power#map');
+    });
+
     test('does not strip query parameters when already authenticated', () {
       final incoming = Uri.parse('/venues?category=quiet&wifi=true');
       final redirect = buildRedirectLocation(

@@ -275,6 +275,37 @@ describe("SharedReservationReplayLog & CDC normalization (#10685)", () => {
       expect(jest.getTimerCount()).toBe(0);
     });
 
+    it("clears heartbeat timers and cancels the source when aborted", async () => {
+      jest.useFakeTimers();
+
+      let sourceCancelled = false;
+      const source = new ReadableStream<Uint8Array>({
+        cancel() {
+          sourceCancelled = true;
+        },
+      });
+
+      const abortController = new AbortController();
+      const abortReason = new Error("client aborted");
+      const reader = withSseHeartbeatComments(
+        source,
+        100,
+        abortController.signal,
+      ).getReader();
+
+      await reader.read();
+      const pendingRead = reader.read();
+      await Promise.resolve();
+
+      expect(jest.getTimerCount()).toBe(1);
+
+      abortController.abort(abortReason);
+
+      await expect(pendingRead).rejects.toBe(abortReason);
+      expect(sourceCancelled).toBe(true);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
     it("cancels the replay source and stops reading when the client disconnects", async () => {
       jest.useFakeTimers();
       let pullCount = 0;

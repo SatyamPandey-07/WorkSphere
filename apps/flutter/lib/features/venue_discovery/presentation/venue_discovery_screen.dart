@@ -173,7 +173,7 @@ class _VenueCard extends StatelessWidget {
                   ),
                 ],
               ),
-              if (venue.address != null && venue.address!.isNotEmpty) ...[
+              if (venue.address?.isNotEmpty == true) ...[
                 const SizedBox(height: 4),
                 Text(
                   venue.address!,

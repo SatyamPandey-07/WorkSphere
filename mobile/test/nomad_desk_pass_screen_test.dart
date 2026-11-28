@@ -45,6 +45,34 @@ void main() {
     expect(find.byType(QrImageView), findsOneWidget);
   });
 
+  testWidgets('long venue title does not overflow a narrow screen',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final pass = NomadDeskPass.forBooking(
+      bookingId: 'booking-narrow',
+      venueName:
+          'A Very Long Venue Name That Must Remain Within The Narrow Pass Header',
+    );
+    final cache = _MemoryPassCache()..passes[pass.bookingId] = pass;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NomadDeskPassScreen(
+          bookingId: pass.bookingId,
+          cache: cache,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('venue-name')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('uses a fallback when the venue name is empty', (tester) async {
     final pass = NomadDeskPass(
       bookingId: 'booking-empty-venue',

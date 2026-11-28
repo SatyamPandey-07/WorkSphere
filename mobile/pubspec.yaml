@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  qr_flutter: ^4.1.0
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:

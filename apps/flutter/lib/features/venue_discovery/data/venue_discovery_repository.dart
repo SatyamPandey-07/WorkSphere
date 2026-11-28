@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:worksphere_app/features/venue_discovery/domain/venue_summary.dart';
+import 'package:worksphere_app/features/venue_discovery/domain/venue_viewport.dart';
 
 class VenueDiscoveryException implements Exception {
   const VenueDiscoveryException(this.message, {this.statusCode});
@@ -26,12 +27,14 @@ class VenueDiscoveryRepository {
     String? category,
     int page = 1,
     int limit = 20,
+    VenueViewport? viewport,
   }) async {
     final query = <String, String>{
       'page': '$page',
       'limit': '$limit',
       if (category != null && category.trim().isNotEmpty)
         'category': category.trim(),
+      if (viewport != null) ...viewport.toQueryParameters(),
     };
 
     final uri = baseUri.replace(
@@ -65,5 +68,16 @@ class VenueDiscoveryRepository {
         .whereType<Map<String, dynamic>>()
         .map(VenueSummary.fromJson)
         .toList(growable: false);
+  }
+
+  Future<List<VenueSummary>> fetchVenuesInViewport({
+    required VenueViewport viewport,
+    String? category,
+  }) {
+    return fetchVenues(
+      category: category,
+      limit: 100,
+      viewport: viewport,
+    );
   }
 }

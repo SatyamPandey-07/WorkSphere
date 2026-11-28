@@ -2,7 +2,7 @@ const release = (
   overrides: Partial<{
     tag_name: string;
     name: string;
-    body: string;
+    body: string | null;
     html_url: string;
     prerelease: boolean;
     published_at: string;
@@ -96,6 +96,45 @@ describe('GET /api/releases/latest', () => {
     });
     expect(data.cached).toBe(false);
   });
+
+  it.each([null, ''])(
+    'normalizes a release with body %s to an empty response body',
+    async (body) => {
+      const { GET: getLatest } = await loadRoute();
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify([
+            release({
+              body,
+            }),
+          ]),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      );
+
+      const response = await getLatest();
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(data.web).toMatchObject({
+        version: '1.2.3',
+        tag: 'v1.2.3',
+        body: '',
+        notesSummary: '',
+        prerelease: false,
+        url: 'https://github.com/srnsksyp/WorkSphere/releases/tag/v1.2.3',
+        downloads: [
+          expect.objectContaining({
+            name: 'worksphere-web-v1.2.3.tar.gz',
+          }),
+        ],
+      });
+    },
+  );
 
   it('returns cached release data without another upstream request', async () => {
     const { GET: getLatest } = await loadRoute();

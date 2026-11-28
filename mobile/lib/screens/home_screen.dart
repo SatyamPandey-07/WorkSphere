@@ -1,7 +1,49 @@
 import 'package:flutter/material.dart';
 
+import '../features/passes/data/nomad_desk_pass_cache.dart';
+import '../features/passes/presentation/nomad_desk_pass_screen.dart';
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  Future<void> _openPass(BuildContext context) async {
+    final controller = TextEditingController();
+    final bookingId = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Open a booking pass'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Booking ID'),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (!context.mounted || bookingId == null || bookingId.trim().isEmpty) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NomadDeskPassScreen(
+          bookingId: bookingId.trim(),
+          cache: const SharedPreferencesNomadDeskPassCache(),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,9 +90,9 @@ class HomeScreen extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.explore_outlined),
-                      label: const Text('Explore WorkSphere'),
+                      onPressed: () => _openPass(context),
+                      icon: const Icon(Icons.qr_code_rounded),
+                      label: const Text('Open a booking pass'),
                     ),
                   ),
                   const Spacer(),

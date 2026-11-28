@@ -141,3 +141,71 @@ async function queryContextStore(
 | **Model Tiering** | Agent Routing | Direct basic tasks to `llama-3.1-8b-instant` and reserve heavy reasoning for `llama-3.3-70b-versatile`. |
 | **Context Compression** | Memory System | Conversation turns exceeding 8,000 tokens are automatically summarized into persistent state vectors. |
 | **Strict JSON Output Framing** | Groq Inference | Forces short, unpadded JSON outputs to eliminate conversational filler tokens during routing decisions. |
+
+## 6. Per-Step Tool Latency Metrics
+
+**Source:** [`src/lib/agents/MultiAgentOrchestrator.ts`](../src/lib/agents/MultiAgentOrchestrator.ts)
+
+Each time a subagent runs, the orchestrator loops through up to `maxToolRounds` rounds of LLM calls. Every tool the model asks to run in those rounds is one **step**. For each step whose handler is actually executed, the orchestrator records a latency sample so slow or failing tools can be found without extra instrumentation.
+
+### 6.1 The `ToolMetric` Record
+
+```ts
+interface ToolMetric {
+  toolName: string;   // Registered tool name
+  durationMs: number; // Wall-clock handler time, in milliseconds (>= 0)
+  ok: boolean;        // true only if the handler resolved before the timeout
+}
+```
+
+The samples are returned on `SubagentExecutionResult.toolMetrics`, in execution order. The array is always present and is empty when no tool ran.
+
+### 6.2 What Is (and Is Not) Measured
+
+A sample is recorded **only when a handler is invoked**. The timer starts immediately before `registeredTool.execute(...)` and stops when the handler settles, throws, or times out.
+
+| Situation | Metric recorded? | Counter in `toolExecutionStats` |
+| :--- | :---: | :--- |
+| Handler resolves | Yes, `ok: true` | `invoked`, `succeeded` |
+| Handler throws | Yes, `ok: false` | `invoked`, `failed` |
+| Handler exceeds `toolTimeoutMs` | Yes, `ok: false`, `durationMs` is roughly the timeout | `invoked`, `timedOut` |
+| Unknown or unapproved tool name | No | `failed` |
+| Malformed JSON arguments | No | `failed` |
+| Arguments fail schema validation | No | `failed` |
+| Duplicate call served from the dedupe cache | No | `deduplicated` |
+| Rejected because `maxTotalToolDurationMs` is exhausted | No | `requested`, `failed` |
+| Rejected because `maxToolCalls` is exhausted | No | none (not counted as requested) |
+
+Metrics are written in a `finally` block, so a failed or timed-out step is never lost. The recorded duration is `performance.now()` elapsed time; a non-finite value is stored as `0` and negative values are clamped to `0`.
+
+### 6.3 Relationship to Execution Budgets
+
+The same elapsed time feeds the optional **total tool duration budget**:
+
+| Config option | Default | Effect |
+| :--- | :---: | :--- |
+| `toolTimeoutMs` | `10_000` | Maximum time for a single step before it is recorded as a timeout. |
+| `maxToolRounds` | `5` | Maximum LLM-and-tool rounds. |
+| `maxToolCalls` | `20` | Maximum tool calls processed across all rounds. |
+| `maxTotalToolDurationMs` | unlimited | When the sum of recorded `durationMs` values reaches this limit, remaining tool calls are rejected and the model is no longer offered tools. |
+
+So `sum(toolMetrics[].durationMs)` is exactly the quantity compared against `maxTotalToolDurationMs`.
+
+### 6.4 Example
+
+```ts
+const result = await orchestrator.invokeSubagent(task);
+
+for (const metric of result.toolMetrics) {
+  console.log(`${metric.toolName}: ${metric.durationMs.toFixed(1)}ms ok=${metric.ok}`);
+}
+
+const totalMs = result.toolMetrics.reduce((sum, m) => sum + m.durationMs, 0);
+const slowest = [...result.toolMetrics].sort((a, b) => b.durationMs - a.durationMs)[0];
+```
+
+### 6.5 Interpreting the Data
+
+- A tool with many `ok: false` samples near `toolTimeoutMs` is timing out; raise the timeout only if the tool is legitimately slow, otherwise fix the tool.
+- `toolExecutionStats.requested` greater than `toolMetrics.length` means some requested calls never reached a handler (validation failures, dedupe hits, or exhausted budgets).
+- Metrics are per invocation and are not aggregated across subagents. Token-level aggregation lives in `TokenEfficiencyMetrics`.

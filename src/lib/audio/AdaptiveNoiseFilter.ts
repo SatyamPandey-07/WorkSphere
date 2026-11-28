@@ -1,3 +1,4 @@
+
 /**
  * AdaptiveNoiseFilter.ts
  * Dynamic ambient noise cancellation filter using chained BiquadFilterNode instances (#6481).
@@ -15,11 +16,27 @@ export const NOTCH_Q_PRESETS = Object.freeze({
 
 export type NotchQPreset = keyof typeof NOTCH_Q_PRESETS;
 
+/**
+ * Resolves the notch Q factor. A Q of 0 or below (or NaN/Infinity) produces
+ * undefined biquad behavior, so any invalid explicit value falls back to the
+ * selected preset (default: "balanced").
+ */
+function resolveNotchQ(
+  notchQ: number | undefined,
+  preset: NotchQPreset = "balanced",
+): number {
+  if (typeof notchQ === "number" && Number.isFinite(notchQ) && notchQ > 0) {
+    return Math.min(Math.max(notchQ, 0.0001), 100);
+  }
+
+  return NOTCH_Q_PRESETS[preset] ?? NOTCH_Q_PRESETS.balanced;
+}
+
 export interface AdaptiveNoiseFilterOptions {
   speechThresholdDb?: number; // Threshold in dB to distinguish speech from ambient noise (default: -42 dB)
   highPassCutoff?: number; // Cutoff for HVAC rumble (default: 150 Hz)
   notchFrequencies?: number[]; // Fixed or initial notch frequencies (e.g. 60Hz hum, 2400Hz espresso whine)
-  notchQ?: number; // Quality factor for notch filters (default: 8.0)
+  notchQ?: number; // Quality factor for notch filters; must be finite and > 0, otherwise the preset is used (default: 8.0)
   notchQPreset?: NotchQPreset; // Preset used when notchQ is not provided.
   attenuationDb?: number; // Target attenuation for noise bands (default: 15 dB, within 12-18 dB target)
   enabled?: boolean;
@@ -97,11 +114,7 @@ export class AdaptiveNoiseFilter {
     this.lastContextState = audioContext.state;
     this.lastSampleRate = audioContext.sampleRate;
     this.speechThresholdDb = options.speechThresholdDb ?? -42;
-    const requestedNotchQ =
-      options.notchQ ?? NOTCH_Q_PRESETS[options.notchQPreset ?? "balanced"];
-    this.notchQ = Number.isFinite(requestedNotchQ)
-      ? Math.min(Math.max(requestedNotchQ, 0.0001), 100)
-      : NOTCH_Q_PRESETS.balanced;
+    this.notchQ = resolveNotchQ(options.notchQ, options.notchQPreset);
 
     const highPassFreq = options.highPassCutoff ?? 150;
     this.highPassCutoff = highPassFreq;
@@ -127,7 +140,6 @@ export class AdaptiveNoiseFilter {
     // Build chained filter pipeline
     // Create static/configured notch filters; configure and connect when running.
     this.notchFilters = initialNotches.map(() => this.createNotchFilter());
-
 
     this.audioContext.addEventListener(
       "statechange",

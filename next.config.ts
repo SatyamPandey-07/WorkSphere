@@ -97,7 +97,12 @@ const nextConfig: NextConfig = {
     if (isServer) {
       config.resolve.alias.canvas = false;
       config.resolve.alias.encoding = false;
+      config.resolve.alias.yjs = require.resolve("yjs");
     } else {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        yjs: require.resolve("yjs"),
+      };
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -124,7 +129,11 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: ["nodemailer"],
   // Use turbopack config (Next.js 16 default)
-  turbopack: {},
+  turbopack: {
+    resolveAlias: {
+      yjs: "yjs",
+    },
+  },
 };
 
 export default nextConfig;

@@ -1,6 +1,8 @@
 import React, { useRef, useState } from "react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import * as Y from "yjs";
+
+export const yjsDocConstructor = Y.Doc;
 import { MonacoBinding } from "y-monaco";
 import YPartyKitProvider from "y-partykit/provider";
 import {

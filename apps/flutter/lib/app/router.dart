@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:worksphere_app/features/bookings/data/booking_sync_worker.dart';
 import 'package:worksphere_app/features/bookings/presentation/booking_reservation_screen.dart';
 import 'package:worksphere_app/features/venue_discovery/data/venue_discovery_repository.dart';
+import 'package:worksphere_app/features/venue_discovery/presentation/venue_amenity_filter_controller.dart';
 import 'package:worksphere_app/features/venue_discovery/presentation/venue_discovery_screen.dart';
 
 /// Validates that [target] is a safe relative in-app route (starts with `/`
@@ -252,6 +253,23 @@ GoRouter createAppRouter({
           return VenueDiscoveryScreen(
             repository: venueRepository,
             category: params['category'],
+            queryParameters: state.uri.queryParametersAll,
+            onAmenityFiltersChanged: (selectedAmenities) {
+              final router = GoRouter.of(context);
+              final currentUri = router.routeInformationProvider.value.uri;
+              final queryParameters =
+                  VenueAmenityFilterController.queryParametersWithSelection(
+                currentUri.queryParametersAll,
+                selectedAmenities,
+              );
+              final nextUri = currentUri.replace(
+                queryParameters:
+                    queryParameters.isEmpty ? null : queryParameters,
+              );
+              if (nextUri != currentUri) {
+                router.replace(nextUri.toString());
+              }
+            },
           );
         },
       ),

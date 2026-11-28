@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:worksphere_app/features/venue_discovery/data/venue_discovery_repository.dart';
 import 'package:worksphere_app/features/venue_discovery/domain/venue_summary.dart';
+import 'package:worksphere_app/features/venue_discovery/presentation/venue_amenity_filter_controller.dart';
 import 'package:worksphere_app/features/venue_discovery/presentation/venue_map_view.dart';
 
 class VenueDiscoveryScreen extends StatefulWidget {
@@ -9,11 +10,15 @@ class VenueDiscoveryScreen extends StatefulWidget {
     required this.repository,
     this.category,
     this.onVenueTap,
+    this.queryParameters = const {},
+    this.onAmenityFiltersChanged,
   });
 
   final VenueDiscoveryRepository repository;
   final String? category;
   final void Function(VenueSummary venue)? onVenueTap;
+  final Map<String, List<String>> queryParameters;
+  final ValueChanged<List<String>>? onAmenityFiltersChanged;
 
   @override
   State<VenueDiscoveryScreen> createState() => _VenueDiscoveryScreenState();
@@ -24,11 +29,50 @@ class _VenueDiscoveryScreenState extends State<VenueDiscoveryScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   bool _showMap = false;
+  late final VenueAmenityFilterController _amenityFilterController;
 
   @override
   void initState() {
     super.initState();
+    _amenityFilterController = VenueAmenityFilterController(
+      queryParameters: widget.queryParameters,
+    )..addListener(_onAmenityFiltersChanged);
     _loadVenues();
+  }
+
+  @override
+  void didUpdateWidget(covariant VenueDiscoveryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _amenityFilterController.updateFromQueryParameters(widget.queryParameters);
+  }
+
+  @override
+  void dispose() {
+    _amenityFilterController
+      ..removeListener(_onAmenityFiltersChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onAmenityFiltersChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _toggleAmenity(VenueAmenity amenity) {
+    _amenityFilterController.toggle(amenity);
+    widget.onAmenityFiltersChanged?.call(
+      VenueAmenity.values
+          .where(_amenityFilterController.isSelected)
+          .map((value) => value.queryValue)
+          .toList(growable: false),
+    );
+  }
+
+  void _clearAmenityFilters() {
+    _amenityFilterController.clear();
+    widget.onAmenityFiltersChanged?.call(const []);
   }
 
   Future<void> _loadVenues() async {
@@ -70,16 +114,50 @@ class _VenueDiscoveryScreenState extends State<VenueDiscoveryScreen> {
           ),
         ],
       ),
-      body: _showMap
-          ? VenueMapView(
-              repository: widget.repository,
-              category: widget.category,
-            )
-          : _buildBody(context),
+      body: Column(
+        children: [
+          _buildAmenityFilters(),
+          Expanded(
+            child: _showMap
+                ? VenueMapView(
+                    repository: widget.repository,
+                    category: widget.category,
+                    amenityFilterController: _amenityFilterController,
+                  )
+                : _buildBody(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmenityFilters() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          for (final amenity in VenueAmenity.values)
+            FilterChip(
+              key: Key('venue_amenity_${amenity.queryValue}'),
+              label: Text(amenity.label),
+              selected: _amenityFilterController.isSelected(amenity),
+              onSelected: (_) => _toggleAmenity(amenity),
+            ),
+          if (_amenityFilterController.selectedAmenities.isNotEmpty)
+            ActionChip(
+              key: const Key('venue_amenity_clear'),
+              label: const Text('Clear filters'),
+              onPressed: _clearAmenityFilters,
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildBody(BuildContext context) {
+    final filteredVenues = _amenityFilterController.filterVenues(_venues);
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(
@@ -120,21 +198,21 @@ class _VenueDiscoveryScreenState extends State<VenueDiscoveryScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadVenues,
-      child: _venues.isEmpty
+      child: filteredVenues.isEmpty
           ? ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: const [
                 SizedBox(height: 120),
-                Center(child: Text('No venues found')),
+                Center(child: Text('No matching venues found')),
               ],
             )
           : ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
-              itemCount: _venues.length,
+              itemCount: filteredVenues.length,
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final venue = _venues[index];
+                final venue = filteredVenues[index];
                 return _VenueCard(
                   venue: venue,
                   onTap: widget.onVenueTap == null

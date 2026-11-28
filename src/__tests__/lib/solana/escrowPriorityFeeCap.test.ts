@@ -1,3 +1,10 @@
+jest.mock("@solana/web3.js", () => ({
+  ComputeBudgetProgram: { setComputeUnitLimit: jest.fn(() => ({})), setComputeUnitPrice: jest.fn(() => ({})) },
+  Connection: jest.fn().mockImplementation(() => ({})),
+  Keypair: { generate: jest.fn(() => ({ publicKey: { toBase58: () => "11111111111111111111111111111111" } })) },
+  PublicKey: jest.fn().mockImplementation((v) => ({ toBase58: () => String(v) })),
+  Transaction: jest.fn().mockImplementation(() => ({ add: jest.fn().mockReturnThis() })),
+}));
 /** @jest-environment node */
 
 import {

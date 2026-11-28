@@ -171,6 +171,41 @@ describe("AdaptiveNoiseFilter (Dynamic Ambient Noise Cancellation)", () => {
     );
   });
 
+  it("clamps invalid notch Q values to a safe positive finite range", () => {
+    const cases = [
+      { notchQ: 0, expected: 0.0001 },
+      { notchQ: -1, expected: 0.0001 },
+      { notchQ: -100, expected: 0.0001 },
+      { notchQ: NaN, expected: NOTCH_Q_PRESETS.balanced },
+      { notchQ: Infinity, expected: NOTCH_Q_PRESETS.balanced },
+      { notchQ: -Infinity, expected: NOTCH_Q_PRESETS.balanced },
+    ];
+
+    cases.forEach(({ notchQ, expected }) => {
+      const context = createMockAudioContext();
+      const filter = new AdaptiveNoiseFilter(context, { notchQ });
+
+      [...filter.notchFilters, filter.dynamicNotchFilter].forEach((notch) => {
+        expect(notch.Q.setValueAtTime).toHaveBeenCalledWith(
+          expected,
+          context.currentTime,
+        );
+      });
+    });
+  });
+
+  it("clamps excessively large finite notch Q values to the maximum", () => {
+    const context = createMockAudioContext();
+    const filter = new AdaptiveNoiseFilter(context, { notchQ: 1000 });
+
+    [...filter.notchFilters, filter.dynamicNotchFilter].forEach((notch) => {
+      expect(notch.Q.setValueAtTime).toHaveBeenCalledWith(
+        100,
+        context.currentTime,
+      );
+    });
+  });
+
   it("recreates every biquad filter and reapplies coefficients after a sample-rate change", () => {
     const filter = new AdaptiveNoiseFilter(mockContext, {
       highPassCutoff: 150,

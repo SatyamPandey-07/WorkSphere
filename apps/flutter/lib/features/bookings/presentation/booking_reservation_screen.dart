@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:worksphere_app/features/bookings/data/booking_sync_worker.dart';
+import 'package:worksphere_app/features/bookings/domain/booking_date_normalization.dart';
 import 'package:worksphere_app/features/bookings/domain/booking_draft.dart';
 
 class BookingReservationScreen extends StatefulWidget {
@@ -18,22 +19,26 @@ class BookingReservationScreen extends StatefulWidget {
 }
 
 class _BookingReservationScreenState extends State<BookingReservationScreen> {
-  late DateTime _reservationDate = DateTime.now().add(const Duration(days: 1));
+  late DateTime _reservationDate = BookingDateNormalization.normalize(
+    DateTime.now().add(const Duration(days: 1)),
+  );
   int _guestCount = 1;
   bool _isSubmitting = false;
 
   Future<void> _queueReservation() async {
     setState(() => _isSubmitting = true);
+    final localDate =
+        BookingDateNormalization.toPickerDate(_reservationDate);
     final start = DateTime(
-      _reservationDate.year,
-      _reservationDate.month,
-      _reservationDate.day,
+      localDate.year,
+      localDate.month,
+      localDate.day,
       9,
     );
     final end = DateTime(
-      _reservationDate.year,
-      _reservationDate.month,
-      _reservationDate.day,
+      localDate.year,
+      localDate.month,
+      localDate.day,
       17,
     );
     try {
@@ -74,12 +79,14 @@ class _BookingReservationScreenState extends State<BookingReservationScreen> {
   Future<void> _chooseDate() async {
     final selected = await showDatePicker(
       context: context,
-      initialDate: _reservationDate,
+      initialDate: BookingDateNormalization.toPickerDate(_reservationDate),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (selected != null && mounted) {
-      setState(() => _reservationDate = selected);
+      setState(() {
+        _reservationDate = BookingDateNormalization.normalize(selected);
+      });
     }
   }
 
@@ -99,9 +106,8 @@ class _BookingReservationScreenState extends State<BookingReservationScreen> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Reservation date'),
             subtitle: Text(
-              '${_reservationDate.year}-'
-              '${_reservationDate.month.toString().padLeft(2, '0')}-'
-              '${_reservationDate.day.toString().padLeft(2, '0')} · 9:00 AM–5:00 PM',
+              '${BookingDateNormalization.serializeDateOnly(_reservationDate)}'
+              ' · 9:00 AM–5:00 PM',
             ),
             trailing: const Icon(Icons.calendar_today_outlined),
             onTap: _chooseDate,

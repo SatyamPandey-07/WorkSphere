@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -88,5 +90,128 @@ void main() {
     expect(find.text('offline-booking'), findsOneWidget);
     expect(find.text('Cached Venue'), findsOneWidget);
     expect(find.textContaining('Showing the saved pass'), findsOneWidget);
+  });
+
+  testWidgets('shows Share Pass and shares the booking summary and QR image',
+      (tester) async {
+    final pass = NomadDeskPass.forBooking(
+      bookingId: 'booking-share-123',
+      venueName: 'Nomad House',
+      venueAddress: '12 Market Street',
+    );
+    final cache = _MemoryPassCache()..passes[pass.bookingId] = pass;
+    var shareCalls = 0;
+    String? sharedText;
+    String? sharedBookingId;
+    String? sharedQrPayload;
+    Uint8List? sharedQrImage;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NomadDeskPassScreen(
+          bookingId: pass.bookingId,
+          cache: cache,
+          sharePass: ({
+            required bookingId,
+            required text,
+            required qrPayload,
+            required qrImageBytes,
+          }) async {
+            shareCalls++;
+            sharedBookingId = bookingId;
+            sharedText = text;
+            sharedQrPayload = qrPayload;
+            sharedQrImage = qrImageBytes;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Share Pass'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pass-share')));
+    await tester.pumpAndSettle();
+
+    expect(shareCalls, 1);
+    expect(sharedBookingId, 'booking-share-123');
+    expect(sharedText, contains('Booking ID: booking-share-123'));
+    expect(sharedText, contains('Venue: Nomad House'));
+    expect(sharedText, contains('Venue address: 12 Market Street'));
+    expect(sharedText, isNot(contains('null')));
+    expect(sharedQrPayload, pass.qrPayload);
+    expect(sharedQrImage, isNotNull);
+    expect(sharedQrImage, isNotEmpty);
+  });
+
+  testWidgets('omits null and empty venue addresses from shared content',
+      (tester) async {
+    for (final address in <String?>[null, '', '   ']) {
+      final pass = NomadDeskPass(
+        bookingId: 'booking-no-address',
+        venueName: 'Nomad House',
+        venueAddress: address,
+        qrPayload: 'worksphere://pass/booking-no-address',
+      );
+      final cache = _MemoryPassCache()..passes[pass.bookingId] = pass;
+      String? sharedText;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NomadDeskPassScreen(
+            bookingId: pass.bookingId,
+            cache: cache,
+            sharePass: ({
+              required bookingId,
+              required text,
+              required qrPayload,
+              required qrImageBytes,
+            }) async {
+              sharedText = text;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pass-share')));
+      await tester.pumpAndSettle();
+
+      expect(sharedText, contains('Booking ID: booking-no-address'));
+      expect(sharedText, contains('Venue: Nomad House'));
+      expect(sharedText, isNot(contains('Venue address:')));
+      expect(sharedText, isNot(contains('null')));
+    }
+  });
+
+  testWidgets('shows feedback when sharing fails', (tester) async {
+    final pass = NomadDeskPass.forBooking(
+      bookingId: 'booking-share-failure',
+      venueName: 'Nomad House',
+    );
+    final cache = _MemoryPassCache()..passes[pass.bookingId] = pass;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NomadDeskPassScreen(
+          bookingId: pass.bookingId,
+          cache: cache,
+          sharePass: ({
+            required bookingId,
+            required text,
+            required qrPayload,
+            required qrImageBytes,
+          }) async {
+            throw Exception('sharing unavailable');
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pass-share')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Unable to share the pass. Please try again.'),
+      findsOneWidget,
+    );
   });
 }

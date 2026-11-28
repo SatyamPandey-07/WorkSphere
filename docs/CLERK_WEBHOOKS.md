@@ -1,123 +1,19 @@
-# Clerk Webhook Integration Guide
+# Clerk Webhooks (`src/app/api/webhooks/clerk/route.ts`)
 
-## Overview
+`src/app/api/webhooks/clerk/route.ts` handles inbound Clerk webhook requests authenticated via Svix headers (`svix-id`, `svix-timestamp`, `svix-signature`), deduplicates repeated deliveries, and enforces monotonic ordering invariants so stale or out-of-order events cannot overwrite newer state or resurrect deleted/tombstoned records.
 
-WorkSphere uses Clerk webhooks to keep application user records synchronized with Clerk authentication events. Incoming webhook requests are verified using Svix signatures before any database operation is performed.
+## 1. Svix Delivery Deduplication
 
-This document explains:
+Clerk delivers webhooks at least once and may retry on network timeouts, `5xx` responses, or concurrent worker deliveries:
 
-- Configuring Clerk webhooks
-- How webhook events are verified and parsed
-- How user records are synchronized with the database
+1. **Signature & Timestamp Verification:** Verifies incoming payloads using `svix-id`, `svix-timestamp`, and `svix-signature` before mutating application state.
+2. **Idempotency Key (`svix-id`):** Checks whether `svix-id` has already been processed or is currently in flight before applying mutations.
+3. **Duplicate Short-Circuit:** Returns a `2xx` response for already-processed `svix-id` deliveries without re-executing downstream side effects.
 
----
+## 2. Tombstone Ordering Invariants
 
-# Webhook Configuration
+Out-of-order or delayed deliveries around deletions can cause stale updates to overwrite newer state or resurrect removed entities:
 
-## Clerk Dashboard
-
-Create a webhook endpoint in the Clerk Dashboard that points to:
-
-```
-/api/webhook
-```
-
-Enable the following events:
-
-- `user.created`
-- `user.updated`
-- `user.deleted`
-
-After creating the webhook, copy the **Webhook Secret** and store it securely as an environment variable.
-
-## Required Environment Variable
-
-```
-WEBHOOK_SECRET=<your_clerk_webhook_secret>
-```
-
-The webhook route uses this secret to verify that every incoming request was sent by Clerk before processing the payload.
-
----
-
-# Event Parsing
-
-When Clerk sends a webhook request, the application first extracts the required Svix headers:
-
-- `svix-id`
-- `svix-timestamp`
-- `svix-signature`
-
-If any required header is missing, the request is rejected with a **400 Bad Request** response.
-
-After the headers are validated, the request body is verified using the configured `WEBHOOK_SECRET`.
-
-Example verification flow:
-
-```text
-Incoming Request
-        │
-        ▼
-Read Svix Headers
-        │
-        ▼
-Verify Signature
-        │
-        ▼
-Parse Webhook Event
-        │
-        ▼
-Process Supported Event
-```
-
-Only requests that pass signature verification continue to the event handling stage.
-
----
-
-# Database Synchronization
-
-After successful verification, the webhook handler processes the received event and synchronizes user information with the application's database using Prisma.
-
-## user.created
-
-When a new Clerk account is created:
-
-- User ID is stored.
-- Email address is extracted.
-- First and last names are saved.
-- Profile image is stored.
-- A fallback avatar is generated when no profile image exists.
-
-## user.updated
-
-When user information changes in Clerk:
-
-- Email address is updated.
-- Profile information is refreshed.
-- Updated profile image replaces the previous value.
-
-## user.deleted
-
-When a Clerk account is removed:
-
-- The matching database record is deleted using the Clerk user ID.
-
-This synchronization keeps application data consistent with Clerk authentication records.
-
----
-
-# Error Handling
-
-If webhook verification fails, the request is rejected immediately and no database operation is performed.
-
-If a database operation fails after successful verification, the error is logged without throwing an additional exception. This prevents unnecessary webhook retries while still recording the failure for debugging.
-
----
-
-# Related Files
-
-- `src/app/api/webhook/route.ts`
-- `docs/CLERK_JWT_VALIDATION.md`
-- `docs/ENV_VARS.md`
-
-The webhook route contains the implementation responsible for request verification and user synchronization, while the related documentation explains authentication and environment configuration in more detail.
+* **Monotonic Event Ordering:** Compares incoming event timestamps/versions against the latest applied state for each entity and skips older events.
+* **Tombstone Precedence:** Once a tombstone is recorded at timestamp `T_del`, any event with `T_evt <= T_del` (such as a delayed update retry) cannot overwrite or un-delete the record.
+* **Strict Forward Progression:** Only a strictly newer event (`T_evt > T_del`) with valid lifecycle state can advance past an existing tombstone; equal or earlier timestamps never cause a tombstone regression.

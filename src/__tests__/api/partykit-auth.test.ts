@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { GET } from "@/app/api/partykit/auth/route";
+import { GET, OPTIONS } from "@/app/api/partykit/auth/route";
 import { prisma } from "@/lib/prisma";
 import { resetRateLimit } from "@/lib/rateLimit";
 
@@ -67,5 +67,43 @@ describe("GET /api/partykit/auth - Rate Limiting", () => {
     const data = await lastRes!.json();
     expect(data.error).toMatch(/too many/i);
     expect(data.retryAfter).toBeDefined();
+  });
+});
+
+describe("OPTIONS /api/partykit/auth - CORS", () => {
+  it("allows Flutter client headers and preserves existing preflight behavior", async () => {
+    const req = new NextRequest("http://localhost/api/partykit/auth", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:3000",
+        "access-control-request-method": "GET",
+        "access-control-request-headers":
+          "authorization,content-type,user-agent,x-worksphere-platform,x-worksphere-app-version",
+      },
+    });
+
+    const response = await OPTIONS(req);
+    const allowedHeaders = response.headers
+      .get("Access-Control-Allow-Headers")
+      ?.split(",")
+      .map((header) => header.trim().toLowerCase());
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "http://localhost:3000",
+    );
+    expect(response.headers.get("Access-Control-Allow-Methods")).toBe(
+      "GET, OPTIONS",
+    );
+    expect(response.headers.get("Access-Control-Max-Age")).toBe("86400");
+    expect(allowedHeaders).toEqual(
+      expect.arrayContaining([
+        "authorization",
+        "content-type",
+        "user-agent",
+        "x-worksphere-platform",
+        "x-worksphere-app-version",
+      ]),
+    );
   });
 });

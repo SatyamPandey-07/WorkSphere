@@ -233,6 +233,7 @@ export async function verifyBatchProofs(
  */
 export async function verifyBatchStudentDiscountProofs(
   request: BatchStudentDiscountRequest,
+  signal?: AbortSignal,
 ): Promise<BatchStudentDiscountResponse> {
   const items = request.items || request.studentProofs || [];
   const results: BatchStudentDiscountResultItem[] = [];
@@ -263,6 +264,8 @@ export async function verifyBatchStudentDiscountProofs(
   const seenBatchNullifiers = new Set<string>();
 
   for (let index = 0; index < items.length; index++) {
+    if (signal?.aborted) break;
+
     const item = items[index];
     const itemId = item.id || item.studentId || `item-${index + 1}`;
 
@@ -394,8 +397,11 @@ export async function verifyBatchStudentDiscountProofs(
       let isValid = false;
 
       try {
+        if (signal?.aborted) break;
         isValid = await snarkjs.groth16.verify(vKey, item.publicSignals, item.proof);
+        if (signal?.aborted) break;
       } catch (err: any) {
+        if (signal?.aborted) break;
         results.push({
           index,
           id: itemId,

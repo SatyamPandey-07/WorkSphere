@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 // Mock Clerk
@@ -50,10 +50,27 @@ jest.mock("@/hooks/useSeatAvailability", () => ({
 const mockSetView = jest.fn();
 const mockFlyTo = jest.fn();
 const mockFlyToBounds = jest.fn();
+const mockInvalidateSize = jest.fn();
+const mockGetContainer = jest.fn();
+const mockMap = {
+  setView: mockSetView,
+  flyTo: mockFlyTo,
+  flyToBounds: mockFlyToBounds,
+  getZoom: jest.fn(() => 13),
+  getContainer: mockGetContainer,
+  invalidateSize: mockInvalidateSize,
+  on: jest.fn(),
+  off: jest.fn(),
+};
 
 jest.mock("react-leaflet", () => ({
   MapContainer: ({ children, center, zoom, style }: any) => (
     <div
+      ref={(element) => {
+        if (element) {
+          mockGetContainer.mockReturnValue(element);
+        }
+      }}
       data-testid="map-container"
       data-center={JSON.stringify(center)}
       data-zoom={zoom}
@@ -137,14 +154,7 @@ jest.mock("react-leaflet", () => ({
       {children}
     </div>
   ),
-  useMap: () => ({
-    setView: mockSetView,
-    flyTo: mockFlyTo,
-    flyToBounds: mockFlyToBounds,
-    getZoom: jest.fn(() => 13),
-    on: jest.fn(),
-    off: jest.fn(),
-  }),
+  useMap: () => mockMap,
   LayersControl: Object.assign(
     ({ children }: any) => <div data-testid="layers-control">{children}</div>,
     {
@@ -193,8 +203,26 @@ jest.mock("leaflet", () => ({
 }));
 
 // Import after mocks
-import Map from "@/components/Map";
-import { MapMarker, MapRoute, MapView } from "@/types/map";
+import Map from "../../components/Map";
+import { MapMarker, MapRoute, MapView } from "../../types/map";
+
+class MockResizeObserver {
+  static instances: MockResizeObserver[] = [];
+
+  readonly observe = jest.fn();
+  readonly disconnect = jest.fn();
+  readonly unobserve = jest.fn();
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    MockResizeObserver.instances.push(this);
+  }
+
+  trigger() {
+    this.callback([], this as unknown as ResizeObserver);
+  }
+}
+
+const originalResizeObserver = globalThis.ResizeObserver;
 
 describe("Map Component", () => {
   const defaultLocation = { latitude: 37.7749, longitude: -122.4194 };
@@ -207,6 +235,86 @@ describe("Map Component", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    MockResizeObserver.instances = [];
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: MockResizeObserver,
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    if (originalResizeObserver) {
+      Object.defineProperty(globalThis, "ResizeObserver", {
+        configurable: true,
+        value: originalResizeObserver,
+      });
+    } else {
+      Reflect.deleteProperty(globalThis, "ResizeObserver");
+    }
+  });
+
+  describe("Map resizing", () => {
+    it("observes the map container and invalidates its size after 100ms", () => {
+      jest.useFakeTimers();
+      render(<Map {...defaultProps} />);
+
+      expect(MockResizeObserver.instances).toHaveLength(1);
+      const observer = MockResizeObserver.instances[0];
+      expect(observer.observe).toHaveBeenCalledWith(
+        screen.getByTestId("map-container"),
+      );
+
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(99));
+      expect(mockInvalidateSize).not.toHaveBeenCalled();
+
+      act(() => jest.advanceTimersByTime(1));
+      expect(mockInvalidateSize).toHaveBeenCalledTimes(1);
+      expect(mockInvalidateSize).toHaveBeenCalledWith({ pan: false });
+      expect(screen.getAllByTestId("map-container")).toHaveLength(1);
+    });
+
+    it("debounces multiple container resize notifications from the latest event", () => {
+      jest.useFakeTimers();
+      render(<Map {...defaultProps} />);
+      const observer = MockResizeObserver.instances[0];
+
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(60));
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(99));
+      expect(mockInvalidateSize).not.toHaveBeenCalled();
+
+      act(() => jest.advanceTimersByTime(1));
+      expect(mockInvalidateSize).toHaveBeenCalledTimes(1);
+      expect(mockInvalidateSize).toHaveBeenCalledWith({ pan: false });
+    });
+
+    it("retains debounced window resize handling", () => {
+      jest.useFakeTimers();
+      render(<Map {...defaultProps} />);
+
+      act(() => window.dispatchEvent(new Event("resize")));
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(mockInvalidateSize).toHaveBeenCalledTimes(1);
+      expect(mockInvalidateSize).toHaveBeenCalledWith({ pan: false });
+    });
+
+    it("disconnects the observer and clears a pending resize on unmount", () => {
+      jest.useFakeTimers();
+      const { unmount } = render(<Map {...defaultProps} />);
+      const observer = MockResizeObserver.instances[0];
+
+      act(() => observer.trigger());
+      unmount();
+
+      expect(observer.disconnect).toHaveBeenCalledTimes(1);
+      act(() => observer.trigger());
+      act(() => jest.advanceTimersByTime(100));
+      expect(mockInvalidateSize).not.toHaveBeenCalled();
+    });
   });
 
   describe("Rendering", () => {
@@ -547,6 +655,35 @@ describe("Map Component", () => {
       const mapContainer = screen.getByTestId("map-container");
       expect(mapContainer).toHaveStyle({ width: "95%", height: "95%" });
     });
+
+    it("defines dark initial background (#0B0F17) for the Leaflet map container to prevent unstyled flash on CartoDB tiles (#9161)", () => {
+      const { container } = render(<Map {...defaultProps} />);
+
+      // Verify the embedded style tag contains the dark initial background rule
+      const styleTag = container.querySelector("style");
+      expect(styleTag).not.toBeNull();
+      expect(styleTag?.innerHTML).toContain(".leaflet-container");
+      expect(styleTag?.innerHTML).toMatch(/\.leaflet-container\s*\{[^}]*background:\s*#0B0F17/i);
+    });
+
+    it("keeps the reset control clear of map attribution with a 44px touch target", () => {
+      render(<Map {...defaultProps} />);
+
+      const resetButton = screen.getByRole("button", {
+        name: "Reset Map View",
+      });
+      expect(resetButton).toHaveClass(
+        "min-h-11",
+        "min-w-11",
+        "backdrop-blur-sm",
+        "shadow-md",
+      );
+      expect(resetButton.parentElement).toHaveClass(
+        "bottom-8",
+        "right-4",
+        "sm:bottom-4",
+      );
+    });
   });
 
   describe("Popup Header Clipping Prevention (#870)", () => {
@@ -591,7 +728,9 @@ describe("Map Component", () => {
 
   describe("Radar Sweep Search Radius Effect (#6183)", () => {
     it("renders user marker with radar sweep enabled by default and accepts custom radarRadius", () => {
-      render(<Map {...defaultProps} enableRadarSweep={true} radarRadius={200} />);
+      render(
+        <Map {...defaultProps} enableRadarSweep={true} radarRadius={200} />,
+      );
       const markers = screen.getAllByTestId("marker");
       expect(markers.length).toBeGreaterThanOrEqual(1);
     });

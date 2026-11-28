@@ -5,13 +5,44 @@ import type { WebhookEndpoint, WebhookEventType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isSafeWebhookUrl } from "@/lib/ssrfValidation";
 import { isWithinNotificationWindow } from "@/lib/notificationWindow";
-import { defaultNotificationHttpClient } from "../httpClient";
+import { defaultNotificationHttpClient, SsrfBlockedError } from "../httpClient";
 import type {
   NotificationChannel,
   NotificationMessage,
   DeliveryResult,
   WebhookEnvelope,
 } from "../types";
+
+const MAX_WEBHOOK_REDIRECTS = 20;
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 ||
+    status === 307 || status === 308;
+}
+
+function redirectBlockReason(reason?: string): string {
+  if (/private network|forbidden/i.test(reason || "")) {
+    return "redirect_target_resolved_to_private_or_prohibited_ip";
+  }
+  if (/resolve/i.test(reason || "")) {
+    return "redirect_target_dns_revalidation_failed";
+  }
+  if (/protocol/i.test(reason || "")) {
+    return "redirect_target_uses_prohibited_protocol";
+  }
+  return "redirect_target_failed_ssrf_revalidation";
+}
+
+function logWebhookTelemetry(
+  level: "info" | "warn",
+  event: Record<string, string | number>,
+): void {
+  try {
+    console[level](JSON.stringify(event));
+  } catch {
+    // Telemetry must not affect delivery or SSRF enforcement.
+  }
+}
 
 export function signWebhookPayload(
   secret: string,
@@ -68,6 +99,7 @@ export async function deliverToEndpoint(
   const body = JSON.stringify(envelope);
   let status: DeliveryResult["status"] = "FAILED";
   let statusCode: number | null = null;
+  let redirectHopCount = 0;
 
   const safety = await isSafeWebhookUrl(endpoint.url);
   if (!safety.isSafe) {
@@ -82,34 +114,113 @@ export async function deliverToEndpoint(
         body,
       );
 
-      const res = await defaultNotificationHttpClient.fetch(
-        endpoint.url,
-        {
-          method: "POST",
-          headers: {
-            ...customHeaders(endpoint),
-            "content-type": "application/json",
-            "user-agent": "WorkSphere-Webhooks/1.0",
-            "webhook-id": envelope.id,
-            "webhook-timestamp": timestamp,
-            "webhook-signature": signature,
-            "svix-id": envelope.id,
-            "svix-timestamp": timestamp,
-            "svix-signature": signature,
-          },
-          body,
+      let currentUrl = endpoint.url;
+      let requestInit: RequestInit = {
+        method: "POST",
+        headers: {
+          ...customHeaders(endpoint),
+          "content-type": "application/json",
+          "user-agent": "WorkSphere-Webhooks/1.0",
+          "webhook-id": envelope.id,
+          "webhook-timestamp": timestamp,
+          "webhook-signature": signature,
+          "svix-id": envelope.id,
+          "svix-timestamp": timestamp,
+          "svix-signature": signature,
         },
-        { timeoutMs: 5000, maxRetries: 2 },
-      );
+        body,
+        redirect: "manual",
+      };
 
-      statusCode = res.status;
-      status = res.ok ? "SUCCESS" : "FAILED";
+      while (true) {
+        const res = await defaultNotificationHttpClient.fetch(
+          currentUrl,
+          requestInit,
+          { timeoutMs: 5000, maxRetries: 2 },
+        );
+        statusCode = res.status;
+
+        const location = isRedirectStatus(res.status)
+          ? res.headers.get("location")
+          : null;
+        if (!location) {
+          status = res.ok ? "SUCCESS" : "FAILED";
+          break;
+        }
+
+        redirectHopCount++;
+        if (redirectHopCount > MAX_WEBHOOK_REDIRECTS) {
+          status = "FAILED";
+          break;
+        }
+
+        let redirectUrl: string;
+        try {
+          redirectUrl = new URL(location, currentUrl).toString();
+        } catch {
+          status = "BLOCKED";
+          logWebhookTelemetry("warn", {
+            event: "webhook.ssrf_redirect_blocked",
+            endpointId: endpoint.id,
+            redirectHopCount,
+            blockReason: "redirect_target_invalid",
+          });
+          break;
+        }
+
+        const redirectSafety = await isSafeWebhookUrl(redirectUrl);
+        if (!redirectSafety.isSafe) {
+          status = "BLOCKED";
+          logWebhookTelemetry("warn", {
+            event: "webhook.ssrf_redirect_blocked",
+            endpointId: endpoint.id,
+            redirectHopCount,
+            blockReason: redirectBlockReason(redirectSafety.reason),
+          });
+          break;
+        }
+
+        const previousUrl = new URL(currentUrl);
+        const nextUrl = new URL(redirectUrl);
+        if (previousUrl.origin !== nextUrl.origin) {
+          const headers = new Headers(requestInit.headers);
+          headers.delete("authorization");
+          headers.delete("cookie");
+          headers.delete("proxy-authorization");
+          requestInit = { ...requestInit, headers };
+        }
+
+        if (
+          res.status === 303 ||
+          ((res.status === 301 || res.status === 302) &&
+            requestInit.method === "POST")
+        ) {
+          const headers = new Headers(requestInit.headers);
+          headers.delete("content-length");
+          headers.delete("content-type");
+          requestInit = {
+            ...requestInit,
+            method: "GET",
+            headers,
+            body: undefined,
+          };
+        }
+
+        currentUrl = redirectUrl;
+      }
     } catch {
       status = defaultNotificationHttpClient.isCircuitOpen(endpoint.url)
         ? "CIRCUIT_OPEN"
         : "FAILED";
     }
   }
+
+  logWebhookTelemetry("info", {
+    event: "webhook.delivery_redirect_telemetry",
+    endpointId: endpoint.id,
+    redirectHopCount,
+    status,
+  });
 
   await prisma.webhookDeliveryLog
     .create({
@@ -128,6 +239,7 @@ export async function deliverToEndpoint(
     endpointId: endpoint.id,
     status,
     statusCode,
+    details: { redirectHopCount },
   };
 }
 
@@ -139,12 +251,20 @@ export async function deliverWebhookEvent(
     ignoreNotificationWindow?: boolean;
     eventId?: string;
     onlyEndpointId?: string;
+    excludeEndpointIds?: string[];
   } = {},
 ): Promise<DeliveryResult[]> {
   const endpoints = await prisma.webhookEndpoint.findMany({
     where: options.onlyEndpointId
       ? { id: options.onlyEndpointId, userId }
-      : { userId, isActive: true, eventTypes: { has: type } },
+      : {
+          userId,
+          isActive: true,
+          eventTypes: { has: type },
+          ...(options.excludeEndpointIds?.length
+            ? { id: { notIn: options.excludeEndpointIds } }
+            : {}),
+        },
   });
   if (endpoints.length === 0) return [];
 

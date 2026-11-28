@@ -17,7 +17,12 @@ const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const VENUE_PHOTO_CACHE_NAME = "worksphere-venue-photos-v1";
+const VENUE_PHOTO_META_DB_NAME = "worksphere-venue-photo-cache-lru";
 const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
+const CACHE_VERSION = "v2";
+const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
+const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
+const PUBLIC_CACHEABLE_API_PREFIXES = ["/api/venues/public", "/api/health"];
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
@@ -162,9 +167,12 @@ self.addEventListener("activate", (event) => {
             .filter(
               (name) =>
                 name !== CACHE_NAME &&
+                name !== STATIC_CACHE_NAME &&
+                name !== RUNTIME_PUBLIC_CACHE_NAME &&
                 name !== IMAGE_CACHE_NAME &&
                 name !== MAP_TILE_CACHE_NAME &&
                 name !== VIDEO_CACHE_NAME &&
+                name !== VENUE_PHOTO_CACHE_NAME &&
                 name !== PREFETCH_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
@@ -188,30 +196,118 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Handle Cache-First for maps and images, Network-First for everything else
+/**
+ * Determines whether a request carries user-specific credentials or explicit
+ * non-cacheable directives and must bypass Service Worker runtime caches.
+ */
+function isAuthenticatedOrPrivateRequest(request, url) {
+  if (request.method !== "GET") {
+    return true;
+  }
+
+  // Protected user-scoped API routes must never be cached in shared browser storage
+  if (url.pathname.startsWith("/api/")) {
+    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+      url.pathname.startsWith(prefix),
+    );
+    if (!isAllowlistedPublic) {
+      return true;
+    }
+  }
+
+  // Check request headers for credentials or explicit no-store / no-cache directives
+  const authHeader = request.headers.get("Authorization");
+  const cookieHeader = request.headers.get("Cookie");
+  const cacheControl = (
+    request.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+
+  if (authHeader || cookieHeader) {
+    return true;
+  }
+
+  if (cacheControl.includes("no-store") || cacheControl.includes("private")) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks response headers to ensure personalized or no-store responses are never persisted.
+ */
+function isCacheablePublicResponse(response) {
+  if (!response || !response.ok || response.status !== 200) {
+    return false;
+  }
+
+  // Opaque responses (status 0) or credentialed Vary headers must not be cached
+  if (response.type === "opaque" || response.type === "opaqueredirect") {
+    return false;
+  }
+
+  const cacheControl = (
+    response.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+  if (
+    cacheControl.includes("no-store") ||
+    cacheControl.includes("private") ||
+    cacheControl.includes("no-cache")
+  ) {
+    return false;
+  }
+
+  const vary = (response.headers.get("Vary") || "").toLowerCase();
+  if (vary.includes("cookie") || vary.includes("authorization")) {
+    return false;
+  }
+
+  return true;
+}
+
+// Single coordinated fetch listener
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const { request } = event;
+  if (request.method !== "GET") {
     return;
   }
-  if (event.request.url.includes("/download")) {
+  if (request.url.includes("/download")) {
     return;
   }
 
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
+
+  // 1. Bypass Service Worker cache entirely for authenticated, cookie-bearing,
+  // Cache-Control: no-store/private, or non-allowlisted /api/* routes
+  if (isAuthenticatedOrPrivateRequest(request, url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // 2. Non-private requests: check prefetch cache first, then delegate to handleFetch
   event.respondWith(
     caches.open(PREFETCH_CACHE_NAME).then((prefetchCache) => {
-      return prefetchCache.match(event.request).then((prefetchedResponse) => {
+      return prefetchCache.match(request).then((prefetchedResponse) => {
         if (prefetchedResponse) {
           return prefetchedResponse;
         }
-        return handleFetch(event.request, event);
+        return handleFetch(request, event, url);
       });
     }),
   );
 });
 
-async function handleFetch(request, event) {
-  const isVenuesApi = request.url.includes("/api/venues");
-  const isReservationsApi = request.url.includes("/api/reservations/availability");
+async function handleFetch(request, event, url) {
+  const reqUrl = url || new URL(request.url);
+  const pathname = reqUrl.pathname;
+  const isAllowlistedPublicApi = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+    pathname.startsWith(prefix),
+  );
   const isMapTile =
     request.url.includes("tile.openstreetmap.org") ||
     request.url.includes("basemaps.cartocdn.com");
@@ -220,27 +316,19 @@ async function handleFetch(request, event) {
     request.url.includes("res.cloudinary.com") ||
     request.url.includes("images.pexels.com");
 
-  if (isVenuesApi || isReservationsApi) {
+  if (isAllowlistedPublicApi) {
     try {
       const response = await fetch(request);
       if (response.ok) {
         const cache = await caches.open(CACHE_NAME);
-        cache.put(request, response.clone());
+        await cacheApiMetadata(cache, request, response);
       }
       return response;
     } catch {
-      const cached = await caches.match(request);
+      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
+      const cached = await cache.match(request);
       if (cached) return cached;
-      if (isReservationsApi) {
-        return new Response(
-          JSON.stringify({ seats: [], offline: true, cached: true }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (isVenuesApi) {
+      if (pathname.startsWith("/api/venues/public")) {
         return new Response(
           JSON.stringify({ venues: [], offline: true, cached: true }),
           {
@@ -257,29 +345,47 @@ async function handleFetch(request, event) {
     if (cached) return cached;
     try {
       const networkResponse = await fetch(request);
+      // Guard: skip cache write for aborted/opaque error responses that can
+      // arise when the client-side AbortController cancels a prefetch after a
+      // rapid zoom change.  status === 0 on its own is acceptable (opaque
+      // cross-origin success), but we also reject any response whose body has
+      // already been consumed or whose signal was aborted.
       if (networkResponse.status === 200 || networkResponse.status === 0) {
-        cache.put(request, networkResponse.clone());
+        // cache.put is fire-and-forget; absorb any storage errors silently so
+        // an aborted or quota-exceeded write never surfaces as an unhandled
+        // rejection in the SW's global scope.
+        cache.put(request, networkResponse.clone()).catch((err) => {
+          if (err && err.name !== "AbortError") {
+            console.warn("[SW] Map tile cache.put failed:", err);
+          }
+        });
       }
       return networkResponse;
-    } catch {
+    } catch (err) {
+      // AbortError = tile prefetch was intentionally cancelled (zoom changed).
+      // Return a 204 No Content so the caller gets a clean response without
+      // triggering the offline fallback path or logging a spurious error.
+      if (err && err.name === "AbortError") {
+        return new Response(null, { status: 204 });
+      }
       return new Response("Map Tile Offline", { status: 503 });
     }
   } else if (isVenuePhoto) {
     const cache = await caches.open(VENUE_PHOTO_CACHE_NAME);
     const cached = await cache.match(request);
-    const revalidatePromise = fetch(request)
-      .then(async (networkResponse) => {
-        if (networkResponse && (networkResponse.status === 200 || networkResponse.status === 0)) {
-          await cache.put(request, networkResponse.clone());
-        }
-        return networkResponse;
-      })
-      .catch(() => null);
-
+    const revalidatePromise = revalidateVenuePhoto(cache, request).catch(
+      (err) => {
+        console.warn("[SW] Venue photo fetch or cache failed:", err);
+        return null;
+      },
+    );
     if (cached) {
       if (event && event.waitUntil) {
         event.waitUntil(revalidatePromise);
       }
+      touchVenuePhotoTimestamp(request.url).catch((err) => {
+        console.warn("[SW] Failed to update venue photo cache age:", err);
+      });
       return cached;
     }
     const fresh = await revalidatePromise;
@@ -330,10 +436,15 @@ async function handleFetch(request, event) {
       return new Response("Asset Offline", { status: 503 });
     }
   } else {
-    // Existing Network-First logic for local assets
+    // Existing Network-First logic for local assets and page navigations
     try {
       const response = await fetch(request);
-      if (response.ok && request.url.startsWith("http")) {
+      if (
+        response.ok &&
+        request.url.startsWith("http") &&
+        !pathname.startsWith("/api/") &&
+        isCacheablePublicResponse(response)
+      ) {
         const cache = await caches.open(CACHE_NAME);
         cache.put(request, response.clone());
       }
@@ -348,6 +459,247 @@ async function handleFetch(request, event) {
     }
   }
 }
+
+let venuePhotoDbPromise = null;
+let venuePhotoWriteQueue = Promise.resolve();
+
+function withVenuePhotoWriteLock(callback) {
+  const operation = venuePhotoWriteQueue.then(() => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.locks &&
+      typeof navigator.locks.request === "function"
+    ) {
+      return navigator.locks.request(
+        "worksphere-venue-photo-cache-write",
+        callback,
+      );
+    }
+    return callback();
+  });
+  venuePhotoWriteQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
+}
+
+function openVenuePhotoMetadataDb() {
+  if (venuePhotoDbPromise) return venuePhotoDbPromise;
+  venuePhotoDbPromise = new Promise((resolve, reject) => {
+    try {
+      const request = indexedDB.open(VENUE_PHOTO_META_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("entries")) {
+          request.result.createObjectStore("entries", { keyPath: "url" });
+        }
+      };
+      request.onsuccess = () => {
+        request.result.onversionchange = () => {
+          request.result.close();
+          venuePhotoDbPromise = null;
+        };
+        resolve(request.result);
+      };
+      request.onerror = () => {
+        venuePhotoDbPromise = null;
+        reject(request.error || new Error("Unable to open venue photo metadata"));
+      };
+    } catch (error) {
+      venuePhotoDbPromise = null;
+      reject(error);
+    }
+  });
+  return venuePhotoDbPromise;
+}
+
+function isQuotaExceededError(error) {
+  return (
+    error &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014)
+  );
+}
+
+async function writeVenuePhotoTimestamp(url) {
+  const db = await openVenuePhotoMetadataDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction("entries", "readwrite");
+    transaction.objectStore("entries").put({ url, lastAccessed: Date.now() });
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+async function touchVenuePhotoTimestamp(url) {
+  await withVenuePhotoWriteLock(() => writeVenuePhotoTimestamp(url));
+}
+
+async function readVenuePhotoTimestamps() {
+  const db = await openVenuePhotoMetadataDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("entries", "readonly");
+    const request = transaction.objectStore("entries").getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function evictOldestVenuePhotos(cache) {
+  const requests = (await cache.keys()).filter(
+    (request) =>
+      request.url.includes("res.cloudinary.com") ||
+      request.url.includes("images.pexels.com"),
+  );
+  if (requests.length === 0) return 0;
+
+  const records = await readVenuePhotoTimestamps();
+  const timestamps = new Map(
+    records.map((record) => [record.url, record.lastAccessed]),
+  );
+  const metadataDb = await openVenuePhotoMetadataDb();
+  const requestUrls = new Set(requests.map((request) => request.url));
+  const staleRecords = records.filter((record) => !requestUrls.has(record.url));
+  const unknownRequests = requests.filter(
+    (request) => !timestamps.has(request.url),
+  );
+
+  if (staleRecords.length > 0 || unknownRequests.length > 0) {
+    await new Promise((resolve, reject) => {
+      const transaction = metadataDb.transaction("entries", "readwrite");
+      const store = transaction.objectStore("entries");
+      for (const record of staleRecords) {
+        store.delete(record.url);
+      }
+      for (const request of unknownRequests) {
+        // Legacy cache entries without timestamps are treated as the oldest.
+        store.put({ url: request.url, lastAccessed: 0 });
+        timestamps.set(request.url, 0);
+      }
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  const evictionCount = Math.min(
+    requests.length,
+    Math.max(1, Math.ceil(requests.length * 0.2)),
+  );
+  const oldest = requests
+    .slice()
+    .sort(
+      (requestA, requestB) =>
+        (timestamps.get(requestA.url) || 0) -
+          (timestamps.get(requestB.url) || 0) ||
+        requestA.url.localeCompare(requestB.url),
+    )
+    .slice(0, evictionCount);
+  let evictedCount = 0;
+
+  for (const request of oldest) {
+    if (await cache.delete(request)) {
+      evictedCount += 1;
+      await new Promise((resolve, reject) => {
+        const transaction = metadataDb.transaction("entries", "readwrite");
+        transaction.objectStore("entries").delete(request.url);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }
+  }
+
+  return evictedCount;
+}
+
+function cacheVenuePhoto(cache, request, response) {
+  return withVenuePhotoWriteLock(async () => {
+    try {
+      await cache.put(request, response.clone());
+    } catch (error) {
+      if (!isQuotaExceededError(error)) throw error;
+
+      console.warn(
+        "[SW] Venue photo cache quota exceeded; evicting the oldest photos and retrying once.",
+      );
+      try {
+        await evictOldestVenuePhotos(cache);
+      } catch (evictionError) {
+        console.warn("[SW] Unable to evict venue photos after quota error:", evictionError);
+      }
+
+      try {
+        await cache.put(request, response.clone());
+      } catch (retryError) {
+        if (!isQuotaExceededError(retryError)) throw retryError;
+        console.warn(
+          "[SW] Venue photo cache retry still exceeded quota; serving the image without caching it.",
+        );
+        return false;
+      }
+    }
+
+    try {
+      await writeVenuePhotoTimestamp(request.url);
+    } catch (metadataError) {
+      console.warn("[SW] Failed to save venue photo cache age:", metadataError);
+    }
+    return true;
+  });
+}
+
+async function cacheApiMetadata(cache, request, response) {
+  try {
+    await cache.put(request, response.clone());
+    return;
+  } catch (error) {
+    if (!isQuotaExceededError(error)) {
+      console.warn(
+        "[SW] Failed to cache API metadata; returning the network response:",
+        error,
+      );
+      return;
+    }
+
+    console.warn(
+      "[SW] API metadata cache quota exceeded; evicting venue photos before retrying.",
+    );
+    try {
+      const photoCache = await caches.open(VENUE_PHOTO_CACHE_NAME);
+      await withVenuePhotoWriteLock(() => evictOldestVenuePhotos(photoCache));
+    } catch (evictionError) {
+      console.warn(
+        "[SW] Unable to free venue-photo storage for API metadata:",
+        evictionError,
+      );
+    }
+
+    try {
+      await cache.put(request, response.clone());
+    } catch (retryError) {
+      console.warn(
+        "[SW] API metadata cache retry failed; returning the network response:",
+        retryError,
+      );
+    }
+  }
+}
+
+async function revalidateVenuePhoto(cache, request) {
+  const networkResponse = await fetch(request);
+  if (
+    networkResponse &&
+    (networkResponse.status === 200 || networkResponse.status === 0)
+  ) {
+    await cacheVenuePhoto(cache, request, networkResponse);
+  }
+  return networkResponse;
+}
+
 // Background Sync for offline actions
 self.addEventListener("sync", (event) => {
   if (event.tag === "sync-crdt") {
@@ -371,6 +723,17 @@ self.addEventListener("sync", (event) => {
   }
   if (event.tag === AVAILABILITY_SYNC_TAG) {
     event.waitUntil(syncAvailability());
+  }
+
+  if (
+    event.tag === "sync-offline-mutations" ||
+    event.tag === "offline-mutation-sync"
+  ) {
+    event.waitUntil(syncOfflineMutations());
+  }
+
+  if (event.tag === "nomad-checkin-sync") {
+    event.waitUntil(syncNomadCheckins());
   }
 });
 
@@ -645,7 +1008,9 @@ async function syncPendingReviews() {
         // Acquire CSRF token from safe GET endpoint
         let csrfToken = "";
         try {
-          const csrfRes = await fetch("/api/auth/csrf-token", { credentials: "same-origin" });
+          const csrfRes = await fetch("/api/auth/csrf-token", {
+            credentials: "same-origin",
+          });
           if (csrfRes.ok) {
             const csrfData = await csrfRes.json();
             csrfToken = csrfData.csrfToken || "";
@@ -793,7 +1158,9 @@ async function syncPendingReviews() {
           }
         } catch (error) {
           if (isNetworkError(error)) {
-            console.warn(`[SW] syncPendingReviews: Network error for ${item.id} — preserving in queue.`);
+            console.warn(
+              `[SW] syncPendingReviews: Network error for ${item.id} — preserving in queue.`,
+            );
             item.status = "PENDING";
             const putTx = db.transaction("pendingReviews", "readwrite");
             putTx.objectStore("pendingReviews").put(item);
@@ -1036,6 +1403,340 @@ async function syncReceiptExports() {
   }
 }
 
+// Background Sync: process queued offline mutations with Decorrelated Jitter backoff (Issue #9618)
+let isSyncingOfflineMutations = false;
+let sw5xxDecorrelatedDelay = 1000;
+
+function calculateSWDecorrelatedJitter(prevDelay) {
+  const baseDelay = 1000;
+  const maxDelay = 30000;
+  const factor = 3;
+  const effectiveBase = Math.min(baseDelay, maxDelay);
+  const effectivePrev =
+    typeof prevDelay === "number" && prevDelay >= effectiveBase
+      ? prevDelay
+      : effectiveBase;
+  const ceiling = Math.min(maxDelay, effectivePrev * factor);
+  if (ceiling <= effectiveBase) return effectiveBase;
+  return Math.round(effectiveBase + (ceiling - effectiveBase) * Math.random());
+}
+
+function ensureSwMutationsSchema(db, tx) {
+  let store = null;
+  if (!db.objectStoreNames.contains("offline_mutations")) {
+    store = db.createObjectStore("offline_mutations", { keyPath: "id" });
+  } else if (tx) {
+    try {
+      store = tx.objectStore("offline_mutations");
+    } catch {}
+  }
+  if (store) {
+    if (!store.indexNames.contains("status")) {
+      store.createIndex("status", "status", { unique: false });
+    }
+    if (!store.indexNames.contains("timestamp")) {
+      store.createIndex("timestamp", "timestamp", { unique: false });
+    }
+  }
+}
+
+async function getOfflineMutationsFromDB() {
+  if (typeof indexedDB === "undefined") return [];
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 2);
+      req.onupgradeneeded = (e) => {
+        ensureSwMutationsSchema(e.target.result, e.target.transaction);
+      };
+      req.onblocked = () => {
+        console.warn("[SW] WorkSphereOfflineMutationsDB upgrade blocked");
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.close();
+          resolve([]);
+          return;
+        }
+        const tx = db.transaction("offline_mutations", "readonly");
+        const store = tx.objectStore("offline_mutations");
+        const getReq = store.getAll();
+        getReq.onsuccess = () => {
+          db.close();
+          resolve(getReq.result || []);
+        };
+        getReq.onerror = () => {
+          db.close();
+          resolve([]);
+        };
+      };
+      req.onerror = () => resolve([]);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function removeOfflineMutationFromDB(id) {
+  if (typeof indexedDB === "undefined") return;
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 2);
+      req.onupgradeneeded = (e) => {
+        ensureSwMutationsSchema(e.target.result, e.target.transaction);
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.close();
+          resolve();
+          return;
+        }
+        const tx = db.transaction("offline_mutations", "readwrite");
+        tx.objectStore("offline_mutations").delete(id);
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          resolve();
+        };
+      };
+      req.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function syncOfflineMutations() {
+  if (isSyncingOfflineMutations) return;
+  isSyncingOfflineMutations = true;
+
+  try {
+    await withIdbLock(async () => {
+      // 1. Process mutations from dedicated persistent offline_mutations store
+      try {
+        const persistentMutations = await getOfflineMutationsFromDB();
+        for (const mutation of persistentMutations) {
+          try {
+            const endpoint = mutation.endpoint || "/api/bookings";
+            const method = mutation.method || "POST";
+            const headers = {
+              "Content-Type": "application/json",
+              "X-Idempotency-Key": mutation.idempotencyKey || mutation.id,
+              ...(mutation.headers || {}),
+            };
+            const body =
+              method !== "DELETE" && mutation.payload !== undefined
+                ? typeof mutation.payload === "string"
+                  ? mutation.payload
+                  : JSON.stringify(mutation.payload)
+                : undefined;
+
+            const response = await fetch(endpoint, {
+              method,
+              headers,
+              body,
+            });
+
+            if (response.ok) {
+              await removeOfflineMutationFromDB(mutation.id);
+              sw5xxDecorrelatedDelay = 1000;
+            } else if (response.status >= 500 && response.status < 600) {
+              sw5xxDecorrelatedDelay = calculateSWDecorrelatedJitter(
+                sw5xxDecorrelatedDelay,
+              );
+              if (sw5xxDecorrelatedDelay > 0) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, sw5xxDecorrelatedDelay),
+                );
+              }
+            } else if (response.status >= 400 && response.status < 500) {
+              await removeOfflineMutationFromDB(mutation.id);
+            }
+          } catch (err) {
+            if (isNetworkError(err)) break;
+            console.error(
+              "[SW] Error syncing WorkSphereOfflineMutationsDB item:",
+              err,
+            );
+            break;
+          }
+        }
+      } catch {
+        // Continue to pendingActions
+      }
+
+      // 2. Process legacy pendingActions mutations
+      const db = await openIndexedDB();
+      const actions = await getPendingActions(db, [
+        "mutation",
+        "booking",
+        "booking-mutation",
+        "offline-mutation",
+      ]);
+
+      if (!actions || actions.length === 0) return;
+
+      for (const action of actions) {
+        try {
+          const endpoint = action.endpoint || action.url || "/api/bookings";
+          const method = action.method || "POST";
+          const headers = {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": action.idempotencyKey || String(action.id),
+            ...(action.headers || {}),
+          };
+
+          const body =
+            method !== "DELETE" && action.payload !== undefined
+              ? typeof action.payload === "string"
+                ? action.payload
+                : JSON.stringify(action.payload)
+              : undefined;
+
+          const response = await fetch(endpoint, {
+            method,
+            headers,
+            body,
+          });
+
+          if (response.ok) {
+            await removePendingAction(db, action.id);
+            sw5xxDecorrelatedDelay = 1000;
+          } else if (response.status >= 500 && response.status < 600) {
+            sw5xxDecorrelatedDelay = calculateSWDecorrelatedJitter(
+              sw5xxDecorrelatedDelay,
+            );
+            if (sw5xxDecorrelatedDelay > 0) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, sw5xxDecorrelatedDelay),
+              );
+            }
+          } else if (response.status >= 400 && response.status < 500) {
+            // Permanent client error: remove bad action to prevent toxic queue poison
+            await removePendingAction(db, action.id);
+          }
+        } catch (err) {
+          if (isNetworkError(err)) {
+            console.warn(
+              "[SW] syncOfflineMutations: Network error — preserving mutations for next sync.",
+            );
+            break;
+          }
+          console.error("[SW] Failed to sync offline mutation:", err);
+          break;
+        }
+      }
+    });
+  } catch (error) {
+    console.error("[SW] Offline mutations sync encountered error:", error);
+  } finally {
+    isSyncingOfflineMutations = false;
+  }
+}
+
+// Background Sync for offline desk check-ins (Issue #7427)
+let isSyncingCheckins = false;
+async function syncNomadCheckins() {
+  if (isSyncingCheckins) return;
+  isSyncingCheckins = true;
+  try {
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      if (!db.objectStoreNames.contains("pendingCheckins")) return;
+      const tx = db.transaction("pendingCheckins", "readonly");
+      const store = tx.objectStore("pendingCheckins");
+      const checkins = await new Promise((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+
+      const synced = [];
+      const failed = [];
+
+      for (const item of checkins) {
+        try {
+          const response = await fetch("/api/checkin", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": item.idempotencyKey,
+              "X-Client-Nonce": item.clientNonce,
+              "X-Signed-Timestamp": item.signedTimestamp,
+              "X-Device-Id": item.deviceId || "device_default",
+              "X-Protocol-Version": String(item.protocolVersion || 2),
+            },
+            body: JSON.stringify({
+              seatId: item.seatId,
+              venueId: item.venueId,
+              userId: item.userId,
+              timestamp: item.timestamp,
+              clientNonce: item.clientNonce,
+              signedTimestamp: item.signedTimestamp,
+              idempotencyKey: item.idempotencyKey,
+              deviceId: item.deviceId || "device_default",
+              protocolVersion: item.protocolVersion || 2,
+              signature: item.signature || item.signedTimestamp,
+            }),
+          });
+
+          if (response.ok || response.status === 409) {
+            const delTx = db.transaction("pendingCheckins", "readwrite");
+            delTx.objectStore("pendingCheckins").delete(item.id);
+            synced.push(item);
+          } else if (
+            response.status >= 400 &&
+            response.status < 500 &&
+            response.status !== 408 &&
+            response.status !== 429
+          ) {
+            const delTx = db.transaction("pendingCheckins", "readwrite");
+            delTx.objectStore("pendingCheckins").delete(item.id);
+            failed.push(item);
+          } else {
+            failed.push(item);
+          }
+        } catch {
+          failed.push(item);
+        }
+      }
+
+      if (typeof BroadcastChannel !== "undefined") {
+        try {
+          const channel = new BroadcastChannel("nomad-checkin-sync-channel");
+          channel.postMessage({
+            type: "NOMAD_CHECKIN_SYNC_COMPLETE",
+            tag: "nomad-checkin-sync",
+            syncedCount: synced.length,
+            failedCount: failed.length,
+            totalProcessed: checkins.length,
+            timestamp: Date.now(),
+          });
+          channel.close();
+        } catch {}
+      }
+    });
+  } catch (err) {
+    console.error("[SW] syncNomadCheckins error:", err);
+  } finally {
+    isSyncingCheckins = false;
+  }
+}
+
 // Periodic Background Sync: fetch seat availability for saved venues,
 // diff against last-known state, and show a notification when seats open up.
 let isSyncingAvailability = false;
@@ -1049,7 +1750,16 @@ async function syncAvailability() {
         credentials: "include",
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        console.warn("[SW] Availability sync skipped: unauthenticated session");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `[SW] Availability sync failed with status ${response.status}`,
+        );
+      }
 
       const { venues } = await response.json();
       if (!Array.isArray(venues) || venues.length === 0) return;
@@ -1135,7 +1845,16 @@ async function syncFavoriteVenuesOccupancy() {
         credentials: "include",
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        console.warn("[SW] Availability sync skipped: unauthenticated session");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `[SW] Availability sync failed with status ${response.status}`,
+        );
+      }
 
       const { venues } = await response.json();
       if (!Array.isArray(venues) || venues.length === 0) return;
@@ -1202,8 +1921,8 @@ async function syncFavoriteVenuesOccupancy() {
       const targetStore = storeNames.contains("favorites")
         ? "favorites"
         : storeNames.contains("venues")
-        ? "venues"
-        : null;
+          ? "venues"
+          : null;
 
       if (targetStore) {
         const tx = db.transaction(targetStore, "readwrite");
@@ -1227,7 +1946,9 @@ async function syncFavoriteVenuesOccupancy() {
         });
       }
 
-      console.log(`[SW] Successfully synced occupancy cache for ${venues.length} favorite venues`);
+      console.log(
+        `[SW] Successfully synced occupancy cache for ${venues.length} favorite venues`,
+      );
     });
   } catch (error) {
     console.error("[SW] Favorite venues occupancy sync failed:", error);
@@ -1236,16 +1957,96 @@ async function syncFavoriteVenuesOccupancy() {
   }
 }
 
-// IndexedDB helpers
+// IndexedDB helpers (synchronized with src/lib/offline/migrations/migrationRegistry.ts)
 let swDb = null;
+let swMigrationUpgradeInProgress = false;
+let swMigrationChannel = null;
+
+function initSwMigrationCoordination() {
+  if (typeof BroadcastChannel === "undefined" || swMigrationChannel) return;
+  try {
+    swMigrationChannel = new BroadcastChannel(
+      "worksphere:idb-migration-coordination",
+    );
+    swMigrationChannel.onmessage = (event) => {
+      const msg = event.data;
+      if (!msg || msg.dbName !== "worksphere-offline") return;
+      if (
+        msg.type === "UPGRADE_REQUESTED" ||
+        msg.type === "UPGRADE_BLOCKED" ||
+        msg.type === "CLOSE_CONNECTION"
+      ) {
+        swMigrationUpgradeInProgress = true;
+        if (swDb) {
+          try {
+            swDb.close();
+          } catch {}
+          swDb = null;
+        }
+        try {
+          swMigrationChannel.postMessage({
+            type: "CONNECTION_CLOSED",
+            dbName: "worksphere-offline",
+            targetVersion: msg.targetVersion,
+            senderId: "sw",
+            timestamp: Date.now(),
+          });
+        } catch {}
+      } else if (
+        msg.type === "UPGRADE_COMPLETED" ||
+        msg.type === "UPGRADE_FAILED"
+      ) {
+        swMigrationUpgradeInProgress = false;
+      }
+    };
+  } catch {
+    swMigrationChannel = null;
+  }
+}
+
+initSwMigrationCoordination();
+
 function openIndexedDB() {
+  if (swMigrationUpgradeInProgress && swDb) {
+    try {
+      swDb.close();
+    } catch {}
+    swDb = null;
+  }
   if (swDb) return Promise.resolve(swDb);
+
+  const ensureStore = (db, tx, name, keyOpts, indexes) => {
+    let store = null;
+    if (!db.objectStoreNames.contains(name)) {
+      store = db.createObjectStore(name, keyOpts);
+    } else if (tx) {
+      try {
+        store = tx.objectStore(name);
+      } catch {}
+    }
+    if (store && Array.isArray(indexes)) {
+      for (const idx of indexes) {
+        if (!store.indexNames.contains(idx.name)) {
+          store.createIndex(idx.name, idx.keyPath, {
+            unique: Boolean(idx.unique),
+          });
+        }
+      }
+    }
+  };
+
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 7);
+      const request = indexedDB.open("worksphere-offline", 9);
 
       request.onblocked = () => {
-        console.warn("[SW] IndexedDB upgrade blocked");
+        console.warn("[SW] IndexedDB upgrade blocked; yielding local handle");
+        if (swDb) {
+          try {
+            swDb.close();
+          } catch {}
+          swDb = null;
+        }
       };
 
       request.onerror = () => reject(request.error);
@@ -1253,7 +2054,9 @@ function openIndexedDB() {
       request.onsuccess = () => {
         swDb = request.result;
         swDb.onversionchange = () => {
-          swDb.close();
+          try {
+            swDb.close();
+          } catch {}
           swDb = null;
         };
         resolve(swDb);
@@ -1261,96 +2064,146 @@ function openIndexedDB() {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const tx = event.target.transaction;
+        const oldVersion = event.oldVersion || 0;
+        const newVersion = event.newVersion || 9;
 
-        // Venues store
-        if (!db.objectStoreNames.contains("venues")) {
-          const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
-          venuesStore.createIndex("type", "type", { unique: false });
-          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        if (tx) {
+          tx.onabort = (e) => {
+            console.warn("[SW] Upgrade transaction aborted", tx.error || e);
+          };
+          tx.onerror = (e) => {
+            console.warn("[SW] Upgrade transaction error", tx.error || e);
+          };
         }
 
-        // Favorites store
-        if (!db.objectStoreNames.contains("favorites")) {
-          const favoritesStore = db.createObjectStore("favorites", {
-            keyPath: "id",
-          });
-          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+          if (swDb === db) swDb = null;
+        };
 
-        // Search history store
-        if (!db.objectStoreNames.contains("searches")) {
-          const searchesStore = db.createObjectStore("searches", {
-            keyPath: "query",
-          });
-          searchesStore.createIndex("timestamp", "timestamp", {
-            unique: false,
-          });
-        }
+        const steps = [
+          {
+            version: 1,
+            run: () => {
+              ensureStore(db, tx, "venues", { keyPath: "id" }, [
+                { name: "type", keyPath: "type" },
+                { name: "savedAt", keyPath: "savedAt" },
+              ]);
+              ensureStore(db, tx, "favorites", { keyPath: "id" }, [
+                { name: "savedAt", keyPath: "savedAt" },
+              ]);
+              ensureStore(db, tx, "searches", { keyPath: "query" }, [
+                { name: "timestamp", keyPath: "timestamp" },
+              ]);
+              ensureStore(db, tx, "pendingActions", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            },
+          },
+          {
+            version: 2,
+            run: () => {
+              ensureStore(db, tx, "imageCacheLRU", { keyPath: "url" }, [
+                { name: "lastAccessed", keyPath: "lastAccessed" },
+              ]);
+            },
+          },
+          {
+            version: 3,
+            run: () => {
+              ensureStore(db, tx, "receiptExports", { keyPath: "bookingId" }, [
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+            },
+          },
+          {
+            version: 4,
+            run: () => {
+              if (db.objectStoreNames.contains("pending-actions")) {
+                db.deleteObjectStore("pending-actions");
+              }
+              ensureStore(db, tx, "pendingFavorites", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            },
+          },
+          {
+            version: 5,
+            run: () => {
+              ensureStore(
+                db,
+                tx,
+                "availabilityDeltas",
+                { keyPath: "venueId" },
+                [{ name: "timestamp", keyPath: "timestamp" }],
+              );
+            },
+          },
+          {
+            version: 6,
+            run: () => {
+              ensureStore(db, tx, "recentlyViewedVenues", { keyPath: "id" }, [
+                { name: "viewedAt", keyPath: "viewedAt" },
+              ]);
+            },
+          },
+          {
+            version: 7,
+            run: () => {
+              ensureStore(db, tx, "pendingReviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+              ensureStore(db, tx, "preference_rankings", { keyPath: "id" });
+              ensureStore(db, tx, "queued_reviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+              ensureStore(db, tx, "unsyncedReviewDrafts", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "review.venueId" },
+                { name: "quarantinedAt", keyPath: "quarantinedAt" },
+              ]);
+            },
+          },
+          {
+            version: 8,
+            run: () => {
+              ensureStore(db, tx, "pendingReviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+            },
+          },
+          {
+            version: 9,
+            run: () => {
+              ensureStore(db, tx, "pendingCheckins", { keyPath: "id" }, [
+                { name: "seatId", keyPath: "seatId" },
+                {
+                  name: "idempotencyKey",
+                  keyPath: "idempotencyKey",
+                  unique: true,
+                },
+                { name: "status", keyPath: "status" },
+                { name: "timestamp", keyPath: "timestamp" },
+              ]);
+            },
+          },
+        ];
 
-        // Migration
-        if (db.objectStoreNames.contains("pending-actions")) {
-          db.deleteObjectStore("pending-actions");
-        }
-
-        // Pending actions store (unified name)
-        if (!db.objectStoreNames.contains("pendingActions")) {
-          db.createObjectStore("pendingActions", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Image Cache LRU store
-        if (!db.objectStoreNames.contains("imageCacheLRU")) {
-          const lruStore = db.createObjectStore("imageCacheLRU", {
-            keyPath: "url",
-          });
-          lruStore.createIndex("lastAccessed", "lastAccessed", {
-            unique: false,
-          });
-        }
-
-        // Receipt exports store for offline background sync (Issue #1069)
-        if (!db.objectStoreNames.contains("receiptExports")) {
-          const receiptStore = db.createObjectStore("receiptExports", {
-            keyPath: "bookingId",
-          });
-          receiptStore.createIndex("status", "status", { unique: false });
-          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Pending favorites store
-        if (!db.objectStoreNames.contains("pendingFavorites")) {
-          db.createObjectStore("pendingFavorites", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Availability deltas store for periodic background sync (Issue #1126)
-        if (!db.objectStoreNames.contains("availabilityDeltas")) {
-          const deltaStore = db.createObjectStore("availabilityDeltas", {
-            keyPath: "venueId",
-          });
-          deltaStore.createIndex("timestamp", "timestamp", { unique: false });
-        }
-
-// Recently viewed venues store (Issue #3512)
-        if (!db.objectStoreNames.contains("recentlyViewedVenues")) {
-          const recentStore = db.createObjectStore("recentlyViewedVenues", {
-            keyPath: "id",
-          });
-          recentStore.createIndex("viewedAt", "viewedAt", { unique: false });
-        }
-
-        // Dedicated offline reviews store (Issue #3366)
-        if (!db.objectStoreNames.contains("pendingReviews")) {
-          const reviewStore = db.createObjectStore("pendingReviews", {
-            keyPath: "id",
-          });
-          reviewStore.createIndex("venueId", "venueId", { unique: false });
-          reviewStore.createIndex("status", "status", { unique: false });
-          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
+        for (const step of steps) {
+          if (step.version > oldVersion && step.version <= newVersion) {
+            step.run();
+          }
         }
       };
     } catch (err) {
@@ -1518,6 +2371,48 @@ self.addEventListener("push", (event) => {
   }
 });
 
+/**
+ * Purges all dynamic runtime caches (and optionally static caches) to guarantee
+ * zero cross-user data leakage on shared coworking terminals.
+ */
+async function purgeDynamicRuntimeCaches() {
+  const cacheKeys = await caches.keys();
+  const deletions = cacheKeys
+    .filter((key) => key !== STATIC_CACHE_NAME)
+    .map((key) => caches.delete(key));
+
+  await Promise.all(deletions);
+}
+
+self.addEventListener("message", (event) => {
+  const payload = event.data;
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  if (payload.type === "SIGN_OUT" || payload.type === "PURGE_RUNTIME_CACHES") {
+    event.waitUntil(
+      (async () => {
+        await purgeDynamicRuntimeCaches();
+        if (event.ports && event.ports[0]) {
+          event.ports[0].postMessage({ ok: true, purged: true });
+        }
+      })(),
+    );
+  }
+});
+
+// Export helpers when imported in Node/Jest unit test environments
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    STATIC_CACHE_NAME,
+    RUNTIME_PUBLIC_CACHE_NAME,
+    PUBLIC_CACHEABLE_API_PREFIXES,
+    isAuthenticatedOrPrivateRequest,
+    isCacheablePublicResponse,
+    purgeDynamicRuntimeCaches,
+  };
+}
 // Notification click handler — navigate to the target venue page
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
@@ -1652,7 +2547,7 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
         for (const record of toEvict) {
           await cache.delete(record.url);
         }
-        
+
         console.log(
           `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
         );

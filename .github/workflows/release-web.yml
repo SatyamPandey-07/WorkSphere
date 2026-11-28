@@ -1,0 +1,294 @@
+name: Web Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish web release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Extract release tag
+        id: release_version
+        shell: bash
+        run: |
+          if [[ -z "${GITHUB_REF_NAME:-}" ]]; then
+            echo "::error::GITHUB_REF_NAME is empty; this workflow must run for a version tag."
+            exit 1
+          fi
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web application
+        env:
+          NEXT_PUBLIC_APP_VERSION: ${{ steps.release_version.outputs.tag }}
+        run: npm run build
+
+      - name: Verify compiled health version
+        env:
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          health_file="$RUNNER_TEMP/worksphere-health.json"
+          server_log="$RUNNER_TEMP/worksphere-next-start.log"
+          ./node_modules/.bin/next start --hostname 127.0.0.1 --port 3100 \
+            >"$server_log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          health_ready=false
+          for attempt in {1..30}; do
+            if curl --silent --fail \
+              http://127.0.0.1:3100/api/health \
+              --output "$health_file"; then
+              health_ready=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "$health_ready" != true ]]; then
+            echo "::error::The compiled app health endpoint did not respond at /api/health. Check the production server startup and health route."
+            exit 1
+          fi
+
+          node - "$health_file" "$RELEASE_TAG" <<'NODE'
+          const fs = require('node:fs');
+
+          const healthPath = process.argv[2];
+          const expectedVersion = process.argv[3];
+          let health;
+          try {
+            health = JSON.parse(fs.readFileSync(healthPath, 'utf8'));
+          } catch {
+            console.error('::error::The compiled /api/health response was missing or malformed JSON.');
+            process.exit(1);
+          }
+
+          const reportedVersion =
+            health && typeof health === 'object' ? health.version : undefined;
+          if (typeof reportedVersion !== 'string' || reportedVersion.length === 0) {
+            console.error('::error::The compiled /api/health response is missing its string "version" field.');
+            process.exit(1);
+          }
+          if (reportedVersion !== expectedVersion) {
+            console.error(
+              `::error::Compiled app version "${reportedVersion}" does not match release tag "${expectedVersion}". Rebuild with NEXT_PUBLIC_APP_VERSION set to GITHUB_REF_NAME.`,
+            );
+            process.exit(1);
+          }
+
+          console.log(`Verified compiled app version ${reportedVersion}.`);
+          NODE
+
+      - name: Package release artifacts
+        id: package
+        env:
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release
+          archive="worksphere-web-${RELEASE_TAG}.tar.gz"
+          release_paths=(.next public package.json)
+          for optional_path in package-lock.json next.config.js next.config.mjs next.config.ts; do
+            if [ -e "$optional_path" ]; then
+              release_paths+=("$optional_path")
+            fi
+          done
+          tar -czf "release/${archive}" "${release_paths[@]}"
+
+          build_timestamp="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          archive_sha256="$(sha256sum "release/${archive}" | cut -d ' ' -f 1)"
+          archive_size="$(stat -c '%s' "release/${archive}")"
+          export RELEASE_TAG COMMIT_SHA build_timestamp archive archive_sha256 archive_size
+
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const manifest = {
+            version: process.env.RELEASE_TAG.replace(/^v/, ''),
+            tag: process.env.RELEASE_TAG,
+            commit: process.env.COMMIT_SHA,
+            builtAt: process.env.build_timestamp,
+            artifacts: [{
+              name: process.env.archive,
+              path: `release/${process.env.archive}`,
+              sizeBytes: Number(process.env.archive_size),
+              sha256: process.env.archive_sha256,
+            }],
+          };
+
+          fs.writeFileSync(
+            'release/build-manifest.json',
+            `${JSON.stringify(manifest, null, 2)}\n`,
+          );
+          NODE
+
+          (
+            cd release
+            sha256sum "$archive" build-manifest.json > SHA256SUMS.txt
+          )
+
+          echo "archive=release/${archive}" >> "$GITHUB_OUTPUT"
+          if [[ "$RELEASE_TAG" != *-* ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.package.outputs.prerelease }}
+
+      - name: Upload release assets with retry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_id="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            --jq '.id')"
+          assets=(
+            "release/worksphere-web-${RELEASE_TAG}.tar.gz"
+            "release/SHA256SUMS.txt"
+            "release/build-manifest.json"
+          )
+          max_attempts=5
+
+          asset_state() {
+            local asset_name="$1"
+            local asset_size="$2"
+            local asset_list
+            if ! asset_list="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+              2>/dev/null)"; then
+              return 1
+            fi
+            printf '%s' "$asset_list" | jq -e \
+              --arg name "$asset_name" \
+              --argjson size "$asset_size" \
+              '[
+                .[] | select(.name == $name)
+              ] as $matches |
+              if ($matches | length) == 0 then "missing"
+              elif any($matches[]; .state == "uploaded" and .size == $size) then "uploaded"
+              else "conflict"
+              end' -r
+          }
+
+          for asset_path in "${assets[@]}"; do
+            if [[ ! -f "$asset_path" ]]; then
+              echo "::error::Release asset is missing: ${asset_path}"
+              exit 1
+            fi
+
+            asset_name="$(basename "$asset_path")"
+            asset_size="$(stat -c '%s' "$asset_path")"
+            state="$(asset_state "$asset_name" "$asset_size" || true)"
+            if [[ "$state" == "uploaded" ]]; then
+              echo "Release asset already uploaded: ${asset_name}"
+              continue
+            elif [[ "$state" == "conflict" ]]; then
+              echo "::error::A release asset named ${asset_name} already exists with a different size or incomplete upload."
+              exit 1
+            fi
+
+            encoded_name="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$asset_name")"
+            upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${encoded_name}"
+            content_type="application/octet-stream"
+            case "$asset_name" in
+              *.tar.gz) content_type="application/gzip" ;;
+              *.txt) content_type="text/plain" ;;
+              *.json) content_type="application/json" ;;
+            esac
+
+            uploaded=false
+            for attempt in $(seq 1 "$max_attempts"); do
+              response_file="$RUNNER_TEMP/release-upload-response.json"
+              curl_exit=0
+              http_status="$(curl \
+                --silent \
+                --show-error \
+                --connect-timeout 30 \
+                --max-time 900 \
+                --output "$response_file" \
+                --write-out '%{http_code}' \
+                --request POST \
+                --header "Authorization: Bearer ${GH_TOKEN}" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Content-Type: ${content_type}" \
+                --data-binary "@${asset_path}" \
+                "$upload_url")" || curl_exit=$?
+
+              if [[ "$curl_exit" -eq 0 && "$http_status" == "201" ]]; then
+                uploaded=true
+                break
+              fi
+
+              transient=false
+              if [[ "$curl_exit" -ne 0 ]]; then
+                transient=true
+                echo "Transient network error uploading ${asset_name} (attempt ${attempt}/${max_attempts})."
+              else
+                case "$http_status" in
+                  408|429|500|502|503|504)
+                    transient=true
+                    echo "Transient HTTP ${http_status} uploading ${asset_name} (attempt ${attempt}/${max_attempts})."
+                    ;;
+                  *)
+                    echo "::error::Upload of ${asset_name} failed with non-retryable HTTP ${http_status}."
+                    exit 1
+                    ;;
+                esac
+              fi
+
+              state="$(asset_state "$asset_name" "$asset_size" || true)"
+              if [[ "$state" == "uploaded" ]]; then
+                uploaded=true
+                echo "Confirmed ${asset_name} was uploaded despite a lost response."
+                break
+              elif [[ "$state" == "conflict" ]]; then
+                echo "::error::Upload of ${asset_name} left an incomplete or conflicting release asset."
+                exit 1
+              fi
+
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                delay=$((2 ** attempt))
+                if [[ "$delay" -gt 30 ]]; then
+                  delay=30
+                fi
+                echo "Retrying ${asset_name} in ${delay}s."
+                sleep "$delay"
+              fi
+            done
+
+            if [[ "$uploaded" != true ]]; then
+              echo "::error::Failed to upload ${asset_name} after ${max_attempts} attempts. Check GitHub Release upload service availability and retry the workflow."
+              exit 1
+            fi
+          done

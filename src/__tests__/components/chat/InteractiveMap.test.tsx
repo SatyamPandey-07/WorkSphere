@@ -1,6 +1,10 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { InteractiveMap, InteractiveMapMarker } from "@/components/chat/InteractiveMap";
+import { act, render, screen, fireEvent } from "@testing-library/react";
+import {
+  InteractiveMap,
+  InteractiveMapMarker,
+  isTouchOnlyDevice,
+} from "../../../components/chat/InteractiveMap";
 
 // Mock react-leaflet components for fast, reliable unit testing
 jest.mock("react-leaflet", () => ({
@@ -67,6 +71,23 @@ jest.mock("react-leaflet", () => ({
   Popup: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="mock-popup">{children}</div>
   ),
+  Circle: ({
+    center,
+    radius,
+    pathOptions,
+  }: {
+    center: [number, number];
+    radius: number;
+    pathOptions?: Record<string, unknown>;
+  }) => (
+    <div
+      data-testid="mock-geofence-circle"
+      data-lat={center[0]}
+      data-lng={center[1]}
+      data-radius={radius}
+      data-color={String(pathOptions?.color ?? "")}
+    />
+  ),
 }));
 
 // Mock leaflet icon fix
@@ -77,6 +98,7 @@ jest.mock("leaflet", () => {
   (DefaultIcon as any).mergeOptions = mockMerge;
   return {
     Icon: { Default: DefaultIcon },
+    divIcon: jest.fn((options: unknown) => options),
   };
 });
 
@@ -240,17 +262,296 @@ describe("InteractiveMap Component", () => {
     });
   });
 
-  describe("Keyboard Event Handlers", () => {
-    it("provides accessible keydown event handler for Enter and Space to open popup", () => {
-      const markers: InteractiveMapMarker[] = [
-        { lat: 35.6762, lng: 139.6503, name: "Tokyo Desk" },
-      ];
+  describe("Checked-in Geofence Indicator", () => {
+    let watchSuccess: ((position: GeolocationPosition) => void) | null = null;
+    let watchError: ((error: GeolocationPositionError) => void) | null = null;
 
-      render(<InteractiveMap markers={markers} />);
+    beforeEach(() => {
+      watchSuccess = null;
+      watchError = null;
+      Object.defineProperty(global.navigator, "geolocation", {
+        configurable: true,
+        value: {
+          watchPosition: jest.fn((success, error) => {
+            watchSuccess = success;
+            watchError = error;
+            return 42;
+          }),
+          clearWatch: jest.fn(),
+        },
+      });
+    });
 
-      // Find marker component and trigger event handler directly
-      expect(screen.getByTestId("mock-marker")).toBeInTheDocument();
-      expect(screen.getByTestId("map-header")).toBeInTheDocument();
+    it("renders a 250 meter circle for an active checked-in booking", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194, name: "Test Venue" }]}
+          activeBooking={{
+            id: "booking-1",
+            status: "CHECKED_IN",
+            venue: {
+              name: "Test Venue",
+              latitude: 37.7749,
+              longitude: -122.4194,
+            },
+          }}
+        />,
+      );
+
+      const circle = screen.getByTestId("mock-geofence-circle");
+      expect(circle).toHaveAttribute("data-lat", "37.7749");
+      expect(circle).toHaveAttribute("data-lng", "-122.4194");
+      expect(circle).toHaveAttribute("data-radius", "250");
+    });
+
+    it("does not render a geofence without an active checked-in booking", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={null}
+        />,
+      );
+      expect(screen.queryByTestId("mock-geofence-circle")).not.toBeInTheDocument();
+    });
+
+    it("does not render a geofence for invalid venue coordinates", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={{
+            status: "CHECKED_IN",
+            venue: { latitude: 95, longitude: -122.4194 },
+          }}
+        />,
+      );
+      expect(screen.queryByTestId("mock-geofence-circle")).not.toBeInTheDocument();
+    });
+
+    it("updates inside and outside visual state as location changes", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={{
+            status: "CHECKED_IN",
+            venue: { latitude: 37.7749, longitude: -122.4194 },
+          }}
+        />,
+      );
+
+      act(() => {
+        watchSuccess?.({
+          coords: {
+            latitude: 37.7752,
+            longitude: -122.4194,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      expect(screen.getByTestId("geofence-status")).toHaveTextContent(
+        "Inside checkout boundary",
+      );
+
+      act(() => {
+        watchSuccess?.({
+          coords: {
+            latitude: 37.7794,
+            longitude: -122.4194,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      expect(screen.getByTestId("geofence-status")).toHaveTextContent(
+        "Outside checkout boundary",
+      );
+      expect(screen.getByTestId("mock-geofence-circle")).toHaveAttribute(
+        "data-color",
+        "#fb7185",
+      );
+    });
+
+    it("handles geolocation errors and cleans up the watcher", () => {
+      const { unmount } = render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={{
+            status: "CHECKED_IN",
+            venue: { latitude: 37.7749, longitude: -122.4194 },
+          }}
+        />,
+      );
+
+      act(() => {
+        watchError?.({
+          code: 1,
+          message: "Permission denied",
+          PERMISSION_DENIED: 1,
+          POSITION_UNAVAILABLE: 2,
+          TIMEOUT: 3,
+        } as GeolocationPositionError);
+      });
+
+      expect(screen.getByTestId("geofence-status")).toHaveTextContent(
+        "Location permission denied.",
+      );
+      unmount();
+      expect(navigator.geolocation.clearWatch).toHaveBeenCalledWith(42);
+    });
+  });
+
+  describe("Keyboard Event Handlers & Navigation Overlay Badges", () => {
+    it("renders subtle monospace keyboard badges on navigation controls", () => {
+      render(<InteractiveMap markers={[{ lat: 10, lng: 10, name: "Test" }]} />);
+
+      // Verify zoom-in badge
+      const kbdZoomIn = screen.getByTestId("kbd-zoom-in");
+      expect(kbdZoomIn).toBeInTheDocument();
+      expect(kbdZoomIn).toHaveTextContent("+");
+      expect(kbdZoomIn).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
+
+      // Verify zoom-out badge
+      const kbdZoomOut = screen.getByTestId("kbd-zoom-out");
+      expect(kbdZoomOut).toBeInTheDocument();
+      expect(kbdZoomOut).toHaveTextContent("-");
+      expect(kbdZoomOut).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
+
+      // Verify reset-view badge
+      const kbdReset = screen.getByTestId("kbd-reset-view");
+      expect(kbdReset).toBeInTheDocument();
+      expect(kbdReset).toHaveTextContent("R");
+      expect(kbdReset).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
+
+      // Verify high-contrast badge
+      const kbdContrast = screen.getByTestId("kbd-high-contrast");
+      expect(kbdContrast).toBeInTheDocument();
+      expect(kbdContrast).toHaveTextContent("H");
+      expect(kbdContrast).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
+    });
+
+    it("handles global keydown actions for +, -, H, and R", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 10, lng: 10, name: "Test" }]}
+          zoom={13}
+        />,
+      );
+
+      const mapContainer = screen.getByTestId("mock-map-container");
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+
+      // Zoom in using '+' key
+      fireEvent.keyDown(window, { key: "+" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "14");
+
+      // Zoom out using '-' key
+      fireEvent.keyDown(window, { key: "-" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+
+      // Toggle high contrast using 'H' key
+      const highContrastBtn = screen.getByTestId("map-high-contrast-btn");
+      expect(highContrastBtn).toHaveAttribute("aria-pressed", "false");
+      fireEvent.keyDown(window, { key: "h" });
+      expect(highContrastBtn).toHaveAttribute("aria-pressed", "true");
+
+      // Reset view using 'R' key
+      fireEvent.keyDown(window, { key: "+" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "14");
+      fireEvent.keyDown(window, { key: "r" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+    });
+
+    it("ignores global keydown shortcuts when typing in an input element", () => {
+      render(
+        <div>
+          <input data-testid="test-input" type="text" />
+          <InteractiveMap
+            markers={[{ lat: 10, lng: 10, name: "Test" }]}
+            zoom={13}
+          />
+        </div>,
+      );
+
+      const input = screen.getByTestId("test-input");
+      const mapContainer = screen.getByTestId("mock-map-container");
+
+      fireEvent.keyDown(input, { key: "+" });
+      // Zoom should remain unchanged because input was focused
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+    });
+
+    it("isTouchOnlyDevice helper detects touch-only vs fine pointer", () => {
+      const originalMatchMedia = window.matchMedia;
+
+      // Simulate touch-only device (coarse pointer, no fine pointer)
+      window.matchMedia = jest.fn().mockImplementation((query) => ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+      }));
+
+      expect(isTouchOnlyDevice()).toBe(true);
+
+      // Simulate desktop (fine pointer)
+      window.matchMedia = jest.fn().mockImplementation((query) => ({
+        matches: query === "(pointer: fine)",
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+      }));
+
+      expect(isTouchOnlyDevice()).toBe(false);
+
+      window.matchMedia = originalMatchMedia;
+    });
+
+    it("keeps navigation controls and reset view clear of map attribution with 44px touch target (#7144)", () => {
+      render(<InteractiveMap markers={[{ lat: 10, lng: 10, name: "Test" }]} />);
+
+      const navControls = screen.getByTestId("map-navigation-controls");
+      expect(navControls).toHaveClass(
+        "bottom-8",
+        "right-4",
+        "sm:bottom-4",
+        "backdrop-blur-sm",
+        "shadow-md",
+      );
+
+      const resetBtn = screen.getByTestId("map-reset-view-btn");
+      expect(resetBtn).toHaveClass("min-h-11", "min-w-11");
     });
   });
 });

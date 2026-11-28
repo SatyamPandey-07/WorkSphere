@@ -16,7 +16,11 @@ import {
   Volume2,
   VolumeX,
   Loader2,
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
 } from "lucide-react";
+import type { PeerTelemetry } from "@/hooks/useMeshDataChannels";
 
 export interface MeshCallGridProps {
   /** Session slug used as PartyKit room ID */
@@ -31,6 +35,97 @@ export interface MeshCallGridProps {
   reloadOnLeave?: boolean;
   /** Custom reload handler invoked when reloadOnLeave is true (defaults to window.location.reload) */
   onReload?: () => void;
+  /** Optional telemetry map per remote peer for RTT, packet loss & bitrate */
+  peerTelemetry?: Record<string, PeerTelemetry>;
+}
+
+export function PeerSignalIndicator({ telemetry }: { telemetry?: PeerTelemetry }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const quality = telemetry?.quality ?? "unknown";
+
+  const getDetails = () => {
+    switch (quality) {
+      case "good":
+        return {
+          icon: <SignalHigh className="h-3 w-3 text-emerald-400" aria-hidden="true" />,
+          bgColor: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
+          label: "Good",
+        };
+      case "fair":
+        return {
+          icon: <SignalMedium className="h-3 w-3 text-amber-400" aria-hidden="true" />,
+          bgColor: "bg-amber-500/15 border-amber-500/30 text-amber-300",
+          label: "Fair",
+        };
+      case "poor":
+        return {
+          icon: <SignalLow className="h-3 w-3 text-rose-400" aria-hidden="true" />,
+          bgColor: "bg-rose-500/15 border-rose-500/30 text-rose-300",
+          label: "Poor",
+        };
+      default:
+        return {
+          icon: <SignalMedium className="h-3 w-3 text-zinc-400" aria-hidden="true" />,
+          bgColor: "bg-zinc-800/80 border-white/10 text-zinc-400",
+          label: "Unknown",
+        };
+    }
+  };
+
+  const details = getDetails();
+
+  const rttText =
+    typeof telemetry?.rttMs === "number" ? `${Math.round(telemetry.rttMs)} ms RTT` : "RTT: N/A";
+
+  const lossText =
+    telemetry?.packetLossPercent !== null && telemetry?.packetLossPercent !== undefined
+      ? `${telemetry.packetLossPercent.toFixed(1)}% loss (${telemetry.packetLossSource})`
+      : "Loss: N/A (DataChannel native loss unavailable)";
+
+  const bitrateText = telemetry?.bitrateBps
+    ? `Bitrate: ↑${Math.round(telemetry.bitrateBps.sent / 1000)} kbps · ↓${Math.round(
+        telemetry.bitrateBps.received / 1000,
+      )} kbps`
+    : "Bitrate: measuring...";
+
+  const tooltipText = `${details.label} connection · ${rttText} · ${lossText} · ${bitrateText}`;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+      onFocus={() => setShowTooltip(true)}
+      onBlur={() => setShowTooltip(false)}
+      tabIndex={0}
+      data-testid="peer-signal-indicator"
+      aria-label={tooltipText}
+    >
+      <div
+        className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-medium backdrop-blur-sm transition-colors ${details.bgColor}`}
+      >
+        {details.icon}
+        {typeof telemetry?.rttMs === "number" && (
+          <span className="font-mono text-[9px]">{Math.round(telemetry.rttMs)}ms</span>
+        )}
+      </div>
+
+      {showTooltip && (
+        <div
+          role="tooltip"
+          data-testid="peer-signal-tooltip"
+          className="absolute bottom-full right-0 z-50 mb-1.5 w-48 rounded-lg border border-zinc-700 bg-zinc-900/95 p-2 text-[10px] text-zinc-200 shadow-xl backdrop-blur-sm pointer-events-none"
+        >
+          <div className="font-semibold text-zinc-100 mb-0.5">
+            {details.label} Connection Quality
+          </div>
+          <div>{rttText}</div>
+          <div className="text-[9px] text-zinc-400">{lossText}</div>
+          <div className="text-[9px] text-zinc-300 mt-0.5">{bitrateText}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -44,6 +139,7 @@ export function MeshCallGrid({
   onLeave,
   reloadOnLeave = false,
   onReload,
+  peerTelemetry,
 }: MeshCallGridProps) {
   const { user } = useUser();
   const [isJoined, setIsJoined] = useState(false);
@@ -84,6 +180,7 @@ export function MeshCallGrid({
       audioEnabled: boolean;
       videoEnabled: boolean;
       isSpeaking: boolean;
+      telemetry?: PeerTelemetry;
     }> = [];
 
     // Local peer
@@ -125,6 +222,7 @@ export function MeshCallGrid({
           audioEnabled: remoteAudioEnabled,
           videoEnabled: true,
           isSpeaking: level > 0.15 && remoteAudioEnabled,
+          telemetry: peerTelemetry?.[peerId],
         });
       }
     }
@@ -140,6 +238,7 @@ export function MeshCallGrid({
     isMuteAll,
     user,
     hostId,
+    peerTelemetry,
   ]);
 
   const handleJoin = useCallback(() => {
@@ -254,6 +353,11 @@ export function MeshCallGrid({
                 audioEnabled={peer.audioEnabled}
                 videoEnabled={peer.videoEnabled}
                 isSpeaking={peer.isSpeaking}
+                actions={
+                  !peer.isLocal ? (
+                    <PeerSignalIndicator telemetry={peer.telemetry} />
+                  ) : undefined
+                }
               />
             ))}
           </div>

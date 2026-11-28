@@ -15,6 +15,38 @@ export interface TokenBucketOptions {
   store?: MemoryRateLimitStore;
 }
 
+/**
+ * Upstash reset values are expected to be absolute epoch milliseconds. Redis
+ * PTTL-style sentinel values (-1/-2), NaN, infinities, strings that do not
+ * parse, and timestamps already in the past must never be treated as a valid
+ * reset time: doing so can make clients assume the bucket has already refilled.
+ * Fall back to one configured window from now in those cases.
+ */
+export function normalizeRedisResetAt(
+  resetValue: unknown,
+  nowMs: number,
+  fallbackWindowMs: number,
+): number {
+  const candidate =
+    typeof resetValue === "number"
+      ? resetValue
+      : typeof resetValue === "string" && resetValue.trim() !== ""
+        ? Number(resetValue)
+        : Number.NaN;
+
+  const safeNow = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const safeWindow =
+    Number.isFinite(fallbackWindowMs) && fallbackWindowMs > 0
+      ? fallbackWindowMs
+      : 60_000;
+
+  if (!Number.isFinite(candidate) || candidate <= safeNow) {
+    return safeNow + safeWindow;
+  }
+
+  return candidate;
+}
+
 export class TokenBucketLimiter implements IRateLimiter {
   readonly limit: number;
   readonly windowMs: number;
@@ -70,7 +102,7 @@ export class TokenBucketLimiter implements IRateLimiter {
           const edgeRedis = await import("@upstash/redis/cloudflare");
           RedisClass = edgeRedis.Redis;
         } catch {
-          const defaultRedis = await import("@upstash/redis");
+          const defaultRedis = await import("@upstash/redis/cloudflare");
           RedisClass = defaultRedis.Redis;
         }
         const ratelimitPkg = await import("@upstash/ratelimit");
@@ -91,18 +123,35 @@ export class TokenBucketLimiter implements IRateLimiter {
 
       const result = await limiter.limit(identifier, { rate: points });
       const now = Date.now();
-      const resetTimeSec = Math.ceil(result.reset / 1000);
-      const retryAfter = Math.max(1, Math.ceil((result.reset - now) / 1000));
+      const resetAtMs = normalizeRedisResetAt(result.reset, now, this.windowMs);
+      const success = Boolean(result.success);
+      const remainingValue = Number(result.remaining);
+      const remaining = Number.isFinite(remainingValue)
+        ? Math.min(this.limit, Math.max(0, Math.floor(remainingValue)))
+        : 0;
+      const retryAfter = success
+        ? 0
+        : Math.max(1, Math.ceil((resetAtMs - now) / 1000));
 
       return {
-        success: Boolean(result.success),
+        success,
         limit: this.limit,
-        remaining: Math.max(0, result.remaining ?? 0),
-        reset: resetTimeSec,
+        remaining,
+        reset: Math.ceil(resetAtMs / 1000),
         retryAfter,
         identity: identifier,
       };
-    } catch {
+    } catch (err: any) {
+      if (err instanceof Error && /timeout|etimedout|timed out|abort/i.test(err.message)) {
+        return {
+          success: true,
+          limit: this.limit,
+          remaining: this.limit,
+          reset: Math.ceil((Date.now() + this.windowMs) / 1000),
+          retryAfter: 0,
+          identity: identifier,
+        };
+      }
       return null;
     }
   }

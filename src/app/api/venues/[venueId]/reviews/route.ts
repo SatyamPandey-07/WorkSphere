@@ -5,8 +5,61 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { processVenueReviewSubmission } from "@/lib/venueReviewService";
 import { apiError } from "@/lib/apiResponse";
+import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
+import { executeIdempotent, IdempotencyConflictError } from "@/lib/idempotency";
 
-// GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
+/**
+ * Recursively redacts sensitive `userId` fields from review objects, nested replies,
+ * reply arrays, and arbitrary child data structures.
+ *
+ * Privacy guarantees (see docs/api/VENUE_REVIEWS_PRIVACY.md):
+ * - Every key named `userId` is dropped at any nesting depth; all other fields,
+ *   including `id`, `rating`, `comment` and reply text, are preserved as-is.
+ * - The input is never mutated; a new structure is returned.
+ * - `null`, `undefined` and primitives pass through unchanged.
+ * - Passing `shouldRedact = false` returns the input untouched (authenticated path).
+ *
+ * This is a denylist on the single key `userId`. New identifying fields added to
+ * review or reply payloads must be added here and covered by a test.
+ */
+export function redactReviewPayload<T>(data: T, shouldRedact: boolean = true): T {
+  if (!shouldRedact || data === null || data === undefined) {
+    return data;
+  }
+
+  if (Array.isArray(data)) {
+    return data.map((item) => redactReviewPayload(item, shouldRedact)) as unknown as T;
+  }
+
+  if (typeof data === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (key === "userId") {
+        // Redact / strip sensitive userId
+        continue;
+      }
+      result[key] = redactReviewPayload(value, shouldRedact);
+    }
+    return result as T;
+  }
+
+  return data;
+}
+
+/**
+ * GET /api/venues/[venueId]/reviews - Get reviews/ratings for a venue (cursor paginated).
+ *
+ * Privacy behaviour by caller:
+ * - Unauthenticated: `userId` is stripped at every depth (via `redactReviewPayload`)
+ *   and `user` is `null`, so no reviewer identity (ID or name) is exposed.
+ * - Authenticated: `user` carries only `firstName` and `lastName`; the raw `userId`
+ *   is left in place.
+ *
+ * Rate limited to 60 requests per IP (`reviews:<ip>`), returning 429 `RATE_LIMITED`.
+ * `limit` defaults to 20 and is capped at 100. An unknown `cursor` returns 400
+ * `INVALID_CURSOR`. Redaction runs after the SWR cache read, so cached entries
+ * are shared across callers and never hold a redacted copy.
+ */
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ venueId: string }> },
@@ -32,31 +85,82 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json({ reviews: [] });
+      return NextResponse.json({
+        reviews: [],
+        nextCursor: null,
+        hasMore: false,
+      });
     }
 
-    const reviews = await prisma.venueRating.findMany({
-      where: { venueId: venue.id },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
+    const searchParams = req.nextUrl.searchParams;
+    const rawLimit = Number(searchParams.get("limit") ?? "20");
+    const limit =
+      Number.isSafeInteger(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, 100)
+        : 20;
+    const cursor = searchParams.get("cursor")?.trim() || null;
+
+    // Keep the existing cache key for the default first page; isolate all
+    // other pages so one cursor cannot receive another page's cached results.
+    const baseCacheKey = getVenueReviewsCacheKey(venue.id);
+    const cacheKey =
+      !cursor && limit === 20
+        ? baseCacheKey
+        : `${baseCacheKey}:cursor:${cursor ?? "first"}:limit:${limit}`;
+
+    const fetchedReviews = await swrCache(cacheKey, async () => {
+      return await prisma.venueRating.findMany({
+        where: { venueId: venue.id },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: limit + 1,
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
+        // The ID tie-breaker makes the cursor order deterministic when two
+        // reviews share the same createdAt timestamp.
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      });
+    });
+
+    const hasMore = fetchedReviews.length > limit;
+    const reviews = hasMore ? fetchedReviews.slice(0, limit) : fetchedReviews;
+    const nextCursor = hasMore ? (reviews[reviews.length - 1]?.id ?? null) : null;
+
+    const isUnauthenticated = !userId;
+
+    const formattedReviews = reviews.map((r: any) => {
+      const baseReview = {
+        ...r,
+        user: userId
+          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
+          : null,
+      };
+
+      // When unauthenticated, redact top-level and nested reply userId fields
+      if (isUnauthenticated) {
+        return redactReviewPayload(baseReview, true);
+      }
+
+      return baseReview;
     });
 
     return NextResponse.json({
-      reviews: reviews.map((r) => ({
-        ...r,
-        user: userId
-          ? { firstName: r.user.firstName, lastName: r.user.lastName }
-          : null,
-      })),
+      reviews: formattedReviews,
+      nextCursor,
+      hasMore,
     });
   } catch (error) {
+    if (
+      (error as { code?: string })?.code === "P2025" &&
+      req.nextUrl.searchParams.has("cursor")
+    ) {
+      return apiError("Invalid reviews cursor", 400, "INVALID_CURSOR");
+    }
     console.error("GET /api/venues/[venueId]/reviews error:", error);
     return apiError("Failed to fetch reviews", 500, "INTERNAL_ERROR");
   }
@@ -86,30 +190,57 @@ export async function POST(
       body?.forceOverwrite === true ||
       req.headers.get("x-force-overwrite") === "true";
 
-    const result = await processVenueReviewSubmission({
-      userId,
-      venueId,
-      body,
-      idempotencyKey,
-      forceOverwrite,
-    });
+    const submitAction = async () => {
+      const result = await processVenueReviewSubmission({
+        userId,
+        venueId,
+        body,
+        idempotencyKey,
+        forceOverwrite,
+      });
 
-    if (result.status >= 400) {
-      return apiError(
-        result.error ?? "Request failed",
-        result.status,
-        result.status === 409 ? "CONFLICT" : "VALIDATION_FAILED",
-        {
-          conflictType: result.conflictType,
-          serverReview: result.serverReview,
-          serverVenue: result.serverVenue,
-          message: result.message,
-        },
+      if (result.status >= 400) {
+        return {
+          status: result.status,
+          body: {
+            error: result.error ?? "Request failed",
+            code: result.status === 409 ? "CONFLICT" : "VALIDATION_FAILED",
+            conflictType: result.conflictType,
+            serverReview: result.serverReview,
+            serverVenue: result.serverVenue,
+            message: result.message,
+          },
+        };
+      }
+
+      return {
+        status: result.status,
+        body: result.data,
+      };
+    };
+
+    if (idempotencyKey) {
+      const scopedKey = `venue:${venueId}:review:${idempotencyKey}`;
+      const { response, cacheHit } = await executeIdempotent(
+        scopedKey,
+        { venueId, userId, body },
+        submitAction,
       );
+
+      return NextResponse.json(response.body, {
+        status: response.status,
+        headers: {
+          "X-Cache-Lookup": cacheHit ? "HIT" : "MISS",
+        },
+      });
     }
 
-    return NextResponse.json(result.data, { status: result.status });
-  } catch (error) {
+    const res = await submitAction();
+    return NextResponse.json(res.body, { status: res.status });
+  } catch (error: unknown) {
+    if (error instanceof IdempotencyConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.error("POST /api/venues/[venueId]/reviews error:", error);
     return apiError("Failed to submit review", 500, "INTERNAL_ERROR");
   }

@@ -1,11 +1,16 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import {
   Ban,
   Calendar,
   CalendarPlus,
-  Download,
   Inbox,
   Loader2,
   MapPin,
@@ -20,14 +25,16 @@ import { RescheduleModal } from "@/components/bookings/RescheduleModal";
 import { SplitBillModal } from "@/components/bookings/SplitBillModal";
 import { GeoCheckInReminderBanner } from "@/components/bookings/GeoCheckInReminderBanner";
 import { MobileWalletPassModal } from "@/components/bookings/MobileWalletPassModal";
+import { NomadDeskPass } from "@/components/bookings/NomadDeskPass";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
+import { ReceiptDownloadButton } from "@/components/bookings/ReceiptDownloadButton";
 
 export interface BookingSummary {
   id: string;
   confirmationId: string;
   date: string;
   time: string;
-  status?: "CONFIRMED" | "PENDING" | "CANCELLED";
+  status?: "CONFIRMED" | "PENDING" | "CANCELLED" | "CANCELLED_BY_OPERATOR";
   seatNumber?: string | null;
   duration?: number | null;
   timeZone?: string | null;
@@ -89,6 +96,9 @@ export function BookingList({
     null,
   );
 
+  const [deskPassBooking, setDeskPassBooking] = useState<BookingSummary | null>(
+    null,
+  );
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -125,7 +135,9 @@ export function BookingList({
 
   const { upcoming, rest } = useMemo(() => {
     const active = (b: BookingSummary) =>
-      b?.status !== "CANCELLED" && isUpcoming(b);
+      b?.status !== "CANCELLED" &&
+      b?.status !== "CANCELLED_BY_OPERATOR" &&
+      isUpcoming(b);
     return {
       upcoming: bookings
         .filter(active)
@@ -219,7 +231,9 @@ export function BookingList({
   };
 
   const renderBooking = (booking: BookingSummary) => {
-    const cancelled = booking?.status === "CANCELLED";
+    const cancelled =
+      booking?.status === "CANCELLED" ||
+      booking?.status === "CANCELLED_BY_OPERATOR";
     const future = !cancelled && isUpcoming(booking);
     const venueName = booking?.venue?.name ?? "Workspace";
     const address = booking?.venue?.address ?? "";
@@ -286,15 +300,12 @@ export function BookingList({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mt-3 pl-7">
-          <a
-            href={`/api/bookings/${booking.id}/download`}
+          <ReceiptDownloadButton
+            bookingId={booking.id}
+            confirmationId={booking.confirmationId}
             className={chipClass}
-            aria-label="Download receipt"
-            data-testid={`booking-receipt-link-${booking.id}`}
-          >
-            <Download className="w-3.5 h-3.5" />
-            Receipt
-          </a>
+            testId={`booking-receipt-link-${booking.id}`}
+          />
           <a
             href={`/api/bookings/${booking.id}/itinerary`}
             className={chipClass}
@@ -370,6 +381,16 @@ export function BookingList({
               >
                 <Smartphone className="w-3.5 h-3.5 text-blue-500" />
                 Apple / Google Pass
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeskPassBooking(booking)}
+                className={chipClass}
+                aria-label={`Open NomadDesk pass for booking ${booking.confirmationId}`}
+                data-testid={`booking-nomaddesk-pass-btn-${booking.id}`}
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-500" />
+                NomadDesk Pass
               </button>
               <button
                 type="button"
@@ -574,6 +595,13 @@ export function BookingList({
           booking={walletBooking}
           isOpen={Boolean(walletBooking)}
           onClose={() => setWalletBooking(null)}
+        />
+      )}
+      {deskPassBooking && (
+        <NomadDeskPass
+          booking={deskPassBooking}
+          isOpen={Boolean(deskPassBooking)}
+          onClose={() => setDeskPassBooking(null)}
         />
       )}
     </div>

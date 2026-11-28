@@ -11,6 +11,7 @@ import { BookingModal } from "./chat/BookingModal";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ShortcutsModal } from "./ui/ShortcutsModal";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
+import { useUnreadMessageTracking } from "@/lib/chat/unreadTracker";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import {
   trackSearch,
@@ -32,6 +33,8 @@ import {
   flushConversationEditQueue,
 } from "@/lib/offlineStorage";
 import { queueOfflineReview } from "@/lib/offlineReviewSync";
+import { LiveAnnouncer } from "@/components/ui/LiveAnnouncer";
+import { formatVenueResultsAnnouncement } from "@/lib/venueResultsAnnouncement";
 import {
   formatChatHistoryMarkdown,
   generateChatPdfReport,
@@ -127,6 +130,13 @@ export function EnhancedChatbot({
   const { isSignedIn, user } = useUser();
 
   const { socket, isHydrated } = useMultiplayerSession(roomId || null);
+  const activeRoomId = roomId || "default";
+  const { processIncomingMessage } = useUnreadMessageTracking({
+    roomId: activeRoomId,
+    currentUserId: user?.id || null,
+    currentUserName: user?.firstName || null,
+    isChatOpen: true, // While EnhancedChatbot is mounted and focused in the view
+  });
   const sendSocketMessage = useCallback(
     (data: string) => {
       if (socket) {
@@ -192,6 +202,16 @@ export function EnhancedChatbot({
   }, [messages]);
   const [showFilters, setShowFilters] = useState(false);
   const [distanceRadius, setDistanceRadius] = useState<number>(0);
+  // Latest venue result set, announced to screen readers when it changes
+  // (new search or refresh). Replies without venues keep the previous set.
+  const latestVenueResults = useMemo(
+    () =>
+      [...messages].reverse().find((m) => m.venues && m.venues.length > 0)
+        ?.venues ?? null,
+    [messages],
+  );
+  const activeFilterCount =
+    Object.keys(filters).length + (distanceRadius > 0 ? 1 : 0);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
   const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
@@ -316,6 +336,16 @@ export function EnhancedChatbot({
             }
           });
         } else if (data.type === "new-message") {
+          // Process incoming message with unread tracking
+          if (data.message) {
+            processIncomingMessage({
+              id: data.message.id,
+              senderId: data.message.senderId,
+              senderName: data.message.name,
+              timestamp: data.message.timestamp || Date.now(),
+              roomId: activeRoomId,
+            });
+          }
           // Prevent duplicates
           setMessages((prev) => {
             if (prev.some((m) => m.id === data.message.id)) return prev;
@@ -346,7 +376,7 @@ export function EnhancedChatbot({
 
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [isHydrated, socket, onMapUpdate]);
+  }, [isHydrated, socket, onMapUpdate, activeRoomId, processIncomingMessage]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastReadMsgId = useRef<string | null>(null);
@@ -859,6 +889,20 @@ export function EnhancedChatbot({
     });
   };
 
+  // Reset every filter in the panel and, if venues are showing, reload them
+  // without filters so the listing matches the cleared state (#7610).
+  const handleClearFilters = () => {
+    const cleared: Filters = {};
+    setFilters(cleared);
+    trackFilterApplied(cleared);
+
+    if (location && latestVenueResults) {
+      handleRefreshVenues(cleared).catch(() => {
+        onShowToast?.("Filters cleared, but venues could not be refreshed.");
+      });
+    }
+  };
+
   // Agent step expand/collapse
   const toggleSteps = (messageId: string) => {
     setExpandedSteps((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
@@ -878,7 +922,9 @@ export function EnhancedChatbot({
     },
     [isLoading],
   );
-  const handleRefreshVenues = async () => {
+  // `filtersOverride` lets callers refresh with filters that have just been
+  // set but are not yet reflected in state (e.g. after "Clear all").
+  const handleRefreshVenues = async (filtersOverride: Filters = filters) => {
     if (!location) return;
 
     const params = new URLSearchParams({
@@ -887,7 +933,7 @@ export function EnhancedChatbot({
       radius: "5000",
     });
 
-    Object.entries(filters).forEach(([key, value]) => {
+    Object.entries(filtersOverride).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== false) {
         params.set(key, String(value));
       }
@@ -1264,6 +1310,18 @@ export function EnhancedChatbot({
   // Render
   return (
     <div className="flex h-full flex-col min-h-0 bg-white dark:bg-zinc-950 relative overflow-hidden">
+      <LiveAnnouncer
+        testId="venue-results-announcer"
+        announceKey={latestVenueResults}
+        message={
+          latestVenueResults
+            ? formatVenueResultsAnnouncement(
+                latestVenueResults.length,
+                activeFilterCount,
+              )
+            : ""
+        }
+      />
       {/* Remote Cursors */}
       <AnimatePresence>
         {Object.values(cursors).map((cursor) => (
@@ -1310,6 +1368,7 @@ export function EnhancedChatbot({
         setShowFilters={setShowFilters}
         onToggleFilter={(key) => toggleFilter(key as keyof Filters)}
         onSetFilter={handleSetFilter}
+        onClearFilters={handleClearFilters}
         showHistory={showHistory}
         setShowHistory={setShowHistory}
         onNewChat={startNewChat}
@@ -1453,6 +1512,8 @@ export function EnhancedChatbot({
       </div>
 
       <ChatInput
+        roomId={activeRoomId}
+        userId={user?.id || null}
         input={input}
         isLoading={isLoading}
         onInputChange={handleInputChange}

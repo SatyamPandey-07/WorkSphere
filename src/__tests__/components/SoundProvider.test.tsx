@@ -1,13 +1,20 @@
 import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { SoundProvider, useSound } from "@/components/SoundProvider";
+import {
+  SoundProvider,
+  useSound,
+  playBookmarkChime,
+  playUnbookmarkTone,
+} from "@/components/SoundProvider";
 
 function TestConsumer() {
   const { soundEnabled, toggleSound, setSoundEnabled } = useSound();
   return (
     <div>
-      <span data-testid="sound-status">{soundEnabled ? "enabled" : "disabled"}</span>
+      <span data-testid="sound-status">
+        {soundEnabled ? "enabled" : "disabled"}
+      </span>
       <button data-testid="toggle-btn" onClick={toggleSound}>
         Toggle
       </button>
@@ -22,8 +29,6 @@ function TestConsumer() {
 }
 
 describe("SoundProvider and useSound (#6931)", () => {
-  const originalLocalStorage = window.localStorage;
-
   beforeEach(() => {
     window.localStorage.clear();
     jest.spyOn(console, "warn").mockImplementation(() => {});
@@ -37,7 +42,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     const spy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     expect(() => render(<TestConsumer />)).toThrow(
-      "useSound must be used inside SoundProvider"
+      "useSound must be used inside SoundProvider",
     );
 
     spy.mockRestore();
@@ -47,7 +52,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
@@ -57,7 +62,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={false}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
@@ -69,7 +74,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
@@ -79,17 +84,15 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     const toggleBtn = screen.getByTestId("toggle-btn");
 
-    // Toggle to false
     fireEvent.click(toggleBtn);
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
     expect(window.localStorage.getItem("worksphere-sound")).toBe("false");
 
-    // Toggle back to true
     fireEvent.click(toggleBtn);
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
     expect(window.localStorage.getItem("worksphere-sound")).toBe("true");
@@ -99,7 +102,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     const disableBtn = screen.getByTestId("disable-btn");
@@ -120,7 +123,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider storageKey="custom-sound-key">
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
@@ -131,28 +134,33 @@ describe("SoundProvider and useSound (#6931)", () => {
   });
 
   it("handles localStorage read/write failures gracefully in private browsing", () => {
-    const mockGetItem = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("SecurityError: Access is denied for this document");
-    });
-    const mockSetItem = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("SecurityError: Access is denied for this document");
-    });
+    const mockGetItem = jest
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("SecurityError: Access is denied for this document");
+      });
+    const mockSetItem = jest
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("SecurityError: Access is denied for this document");
+      });
 
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
-    // Initial state remains functional
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
 
-    // Toggling works in memory without throwing
-    expect(() => fireEvent.click(screen.getByTestId("toggle-btn"))).not.toThrow();
+    expect(() =>
+      fireEvent.click(screen.getByTestId("toggle-btn")),
+    ).not.toThrow();
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
 
-    // Explicit setter works in memory without throwing
-    expect(() => fireEvent.click(screen.getByTestId("enable-btn"))).not.toThrow();
+    expect(() =>
+      fireEvent.click(screen.getByTestId("enable-btn")),
+    ).not.toThrow();
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
 
     mockGetItem.mockRestore();
@@ -163,12 +171,11 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
 
-    // Simulate cross-tab change to "false"
     act(() => {
       const event = new StorageEvent("storage", {
         key: "worksphere-sound",
@@ -179,7 +186,6 @@ describe("SoundProvider and useSound (#6931)", () => {
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
 
-    // Simulate event with unrelated key (should be ignored)
     act(() => {
       const event = new StorageEvent("storage", {
         key: "other-key",
@@ -189,5 +195,144 @@ describe("SoundProvider and useSound (#6931)", () => {
     });
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
+  });
+
+  describe("Bookmark Tactile Sound Effects (#7203)", () => {
+    let mockOscillator: any;
+    let mockGain: any;
+    let mockContext: any;
+
+    beforeEach(() => {
+      mockOscillator = {
+        type: "sine",
+        frequency: {
+          setValueAtTime: jest.fn(),
+          exponentialRampToValueAtTime: jest.fn(),
+        },
+        connect: jest.fn(),
+        start: jest.fn(),
+        stop: jest.fn(),
+      };
+      mockGain = {
+        gain: {
+          setValueAtTime: jest.fn(),
+          linearRampToValueAtTime: jest.fn(),
+          exponentialRampToValueAtTime: jest.fn(),
+        },
+        connect: jest.fn(),
+      };
+      mockContext = {
+        currentTime: 0,
+        state: "running",
+        destination: {},
+        createOscillator: jest.fn(() => mockOscillator),
+        createGain: jest.fn(() => mockGain),
+        resume: jest.fn().mockResolvedValue(undefined),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (window as any).AudioContext = jest.fn(() => mockContext);
+    });
+
+    afterEach(() => {
+      delete (window as any).AudioContext;
+      delete (window as any).webkitAudioContext;
+    });
+
+    it("synthesizes micro-acoustic chime via playBookmarkChime", () => {
+      const result = playBookmarkChime(0.5);
+      expect(result).toBe(true);
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(2);
+      expect(mockContext.createGain).toHaveBeenCalledTimes(1);
+      expect(mockOscillator.start).toHaveBeenCalledTimes(2);
+    });
+
+    it("synthesizes soft low-frequency tone via playUnbookmarkTone", () => {
+      const result = playUnbookmarkTone(0.5);
+      expect(result).toBe(true);
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(1);
+      expect(mockContext.createGain).toHaveBeenCalledTimes(1);
+      expect(mockOscillator.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("silences feedback when volume is <= 0", () => {
+      expect(playBookmarkChime(0)).toBe(false);
+      expect(playUnbookmarkTone(-0.5)).toBe(false);
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+    });
+
+    it("returns false gracefully when AudioContext is unavailable in window", () => {
+      delete (window as any).AudioContext;
+      delete (window as any).webkitAudioContext;
+      expect(playBookmarkChime(0.5)).toBe(false);
+      expect(playUnbookmarkTone(0.5)).toBe(false);
+    });
+
+    it("allows useSound({ suppressError: true }) without throwing outside SoundProvider", () => {
+      function SuppressedConsumer() {
+        const sound = useSound({ suppressError: true });
+        return (
+          <span data-testid="suppressed-enabled">
+            {String(sound.soundEnabled)}
+          </span>
+        );
+      }
+
+      render(<SuppressedConsumer />);
+      expect(screen.getByTestId("suppressed-enabled")).toHaveTextContent(
+        "false",
+      );
+    });
+
+    it("triggers playBookmarkSound from SoundProvider context respecting global mute", () => {
+      function SoundTriggerConsumer() {
+        const { playBookmarkSound, setSoundEnabled } = useSound();
+        return (
+          <div>
+            <button
+              data-testid="play-bookmark"
+              onClick={() => playBookmarkSound(true)}
+            >
+              Bookmark
+            </button>
+            <button
+              data-testid="play-unbookmark"
+              onClick={() => playBookmarkSound(false)}
+            >
+              Unbookmark
+            </button>
+            <button
+              data-testid="mute-btn"
+              onClick={() => setSoundEnabled(false)}
+            >
+              Mute
+            </button>
+          </div>
+        );
+      }
+
+      render(
+        <SoundProvider defaultEnabled={true}>
+          <SoundTriggerConsumer />
+        </SoundProvider>,
+      );
+
+      fireEvent.click(screen.getByTestId("play-bookmark"));
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(2);
+
+      jest.clearAllMocks();
+      fireEvent.click(screen.getByTestId("play-unbookmark"));
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(1);
+
+      // Now mute globally
+      fireEvent.click(screen.getByTestId("mute-btn"));
+      jest.clearAllMocks();
+
+      fireEvent.click(screen.getByTestId("play-bookmark"));
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId("play-unbookmark"));
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+    });
   });
 });

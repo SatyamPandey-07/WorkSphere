@@ -23,11 +23,11 @@ import {
   ShieldAlert,
   Radar,
 } from "lucide-react";
-import {
+import { AutonomousConciergeEngine } from "@/lib/ai/autonomousConciergeEngine";
+import type {
   EnvironmentalSensorFeed,
   MemberWorkspaceSession,
   RebalanceRecommendation,
-  AutonomousConciergeEngine,
 } from "@/lib/ai/autonomousConciergeEngine";
 import { TacticalAirTrafficControlBoard } from "@/components/admin/TacticalAirTrafficControlBoard";
 

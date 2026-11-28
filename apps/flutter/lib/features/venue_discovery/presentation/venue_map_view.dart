@@ -89,7 +89,7 @@ class _VenueMapViewState extends State<VenueMapView> {
 
   Future<void> _refreshVisibleViewport() async {
     final mapController = _mapController;
-    if (mapController == null) {
+    if (!mounted || mapController == null) {
       return;
     }
 
@@ -146,6 +146,7 @@ class _VenueMapViewState extends State<VenueMapView> {
 
   @override
   void dispose() {
+    _mapController = null;
     _venueMapController
       ..removeListener(_onVenueMapChanged)
       ..dispose();

@@ -27,7 +27,7 @@ function parseTimestampMs(input?: string | number | Date): number | null {
     const ms = input.getTime();
     return Number.isNaN(ms) ? null : ms;
   }
-  if (typeof input === 'number') return Number.isFinite(input) ? input : null;
+  if (typeof input === "number") return Number.isFinite(input) ? input : null;
   const trimmed = input.trim();
   if (!trimmed) return null;
   const parsed = Date.parse(trimmed);
@@ -35,14 +35,21 @@ function parseTimestampMs(input?: string | number | Date): number | null {
 }
 
 export function formatRfc4180CsvCell(value: unknown): string {
-  const raw = value === null || value === undefined ? '' : String(value);
-  const formulaSafe = FORMULA_PREFIX_PATTERN.test(raw) ? `'` : raw;
-  const needsQuotes = formulaSafe.includes('"') || formulaSafe.includes(',') || formulaSafe.includes('\n') || formulaSafe.includes('\r');
+  const raw = value === null || value === undefined ? "" : String(value);
+  const formulaSafe = FORMULA_PREFIX_PATTERN.test(raw) ? `'${raw}` : raw;
+  const needsQuotes =
+    formulaSafe.includes('"') ||
+    formulaSafe.includes(",") ||
+    formulaSafe.includes("\n") ||
+    formulaSafe.includes("\r");
   if (!needsQuotes) return formulaSafe;
-  return `""`;
+  return '"' + formulaSafe.replace(/"/g, '""') + '"';
 }
 
-export function filterScope2LedgerEntries(entries: readonly Scope2LedgerEntry[], filter: Scope2CsvExportFilter = {}): Scope2LedgerEntry[] {
+export function filterScope2LedgerEntries(
+  entries: readonly Scope2LedgerEntry[],
+  filter: Scope2CsvExportFilter = {},
+): Scope2LedgerEntry[] {
   const fromMs = parseTimestampMs(filter.from);
   const toMs = parseTimestampMs(filter.to);
   const normalizedVenue = filter.venueId?.trim();
@@ -59,34 +66,61 @@ export function filterScope2LedgerEntries(entries: readonly Scope2LedgerEntry[],
 }
 
 function getEmissionsKgCo2e(entry: Scope2LedgerEntry): number {
-  return typeof entry.emissionsKgCo2e === 'number' && Number.isFinite(entry.emissionsKgCo2e)
+  return typeof entry.emissionsKgCo2e === "number" &&
+    Number.isFinite(entry.emissionsKgCo2e)
     ? entry.emissionsKgCo2e
     : entry.kwh * entry.emissionFactorKgPerKwh;
 }
 
-export function summarizeMonthlyEmissions(entries: readonly Scope2LedgerEntry[]): MonthlyEmissionsSummary[] {
+export function summarizeMonthlyEmissions(
+  entries: readonly Scope2LedgerEntry[],
+): MonthlyEmissionsSummary[] {
   const monthlyTotals = new Map<string, number>();
   for (const entry of entries) {
     const recordedAtMs = parseTimestampMs(entry.recordedAt);
     if (recordedAtMs === null) continue;
 
     const month = new Date(recordedAtMs).toISOString().slice(0, 7);
-    monthlyTotals.set(month, (monthlyTotals.get(month) ?? 0) + getEmissionsKgCo2e(entry));
+    monthlyTotals.set(
+      month,
+      (monthlyTotals.get(month) ?? 0) + getEmissionsKgCo2e(entry),
+    );
   }
 
-  return Array.from(monthlyTotals, ([month, emissionsKgCo2e]) => ({ month, emissionsKgCo2e }))
-    .sort((left, right) => left.month.localeCompare(right.month));
+  return Array.from(monthlyTotals, ([month, emissionsKgCo2e]) => ({
+    month,
+    emissionsKgCo2e,
+  })).sort((left, right) => left.month.localeCompare(right.month));
 }
 
-export function exportScope2LedgerToCsv(entries: readonly Scope2LedgerEntry[], filter: Scope2CsvExportFilter = {}): string {
-  const headers = ['id', 'venueId', 'recordedAt', 'kwh', 'emissionFactorKgPerKwh', 'emissionsKgCo2e', 'notes'];
+export function exportScope2LedgerToCsv(
+  entries: readonly Scope2LedgerEntry[],
+  filter: Scope2CsvExportFilter = {},
+): string {
+  const headers = [
+    "id",
+    "venueId",
+    "recordedAt",
+    "kwh",
+    "emissionFactorKgPerKwh",
+    "emissionsKgCo2e",
+    "notes",
+  ];
   const filtered = filterScope2LedgerEntries(entries, filter);
-  const lines: string[] = [headers.map(formatRfc4180CsvCell).join(',')];
+  const lines: string[] = [headers.map(formatRfc4180CsvCell).join(",")];
   for (const entry of filtered) {
-    const row = [entry.id, entry.venueId, entry.recordedAt, entry.kwh, entry.emissionFactorKgPerKwh, getEmissionsKgCo2e(entry), entry.notes ?? ''];
-    lines.push(row.map(formatRfc4180CsvCell).join(','));
+    const row = [
+      entry.id,
+      entry.venueId,
+      entry.recordedAt,
+      entry.kwh,
+      entry.emissionFactorKgPerKwh,
+      getEmissionsKgCo2e(entry),
+      entry.notes ?? "",
+    ];
+    lines.push(row.map(formatRfc4180CsvCell).join(","));
   }
-  return lines.join('\r\n');
+  return `${lines.join("\r\n")}\r\n`;
 }
 
 export default exportScope2LedgerToCsv;
@@ -107,21 +141,32 @@ export interface Scope2CalculationRecordInput {
 class Scope2LedgerService {
   private readonly entries: Scope2LedgerEntry[] = [];
 
-  public recordCalculation(input: Scope2CalculationRecordInput = {}): Scope2LedgerEntry & { co2SavedKg: number } {
-    const recordedAt = input.recordedAt ? new Date(input.recordedAt).toISOString() : new Date().toISOString();
-    const kwh = typeof input.kwh === "number" && Number.isFinite(input.kwh) ? input.kwh : 0;
+  public recordCalculation(
+    input: Scope2CalculationRecordInput = {},
+  ): Scope2LedgerEntry & { co2SavedKg: number } {
+    const recordedAt = input.recordedAt
+      ? new Date(input.recordedAt).toISOString()
+      : new Date().toISOString();
+    const kwh =
+      typeof input.kwh === "number" && Number.isFinite(input.kwh)
+        ? input.kwh
+        : 0;
     const emissionFactorKgPerKwh =
-      typeof input.emissionFactorKgPerKwh === "number" && Number.isFinite(input.emissionFactorKgPerKwh)
+      typeof input.emissionFactorKgPerKwh === "number" &&
+      Number.isFinite(input.emissionFactorKgPerKwh)
         ? input.emissionFactorKgPerKwh
         : 0.82;
-    const savedKg = typeof input.co2SavedKg === "number" && Number.isFinite(input.co2SavedKg) ? input.co2SavedKg : 0;
+    const savedKg =
+      typeof input.co2SavedKg === "number" && Number.isFinite(input.co2SavedKg)
+        ? input.co2SavedKg
+        : 0;
     const entry: Scope2LedgerEntry & { co2SavedKg: number } = {
-      id: scope2__,
+      id: `scope2-${input.userId ?? "anonymous"}-${Date.now()}-${this.entries.length + 1}`,
       venueId: input.venueId ?? input.region ?? "unknown",
       recordedAt,
       kwh,
       emissionFactorKgPerKwh,
-      notes: input.notes ?? (input.mode ? mode: : undefined),
+      notes: input.notes ?? input.mode,
       co2SavedKg: savedKg,
     };
     this.entries.push(entry);

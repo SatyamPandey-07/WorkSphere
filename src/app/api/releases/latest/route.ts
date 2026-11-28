@@ -11,7 +11,7 @@ type GitHubAsset = {
 type GitHubRelease = {
   tag_name: string;
   name: string | null;
-  body: string | null;
+  body?: string | null;
   html_url: string;
   prerelease: boolean;
   published_at: string | null;
@@ -21,6 +21,7 @@ type GitHubRelease = {
 type ReleaseInfo = {
   version: string;
   tag: string;
+  body: string;
   notesSummary: string;
   prerelease: boolean;
   publishedAt: string | null;
@@ -39,8 +40,8 @@ type ReleasePayload = {
 
 let cached: { payload: ReleasePayload; expiresAt: number } | null = null;
 
-function summarizeNotes(body: string | null): string {
-  if (!body?.trim()) {
+function summarizeNotes(body: string): string {
+  if (!body.trim()) {
     return '';
   }
 
@@ -82,10 +83,12 @@ function classifyRelease(release: GitHubRelease): Array<'web' | 'flutter'> {
 }
 
 function toReleaseInfo(release: GitHubRelease): ReleaseInfo {
+  const body = release.body ?? '';
   return {
     version: release.tag_name.replace(/^v/, ''),
     tag: release.tag_name,
-    notesSummary: summarizeNotes(release.body),
+    body,
+    notesSummary: summarizeNotes(body),
     prerelease: release.prerelease,
     publishedAt: release.published_at,
     url: release.html_url,

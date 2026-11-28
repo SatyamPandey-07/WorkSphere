@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage[margin=0.85in]{geometry}
+\usepackage[margin=0.8in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{xcolor}
@@ -10,108 +10,212 @@
 \usepackage{enumitem}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
+\usepackage{tabularx}
 
 \definecolor{primary}{HTML}{0F172A}
 \definecolor{accent}{HTML}{1D4ED8}
 \definecolor{danger}{HTML}{B91C1C}
 \definecolor{muted}{HTML}{475569}
-\definecolor{border}{HTML}{CBD5E1}
+\definecolor{surface}{HTML}{F8FAFC}
 
 \hypersetup{
   colorlinks=true,
   linkcolor=accent,
   urlcolor=accent,
-  pdftitle={WorkSphere Repository Moderation and Abuse Evidence Report},
+  pdftitle={WorkSphere Forensic Moderation & WOCS Compliance Report},
   pdfauthor={Satyam Pandey, Project Admin - WorkSphere}
 }
 
 \pagestyle{fancy}
 \fancyhf{}
-\lhead{\small\textcolor{muted}{WorkSphere — WOCS Moderation \& Abuse Evidence Report}}
+\lhead{\small\textcolor{muted}{WorkSphere — Forensic Moderation \& WOCS Compliance Report}}
 \rhead{\small\textcolor{muted}{Nov 28, 2026}}
-\cfoot{\small\thepage}
+\cfoot{\small Page \thepage}
 
 \titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{}[\vspace{2pt}\titlerule]
 \titleformat{\subsection}{\normalsize\bfseries\color{danger}}{}{0em}{}
+\titleformat{\subsubsection}{\small\bfseries\color{primary}}{}{0em}{}
 
 \begin{document}
 
 \begin{center}
-{\LARGE\bfseries\color{primary} WorkSphere Repository Security \& Moderation Report}\\[6pt]
-{\large\color{muted} Technical Evidence for Contributor Blocklist Enforcement (Commit \texttt{ff1c870b} \& Subsequent Additions)}\\[4pt]
-{\small Prepared for: \textbf{Arushi, Founder — Code Social (Winter of Code Social 2026)} \quad|\quad Prepared by: \textbf{Satyam Pandey} (\texttt{@SatyamPandey-07})}
+{\LARGE\bfseries\color{primary} WorkSphere Forensic Security \& Moderation Report}\\[6pt]
+{\large\color{muted} Empirical Audit of Contributor Abuse, Automated Spam, Collusion, and Governance Hardening}\\[4pt]
+{\small Prepared for: \textbf{Arushi, Founder — Code Social (Winter of Code Social 2026)}}\\
+{\small Prepared by: \textbf{Satyam Pandey} (\texttt{@SatyamPandey-07}), Founder \& Project Admin, \texttt{SatyamPandey-07/WorkSphere}}
 \end{center}
 
 \vspace{6pt}
 \hrule
 \vspace{10pt}
 
-\section{Executive Summary}
-This report documents the empirical, repository-verified evidence behind the contributor blocklist enforced in \texttt{SatyamPandey-07/WorkSphere} (introduced in commit \href{https://github.com/SatyamPandey-07/WorkSphere/commit/ff1c870b86fd0c1886e3c7a66f1096ae4397f4dd}{\texttt{ff1c870b}} and updated in subsequent moderation commits).
+\section{1. Executive Summary}
+This technical report presents the complete, verifiable GitHub API and commit-history evidence justifying the contributor blocklist enforced in \texttt{SatyamPandey-07/WorkSphere} (initiated in commit \href{https://github.com/SatyamPandey-07/WorkSphere/commit/ff1c870b86fd0c1886e3c7a66f1096ae4397f4dd}{\texttt{ff1c870b}} on November 20, 2026, and updated on November 25, 2026).
 
-No contributor was blocked arbitrarily. Every account on the blocklist engaged in one or more severe, measurable integrity violations that directly subvert Winter of Code Social (WOCS) guidelines and open-source engineering standards:
-\begin{enumerate}[leftmargin=1.5em, itemsep=2pt]
-  \item \textbf{High-Frequency Automated PR \& Self-Issue Farming} (opening 150--1,017+ PRs at 40--90 second intervals by self-creating and self-assigning issues to game leaderboard points).
-  \item \textbf{Placeholder / Junk Issue Pollution} (flooding the issue tracker with meaningless \texttt{".."} and \texttt{"//"} titles to trigger automated workflows and inflate issue counts).
-  \item \textbf{Collusive Cross-Assignment \& Issue State-Thrashing} (two accounts creating issues, cross-assigning them, and repeatedly toggling \texttt{closed}/\texttt{reopened} states against maintainer triage).
+\textbf{Core Finding:} Zero contributors were blocked arbitrarily or without technical cause. Every account on the \texttt{BLOCKED\_USERS} list executed systematic, measurable platform abuse that violated WOCS integrity rules, degraded repository signal-to-noise ratios, and saturated CI/CD infrastructure:
+\begin{enumerate}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{High-Frequency Automated PR \& Self-Issue Farming:} Opening 149--1,017+ PRs at 20--90 second inter-arrival times by programmatically self-authoring and self-assigning synthetic issues to farm WOCS leaderboard points.
+  \item \textbf{Placeholder / Null-Entropy Issue Pollution:} Flooding the issue tracker with empty/junk titles (\texttt{".."}, \texttt{"//"}) to trigger automated labeling/assignment webhooks.
+  \item \textbf{Coordinated Collusion \& State-Thrashing Sabotage:} Two accounts (\texttt{KartikeyG-world} and \texttt{RitikaDevi-12}) cross-assigning self-created issues, flooding junk issues, and repeatedly toggling \texttt{closed (completed)} / \texttt{closed (duplicate)} / \texttt{reopened} states against maintainer triage.
 \end{enumerate}
 
 \vspace{4pt}
 \begin{center}
-\begin{tabular}{@{}lrrp{6.6cm}@{}}
+\begin{tabular}{@{}lrrrrp{5.2cm}@{}}
 \toprule
-\textbf{GitHub Account} & \textbf{PRs} & \textbf{Issues} & \textbf{Primary Technical Violation} \\
+\textbf{Account} & \textbf{PRs} & \textbf{Issues} & \textbf{1:1 Ratio} & \textbf{Peak Rate} & \textbf{Abuse Classification} \\
 \midrule
-\href{https://github.com/riteshbonthalakoti}{\texttt{riteshbonthalakoti}} & 429 & 427 & Automated 1:1 self-issue + ZKP PR spam ($\sim$1 PR/min) \\
-\href{https://github.com/KartikeyG-world}{\texttt{KartikeyG-world}} & 149 & 131 & Junk \texttt{".."}/\texttt{"//"} issues, collusion, unauthorized close/reopen \\
-\href{https://github.com/RitikaDevi-12}{\texttt{RitikaDevi-12}} & 18 & 14 & Collusion with KartikeyG-world, state-thrashing, junk issues \\
-\href{https://github.com/jasonjose007}{\texttt{jasonjose007}} & 1,017 & 1 & Mass automated boilerplate test PR flooding ($\sim$4 PRs/min) \\
-\href{https://github.com/Senthil455}{\texttt{Senthil455}} & 194 & 180 & Automated 1:1 self-issue/self-PR point farming loop \\
+\href{https://github.com/riteshbonthalakoti}{\texttt{riteshbonthalakoti}} & 429 & 427 & 99.5\% & $\sim$1.0 PR/min & Automated ZKP self-issue/PR loop \\
+\href{https://github.com/KartikeyG-world}{\texttt{KartikeyG-world}} & 149 & 131 & 87.9\% & $\sim$1.9 PR/min & Junk \texttt{".."}/\texttt{"//"} issues, collusion, close abuse \\
+\href{https://github.com/RitikaDevi-12}{\texttt{RitikaDevi-12}} & 18 & 14 & 77.8\% & $\sim$0.73 Iss/min & Collusion, state-thrashing, junk issues \\
+\href{https://github.com/jasonjose007}{\texttt{jasonjose007}} & 1,017 & 1 & 0.1\% & $\sim$3.8 PR/min & Mass boilerplate test PR flooding \\
+\href{https://github.com/Senthil455}{\texttt{Senthil455}} & 194 & 180 & 92.8\% & $\sim$0.5 PR/min & Automated 1:1 self-issue/PR loop \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\section{Detailed Technical Evidence by Blocked Account}
-
-\subsection{1. \texttt{riteshbonthalakoti} — Automated Self-Issue \& High-Velocity PR Farming (429 PRs, 427 Issues)}
-\textbf{Classification:} Severe Automated Point-Farming / CI \& Review Queue Flooding.\\
-\textbf{Observed Pattern:} Rather than claiming curated maintainer issues, \texttt{riteshbonthalakoti} operated an automated loop that mass-generated synthetic \texttt{[ZKP]} architectural issues, self-assigned them, and opened corresponding pull requests within \textbf{30--90 seconds} of each other—producing \textbf{429 PRs} and \textbf{427 issues} on a single repository.
-\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
-  \item \textbf{Burst Velocity (Nov 19, 2026, 18:43--19:06 UTC):} Created 15+ issues (\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9078}{\#9078}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/9094}{\#9094}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9101}{\#9101}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/9110}{\#9110}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9112}{\#9112}) in sub-second batches (e.g., 8 issues created at \texttt{18:53:39Z--18:53:40Z}) and opened matching PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9090}{\#9090}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9116}{\#9116}) roughly every 60 seconds.
-  \item \textbf{Impact:} Completely bypassed maintainer issue curation, inflated WOCS \texttt{Level 3} ZKP point totals via synthetic self-authored issues, and saturated GitHub Actions CI runners. This directly triggered commit \href{https://github.com/SatyamPandey-07/WorkSphere/commit/ff1c870b86fd0c1886e3c7a66f1096ae4397f4dd}{\texttt{ff1c870b}}.
+\section{2. Forensic Methodology \& Detection Criteria}
+All metrics in this document were extracted directly from the GitHub REST Search and Issues APIs against \texttt{SatyamPandey-07/WorkSphere} using immutable UTC ISO-8601 timestamps. Accounts were flagged and blocked when multiple independent anomaly signals crossed adversarial thresholds:
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{Inter-Arrival Velocity ($\Delta t$):} Human-authored architectural implementations, local test verification, and documentation require realistic development cycles. Automated scripts exhibit sustained $\Delta t \in [1\text{s}, 90\text{s}]$ across dozens of consecutive PRs/issues.
+  \item \textbf{Self-Issue / Self-Assign Bypass Ratio:} WOCS guidelines require claiming curated maintainer issues. Farming scripts bypass curation by creating an issue, immediately self-assigning it, and opening a matching PR within seconds.
+  \item \textbf{Entropy & Semantic Validity Check:} Issues titled \texttt{".."} or \texttt{"//"} carry zero engineering specification and exist solely to exploit automated issue-tracking workflows.
+  \item \textbf{State-Transition Thrashing:} Repeatedly closing and reopening issues as \texttt{completed} or \texttt{duplicate} after maintainer intervention constitutes active triage sabotage.
 \end{itemize}
 
-\subsection{2. \texttt{KartikeyG-world} — Junk Issue Pollution, Collusion \& Unauthorized State-Thrashing (149 PRs, 131 Issues)}
-\textbf{Classification:} Issue Tracker Vandalism, Collusive Assignment Abuse \& Triage Sabotage.\\
-\textbf{Observed Pattern:} In addition to high-velocity self-authored PR bursts (e.g., PRs \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10347}{\#10347}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10359}{\#10359} opened between \texttt{10:01:41Z} and \texttt{10:08:09Z} on Nov 25, 2026), \texttt{KartikeyG-world} abused repository triage permissions to pollute the tracker and sabotage issue states:
-\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
-  \item \textbf{Placeholder/Junk Issue Spam (Nov 25, 2026):} Created empty/meaningless issues titled \texttt{".."} and \texttt{"//"} at 1-minute intervals and assigned them to others: \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10332}{\#10332}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10364}{\#10364}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10365}{\#10365}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10367}{\#10367}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10368}{\#10368}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10369}{\#10369}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10370}{\#10370}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10373}{\#10373}, and \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{\#10374}.
-  \item \textbf{Unauthorized Issue Closure / Open-Close Abuse:} Repeatedly closed active issues as \texttt{completed} (e.g., \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{\#10374}) immediately after the maintainer reopened them, disrupting project governance.
-\end{itemize}
+\newpage
+\section{3. Deep-Dive Forensic Profiles}
 
-\subsection{3. \texttt{RitikaDevi-12} — Collusive Self-Claiming, Junk Issues \& Open/Close State-Thrashing (18 PRs, 14 Issues)}
-\textbf{Classification:} Coordinated Collusion with \texttt{KartikeyG-world} \& Malicious Issue State-Thrashing.\\
-\textbf{Observed Pattern:} \texttt{RitikaDevi-12} operated in coordination with \texttt{KartikeyG-world} to abuse issue creation, cross-assignment, and state transitions:
-\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
-  \item \textbf{Rapid Self-Issue Farming:} Created and self-assigned 8 issues in 11 minutes on Nov 25, 2026 (\texttt{08:46:33Z}--\texttt{08:57:20Z}): \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10313}{\#10313}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10315}{\#10315}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10316}{\#10316}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10318}{\#10318}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10320}{\#10320}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10321}{\#10321}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10323}{\#10323}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10324}{\#10324}, followed by 8 PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10387}{\#10387}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10400}{\#10400}) in 34 minutes.
-  \item \textbf{Junk Issue Creation:} Opened placeholder issue \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10376}{\#10376} titled \texttt{".."} on Nov 25, 2026 at \texttt{10:26:09Z}.
-  \item \textbf{Open/Close Issue-Thrashing:} Repeatedly toggled issues between \texttt{closed (completed)}, \texttt{closed (duplicate)}, and \texttt{reopened} within minutes of maintainer \texttt{@SatyamPandey-07} reopening them—turning the issue tracker into an adversarial state-flipping loop and forcing immediate revocation/banning.
-\end{itemize}
+\subsection{3.1 \texttt{riteshbonthalakoti} — Automated Self-Issue \& ZKP PR Point Farming}
+\textbf{Totals:} \textbf{429 Pull Requests} | \textbf{427 Issues} | \textbf{Trigger Commit:} \href{https://github.com/SatyamPandey-07/WorkSphere/commit/ff1c870b86fd0c1886e3c7a66f1096ae4397f4dd}{\texttt{ff1c870b}} (Nov 20, 2026).\\
+\textbf{Technical Diagnosis:} \texttt{riteshbonthalakoti} ran an automated pipeline targeting high-value \texttt{Level 3} (11-point) ZKP keywords. The script mass-created synthetic \texttt{[ZKP] Implement ... architectural cryptographic module} issues in sub-second bursts, self-assigned them, and submitted PRs at $\sim$60-second intervals—completely bypassing maintainer issue assignment and flooding CI queues.
 
-\subsection{4. \texttt{jasonjose007} — Mass Automated PR Flooding (1,017 PRs, 1 Issue)}
-\textbf{Classification:} Extreme Automated Pull Request Spam.\\
-\textbf{Evidence:} Opened \textbf{1,017 PRs} consisting of repetitive, unrequested boilerplate unit-test PRs generated seconds apart without claimed issues—for example, 15 consecutive PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/3829}{\#3829}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/3843}{\#3843}) opened in 4 minutes on Oct 4, 2026 (\texttt{07:34:57Z}--\texttt{07:38:59Z}).
+\vspace{4pt}
+\noindent\textbf{Verified Burst Sample (November 19, 2026, 18:43--19:06 UTC):}
+\begin{center}
+\small
+\begin{tabular}{@{}lll p{7.8cm}@{}}
+\toprule
+\textbf{Artifact} & \textbf{Created (UTC)} & \textbf{$\Delta t$} & \textbf{Title / Pattern} \\
+\midrule
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9078}{ISS \#9078} & \texttt{18:43:35Z} & -- & \texttt{[ZKP] Implement VerifiableEmergencyAccessBreakGlassProver...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9079}{ISS \#9079} & \texttt{18:43:35Z} & 0s & \texttt{[ZKP] Implement VerifiableTimeBoundedCapabilityToken...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9084}{ISS \#9084} & \texttt{18:43:35Z} & 0s & \texttt{[ZKP] Implement VerifiableCredentialRevocationAccumulator...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9085}{ISS \#9085} & \texttt{18:43:36Z} & 1s & \texttt{[ZKP] Implement ZeroKnowledgeRoleBasedAccessProver...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9090}{PR \#9090} & \texttt{18:49:00Z} & -- & \texttt{feat(zkp): implement zero-knowledge multi-signatory...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9091}{PR \#9091} & \texttt{18:50:10Z} & 70s & \texttt{feat(zkp): implement verifiable credential revocation...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9092}{PR \#9092} & \texttt{18:51:19Z} & 69s & \texttt{feat(zkp): implement zero-knowledge financial transaction...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9093}{PR \#9093} & \texttt{18:52:32Z} & 73s & \texttt{feat(zkp): implement verifiable emergency break-glass...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9094}{ISS \#9094}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9101}{9101} & \texttt{18:53:39--40Z} & 1s & 8 synthetic \texttt{[ZKP]} issues created in 1 second (all self-assigned) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9102}{PR \#9102} & \texttt{18:54:12Z} & 32s & \texttt{feat(zkp): implement zero-knowledge Bulletproofs-style...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9103}{PR \#9103} & \texttt{18:55:25Z} & 73s & \texttt{feat(zkp): implement verifiable polynomial multiplication...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9104}{PR \#9104} & \texttt{18:56:35Z} & 70s & \texttt{feat(zkp): implement zero-knowledge grand-product...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9105}{PR \#9105} & \texttt{18:57:44Z} & 69s & \texttt{feat(zkp): implement verifiable Lagrange polynomial...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9106}{PR \#9106} & \texttt{18:58:55Z} & 71s & \texttt{feat(zkp): implement zero-knowledge Reed-Solomon codeword...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9107}{PR \#9107} & \texttt{19:00:08Z} & 73s & \texttt{feat(zkp): implement verifiable Plookup-style multiset...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9108}{PR \#9108} & \texttt{19:01:41Z} & 93s & \texttt{feat(zkp): implement zero-knowledge entrywise Hadamard...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9109}{PR \#9109} & \texttt{19:02:57Z} & 76s & \texttt{feat(zkp): implement verifiable batch polynomial evaluation...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9110}{ISS \#9110}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9112}{9112} & \texttt{19:04:30--31Z} & 1s & 3 synthetic \texttt{[ZKP]} issues created in 1 second (all self-assigned) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9113}{PR \#9113} & \texttt{19:04:54Z} & 23s & \texttt{feat(zkp): implement zero-knowledge recursive proof...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9115}{PR \#9115} & \texttt{19:05:22Z} & 28s & \texttt{feat(zkp): implement verifiable multi-scalar multiplication...} \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9116}{PR \#9116} & \texttt{19:06:28Z} & 66s & \texttt{feat(zkp): implement zero-knowledge final global consensus...} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\textbf{Conclusion:} Creating 427 issues and 429 PRs—including 8 issues in a single second and matching PRs every 60--75 seconds—is physically impossible without automated script generation and constitutes unambiguous leaderboard abuse.
 
-\subsection{5. \texttt{Senthil455} — Automated 1:1 Self-Issue \& Self-PR Farming (194 PRs, 180 Issues)}
-\textbf{Classification:} Automated Self-Issue/Self-PR Point Farming.\\
-\textbf{Evidence:} Systematically opened an issue, self-assigned it, and opened a PR every 1--2 minutes in tight bursts—for example, pairs \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4687}{\#4687}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4688}{\#4688} through \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4715}{\#4715}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4716}{\#4716} between \texttt{15:13:00Z} and \texttt{15:44:29Z} on Oct 6, 2026.
-
-\section{Corrective Governance Actions Implemented (Nov 28, 2026)}
-In full alignment with Code Social / WOCS guidelines, the following workflow changes have been deployed on \texttt{main}:
+\subsection{3.2 \texttt{KartikeyG-world} — Junk Issue Pollution, Collusion \& Unauthorized Closure}
+\textbf{Totals:} \textbf{149 Pull Requests} | \textbf{131 Issues} | \textbf{Banned:} Nov 25, 2026.\\
+\textbf{Technical Diagnosis:} \texttt{KartikeyG-world} combined automated PR bursts with deliberate issue-tracker vandalism and triage sabotage:
 \begin{enumerate}[leftmargin=1.5em, itemsep=3pt]
-  \item \textbf{Auto-Merge Paused:} Disabled automatic triggers (\texttt{pull\_request\_target}, \texttt{issue\_comment}, \texttt{workflow\_run}, and 5-minute \texttt{schedule}) in \texttt{.github/workflows/auto-merge.yml} and removed automated bot self-approvals so PRs cannot be merged without meaningful review.
-  \item \textbf{Documentation Label Inflation Fixed:} Updated \texttt{.github/workflows/auto-comment.yml} and \texttt{.github/workflows/auto-label-new-issue.yml} so documentation-only PRs and \texttt{documentation} issues are \textbf{strictly capped at \texttt{level 1}}, preventing line-count or keyword heuristics from assigning \texttt{level 2} or \texttt{level 3}.
-  \item \textbf{Transparent Moderation:} Documented all 5 blocked accounts in this report with verifiable GitHub permalinks.
+  \item \textbf{Null-Entropy Placeholder Issue Pollution:} On Nov 25, 2026, \texttt{KartikeyG-world} flooded the tracker with 9 junk issues titled \texttt{".."} and \texttt{"//"} at 1-minute intervals, assigning them to other accounts without consent.
+  \item \textbf{High-Velocity Self-PR Bursts:} Submitted 10 PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10347}{\#10347}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10359}{\#10359}) in 6 minutes 28 seconds (\texttt{10:01:41Z}--\texttt{10:08:09Z} on Nov 25, 2026) linked to self-authored issues (\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10258}{\#10258}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10262}{\#10262}).
+  \item \textbf{Unauthorized Issue Closure:} Repeatedly closed active issues (e.g., \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{\#10374}) as \texttt{completed} immediately after maintainer intervention, forcing permanent access revocation.
 \end{enumerate}
+
+\newpage
+\noindent\textbf{Verified Junk Issue \& Burst Log — \texttt{KartikeyG-world} (November 25, 2026):}
+\begin{center}
+\small
+\begin{tabular}{@{}llllp{6.6cm}@{}}
+\toprule
+\textbf{Issue / PR} & \textbf{Timestamp (UTC)} & \textbf{Title} & \textbf{Assignee / State} & \textbf{Violation} \\
+\midrule
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10332}{ISS \#10332} & \texttt{09:07:06Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, unsolicited assignment \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10364}{ISS \#10364} & \texttt{10:14:24Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 54s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10365}{ISS \#10365} & \texttt{10:15:18Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 43s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10367}{ISS \#10367} & \texttt{10:16:01Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 84s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10368}{ISS \#10368} & \texttt{10:17:25Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 48s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10369}{ISS \#10369} & \texttt{10:18:13Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 48s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10370}{ISS \#10370} & \texttt{10:19:01Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 48s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10373}{ISS \#10373} & \texttt{10:21:23Z} & \texttt{".."} & \texttt{srnsksyp} (closed) & Empty title, 43s burst cadence \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{ISS \#10374} & \texttt{10:22:06Z} & \texttt{"//"} & \texttt{srnsksyp} (closed) & Junk title + unauthorized \texttt{completed} close \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10347}{PR \#10347}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10359}{10359} & \texttt{10:01--10:08Z} & \texttt{10 PRs} & Closed & 10 PRs in 6m 28s ($\sim$39s/PR) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{3.3 \texttt{RitikaDevi-12} — Collusive Self-Claiming, Junk Issues \& State-Thrashing}
+\textbf{Totals:} \textbf{18 Pull Requests} | \textbf{14 Issues} | \textbf{Banned:} Nov 25, 2026.\\
+\textbf{Technical Diagnosis:} \texttt{RitikaDevi-12} acted in direct coordination with \texttt{KartikeyG-world}, executing three distinct abuse vectors on November 25, 2026:
+\begin{enumerate}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{Collusive Self-Issue Creation \& Claiming (11-Minute Burst):} Between \texttt{08:46:33Z} and \texttt{08:57:20Z}, \texttt{RitikaDevi-12} created and self-assigned 8 issues (\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10313}{\#10313}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10324}{\#10324}) and subsequently opened 8 matching PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10387}{\#10387}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10400}{\#10400}) between \texttt{11:42:45Z} and \texttt{12:16:43Z}, while also cross-creating issues assigned to third parties (\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10326}{\#10326}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10336}{\#10336}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10337}{\#10337}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10338}{\#10338}).
+  \item \textbf{Identical Junk Issue Signature:} Immediately following \texttt{KartikeyG-world}'s \texttt{".."} spam, \texttt{RitikaDevi-12} created \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10376}{ISS \#10376} titled \texttt{".."} at \texttt{10:26:09Z}.
+  \item \textbf{Adversarial Open/Close State-Thrashing:} Repeatedly toggled issue states (\texttt{closed as completed} $\rightarrow$ maintainer \texttt{reopened} $\rightarrow$ \texttt{closed as duplicate} $\rightarrow$ maintainer \texttt{reopened} $\rightarrow$ \texttt{closed as completed} $\rightarrow$ \texttt{reopened} $\rightarrow$ \texttt{closed as duplicate}) within 1--2 minute intervals to actively disrupt repository triage.
+\end{enumerate}
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{@{}llllp{6.4cm}@{}}
+\toprule
+\textbf{Artifact} & \textbf{Timestamp (UTC)} & \textbf{Assignee} & \textbf{Linked PR} & \textbf{Forensic Note} \\
+\midrule
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10313}{ISS \#10313} & \texttt{08:46:33Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10387}{PR \#10387} & Self-created \& self-assigned \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10315}{ISS \#10315} & \texttt{08:50:30Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10388}{PR \#10388} & Self-created \& self-assigned \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10316}{ISS \#10316} & \texttt{08:51:32Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10389}{PR \#10389} & Self-created \& self-assigned (62s gap) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10318}{ISS \#10318} & \texttt{08:52:35Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10391}{PR \#10391} & Self-created \& self-assigned (63s gap) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10320}{ISS \#10320} & \texttt{08:53:45Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10392}{PR \#10392} & Self-created \& self-assigned (70s gap) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10321}{ISS \#10321} & \texttt{08:54:49Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10393}{PR \#10393} & Self-created \& self-assigned (64s gap) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10323}{ISS \#10323} & \texttt{08:56:07Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10395}{PR \#10395} & Self-created \& self-assigned (78s gap) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10324}{ISS \#10324} & \texttt{08:57:20Z} & \texttt{RitikaDevi-12} & \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10397}{PR \#10397} & Self-created \& self-assigned (73s gap) \\
+\href{https://github.com/SatyamPandey-07/WorkSphere/issues/10376}{ISS \#10376} & \texttt{10:26:09Z} & \texttt{shashankkshyp} & -- & Junk \texttt{".."} title matching KartikeyG-world \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{3.4 \texttt{jasonjose007} — Mass Boilerplate PR Flooding (1,017 PRs, 1 Issue)}
+\textbf{Technical Diagnosis:} Account generated \textbf{1,017 automated pull requests} consisting of repetitive, unrequested boilerplate unit-test files (\texttt{add unit tests for venue booking ... utilities}) with zero corresponding claimed issues. On October 4, 2026 alone, PRs \href{https://github.com/SatyamPandey-07/WorkSphere/pull/3829}{\#3829} through \href{https://github.com/SatyamPandey-07/WorkSphere/pull/3843}{\#3843} (15 consecutive PRs) were opened between \texttt{07:34:57Z} and \texttt{07:38:59Z}—an average of \textbf{1 PR every 16 seconds}.
+
+\subsection{3.5 \texttt{Senthil455} — Automated 1:1 Issue-to-PR Loop (194 PRs, 180 Issues)}
+\textbf{Technical Diagnosis:} Account executed a scripted 1:1 issue-creation and PR-submission loop, generating \textbf{180 self-authored issues} and \textbf{194 PRs}. On October 6, 2026 between \texttt{15:13:00Z} and \texttt{15:44:29Z}, consecutive issue/PR pairs \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4687}{\#4687}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4688}{\#4688} through \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4715}{\#4715}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4716}{\#4716} were opened in automated 1--2 minute cycles.
+
+\newpage
+\section{4. Governance Hardening \& WOCS Remediation Architecture}
+In direct response to Code Social's audit (Nov 28, 2026), WorkSphere has deployed a zero-trust, low-maintainer-overhead review and labeling pipeline that guarantees every WOCS PR receives meaningful review and accurate difficulty classification:
+
+\begin{enumerate}[leftmargin=1.5em, itemsep=5pt]
+  \item \textbf{Auto-Merge Paused (\texttt{.github/workflows/auto-merge.yml}):}\\
+  Removed all automatic triggers (\texttt{pull\_request\_target}, \texttt{issue\_comment}, \texttt{workflow\_run}, and 5-minute \texttt{schedule}). The workflow now runs strictly on manual \texttt{workflow\_dispatch}. Furthermore, automated bot self-approvals (\texttt{pulls.createReview(APPROVE)}) have been removed and replaced with a mandatory check requiring at least one genuine \texttt{APPROVED} review.
+
+  \item \textbf{Strict Documentation Level Cap (\texttt{auto-comment.yml} \& \texttt{auto-label-new-issue.yml}):}\\
+  Previously, PRs exceeding 350 lines of Markdown or doc issues containing keywords like \texttt{zkp}/\texttt{solana} were automatically escalated to \texttt{level 3}. Both workflows now enforce:
+  \begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+    \item \texttt{auto-comment.yml}: Any PR whose changed files are exclusively \texttt{*.md} or under \texttt{docs/} (or \texttt{docs:} titles without code changes) is strictly capped at \texttt{level 1}.
+    \item \texttt{auto-label-new-issue.yml}: Any issue labeled \texttt{documentation} or titled \texttt{docs:} bypasses keyword escalation and is strictly assigned \texttt{level 1}.
+  \end{itemize}
+
+  \item \textbf{Automated AI Code Review via CodeRabbit (\texttt{.coderabbit.yaml}):}\\
+  Configured assertive automatic reviews (\texttt{auto\_review.enabled: true}, \texttt{request\_changes\_workflow: true}, \texttt{high\_level\_summary: true}) with path-specific WOCS rules checking issue-scope alignment, documentation level-1 compliance, test coverage, and security regressions before maintainer sign-off.
+
+  \item \textbf{GitHub \texttt{main} Branch Protection \& Collaborator Lockdown:}\\
+  \begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+    \item Audited \texttt{/repos/SatyamPandey-07/WorkSphere/collaborators}: confirmed \texttt{SatyamPandey-07} is the sole admin/write collaborator; external contributors hold \texttt{Read} access only and cannot close, reopen, or cross-assign issues outside \texttt{/claim} and \texttt{/unclaim}.
+    \item Enabled branch protection on \texttt{main} requiring \textbf{1 approving review}, stale-review dismissal, and passing CI checks (\texttt{build-and-test}, \texttt{pr-check}).
+  \end{itemize}
+\end{enumerate}
+
+\section{5. Conclusion \& Verification Reference}
+All corrective governance changes are live on \texttt{SatyamPandey-07/WorkSphere} (\texttt{main}). The maintainer commits to manual verification of all WOCS difficulty labels and PR reviews prior to merge, while keeping the \texttt{BLOCKED\_USERS} guard active strictly against the five documented spam/sabotage accounts detailed in Section 3.
 
 \end{document}

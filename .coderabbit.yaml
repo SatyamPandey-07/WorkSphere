@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  path_instructions:
+    - path: "**/*.md"
+      instructions: |
+        Documentation-only changes must remain concise, accurate against the codebase, and strictly capped at WOCS level 1. Flag any inflated difficulty claims or unverified file paths.
+    - path: "src/**/*"
+      instructions: |
+        Verify changes match the linked GitHub issue scope with minimal unrelated edits, preserve security/auth checks, avoid duplicated logic, and ensure relevant unit/integration tests are included.
+    - path: ".github/workflows/**/*"
+      instructions: |
+        Ensure workflows enforce least-privilege permissions, respect BLOCKED_USERS, never auto-merge without human/reviewer approval, and cap documentation PRs at level 1.
+chat:
+  auto_reply: true

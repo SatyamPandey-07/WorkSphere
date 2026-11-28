@@ -316,6 +316,14 @@ describe('MultiAgentOrchestrator bounded schema-validated tool execution loop (#
       timedOut: 1,
       deduplicated: 1,
     });
+
+    expect(result.toolMetrics).toHaveLength(2);
+    expect(
+      result.toolMetrics.map(({ toolName, ok }) => ({ toolName, ok })),
+    ).toEqual([
+      { toolName: 'fast_lookup', ok: true },
+      { toolName: 'slow_op', ok: false },
+    ]);
   });
 
   it('stops after the cumulative tool duration budget and retains completed tool results', async () => {

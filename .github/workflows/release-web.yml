@@ -22,16 +22,87 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Extract release tag
+        id: release_version
+        shell: bash
+        run: |
+          if [[ -z "${GITHUB_REF_NAME:-}" ]]; then
+            echo "::error::GITHUB_REF_NAME is empty; this workflow must run for a version tag."
+            exit 1
+          fi
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build web application
+        env:
+          NEXT_PUBLIC_APP_VERSION: ${{ steps.release_version.outputs.tag }}
         run: npm run build
+
+      - name: Verify compiled health version
+        env:
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          health_file="$RUNNER_TEMP/worksphere-health.json"
+          server_log="$RUNNER_TEMP/worksphere-next-start.log"
+          ./node_modules/.bin/next start --hostname 127.0.0.1 --port 3100 \
+            >"$server_log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          health_ready=false
+          for attempt in {1..30}; do
+            if curl --silent --fail \
+              http://127.0.0.1:3100/api/health \
+              --output "$health_file"; then
+              health_ready=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "$health_ready" != true ]]; then
+            echo "::error::The compiled app health endpoint did not respond at /api/health. Check the production server startup and health route."
+            exit 1
+          fi
+
+          node - "$health_file" "$RELEASE_TAG" <<'NODE'
+          const fs = require('node:fs');
+
+          const healthPath = process.argv[2];
+          const expectedVersion = process.argv[3];
+          let health;
+          try {
+            health = JSON.parse(fs.readFileSync(healthPath, 'utf8'));
+          } catch {
+            console.error('::error::The compiled /api/health response was missing or malformed JSON.');
+            process.exit(1);
+          }
+
+          const reportedVersion =
+            health && typeof health === 'object' ? health.version : undefined;
+          if (typeof reportedVersion !== 'string' || reportedVersion.length === 0) {
+            console.error('::error::The compiled /api/health response is missing its string "version" field.');
+            process.exit(1);
+          }
+          if (reportedVersion !== expectedVersion) {
+            console.error(
+              `::error::Compiled app version "${reportedVersion}" does not match release tag "${expectedVersion}". Rebuild with NEXT_PUBLIC_APP_VERSION set to GITHUB_REF_NAME.`,
+            );
+            process.exit(1);
+          }
+
+          console.log(`Verified compiled app version ${reportedVersion}.`);
+          NODE
 
       - name: Package release artifacts
         id: package
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail

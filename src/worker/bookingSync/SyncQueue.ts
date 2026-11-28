@@ -6,16 +6,38 @@
 
 import { DraftStore, BookingDraft } from "./DraftStore";
 import { ConflictResolver, ServerState } from "./ConflictResolver";
+import { calculateBackoff } from "../../lib/offlineSyncQueue";
+
+export interface DraftRetryMetadata {
+  draftId: string;
+  attempts: number;
+  nextAttemptAtMs: number;
+  status: "pending" | "retry" | "conflict" | "dead_letter";
+  lastError?: string;
+}
 
 export class SyncQueue {
   private draftStore: DraftStore;
   private conflictResolver: ConflictResolver;
   private isSyncing: boolean = false;
+  private readonly retryState = new Map<string, DraftRetryMetadata>();
+  private readonly maxRetries: number;
 
-  constructor(localNodeId: string = "booking-sync-worker") {
+  constructor(localNodeId: string = "booking-sync-worker", maxRetries: number = 5) {
     this.draftStore = new DraftStore();
     this.conflictResolver = new ConflictResolver(localNodeId);
+    this.maxRetries = maxRetries;
     this.setupNetworkListeners();
+  }
+
+  public getRetryMetadata(draftId: string): DraftRetryMetadata | undefined {
+    return this.retryState.get(draftId);
+  }
+
+  public getDeadLetterDrafts(): DraftRetryMetadata[] {
+    return Array.from(this.retryState.values()).filter(
+      (meta) => meta.status === "dead_letter",
+    );
   }
 
   private setupNetworkListeners(): void {
@@ -53,10 +75,40 @@ export class SyncQueue {
       await this.draftStore.init();
       const drafts = await this.draftStore.getAllDrafts();
 
+      const nowMs = Date.now();
       for (const draft of drafts) {
+        const existingMeta = this.retryState.get(draft.id);
+        if (existingMeta) {
+          if (existingMeta.status === "dead_letter") continue;
+          if (existingMeta.nextAttemptAtMs > nowMs) continue;
+        }
+
         const success = await this.syncSingleDraft(draft);
         if (success) {
+          this.retryState.delete(draft.id);
           await this.draftStore.deleteDraft(draft.id);
+        } else {
+          const current = this.retryState.get(draft.id);
+          if (current?.status === "conflict") continue;
+          const nextAttempts = (current?.attempts ?? 0) + 1;
+          if (nextAttempts >= this.maxRetries) {
+            this.retryState.set(draft.id, {
+              draftId: draft.id,
+              attempts: nextAttempts,
+              nextAttemptAtMs: Number.POSITIVE_INFINITY,
+              status: "dead_letter",
+              lastError: current?.lastError ?? "Max sync retries exceeded",
+            });
+          } else {
+            const delayMs = calculateBackoff(nextAttempts - 1);
+            this.retryState.set(draft.id, {
+              draftId: draft.id,
+              attempts: nextAttempts,
+              nextAttemptAtMs: Date.now() + delayMs,
+              status: "retry",
+              lastError: current?.lastError,
+            });
+          }
         }
       }
     } catch (error) {
@@ -107,6 +159,13 @@ export class SyncQueue {
       const mergeResult = this.conflictResolver.resolve(draft, serverState);
 
       if (mergeResult.requiresUserInput) {
+        this.retryState.set(draft.id, {
+          draftId: draft.id,
+          attempts: this.retryState.get(draft.id)?.attempts ?? 0,
+          nextAttemptAtMs: Number.POSITIVE_INFINITY,
+          status: "conflict",
+          lastError: "Requires user conflict resolution",
+        });
         // Dispatch custom event to notify UI
         if (typeof window !== "undefined") {
           window.dispatchEvent(
@@ -119,7 +178,10 @@ export class SyncQueue {
       // 3. Apply merged state to server with updated Vector Clock
       const updateResponse = await fetch(`/api/bookings/${draft.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `booking-sync-${draft.id}-v${(serverState.version || 0) + 1}`,
+        },
         body: JSON.stringify({
           payload: mergeResult.resolvedPayload,
           version: (serverState.version || 0) + 1,
@@ -162,7 +224,10 @@ export class SyncQueue {
 
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `booking-sync-${draft.id}-v${(serverState.version || 0) + 1}`,
+        },
         body: JSON.stringify(bodyPayload),
       });
       return response.ok;

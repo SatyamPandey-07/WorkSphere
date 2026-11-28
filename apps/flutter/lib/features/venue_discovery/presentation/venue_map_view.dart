@@ -5,6 +5,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:worksphere_app/features/venue_discovery/data/venue_discovery_repository.dart';
 import 'package:worksphere_app/features/venue_discovery/domain/venue_summary.dart';
 import 'package:worksphere_app/features/venue_discovery/domain/venue_viewport.dart';
+import 'package:worksphere_app/features/venue_discovery/presentation/venue_amenity_filter_controller.dart';
 import 'package:worksphere_app/features/venue_discovery/presentation/venue_map_controller.dart';
 
 const String _defaultMapStyle =
@@ -14,6 +15,7 @@ class VenueMapView extends StatefulWidget {
   const VenueMapView({
     super.key,
     required this.repository,
+    required this.amenityFilterController,
     this.category,
     this.styleUrl = const String.fromEnvironment(
       'WORKSPHERE_MAP_STYLE_URL',
@@ -23,6 +25,7 @@ class VenueMapView extends StatefulWidget {
   });
 
   final VenueDiscoveryRepository repository;
+  final VenueAmenityFilterController amenityFilterController;
   final String? category;
   final String styleUrl;
   final Duration debounceDuration;
@@ -179,7 +182,11 @@ class _VenueMapViewState extends State<VenueMapView> {
             builder: (context, constraints) {
               return Stack(
                 children: [
-                  for (final cluster in _venueMapController.clusters)
+                  for (final cluster in VenueMapController.clusterVenues(
+                    widget.amenityFilterController
+                        .filterVenues(_venueMapController.venues),
+                    zoom: _venueMapController.zoom,
+                  ))
                     _buildClusterMarker(cluster, viewport, constraints.biggest),
                 ],
               );
@@ -276,7 +283,10 @@ class _VenueMapViewState extends State<VenueMapView> {
         onAction: _venueMapController.refreshNow,
       );
     }
-    if (_visibleViewport != null && _venueMapController.venues.isEmpty) {
+    if (_visibleViewport != null &&
+        widget.amenityFilterController
+            .filterVenues(_venueMapController.venues)
+            .isEmpty) {
       return const _MapStatusCard(message: 'No venues found in this area.');
     }
     return const SizedBox.shrink();

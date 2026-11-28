@@ -11,6 +11,10 @@ class VenueSummary {
     this.avgRating,
     this.latitude,
     this.longitude,
+    this.hasQuietZone,
+    this.hasGigabitWifi,
+    this.hasPowerOutlets,
+    this.amenities = const [],
   });
 
   final String id;
@@ -23,6 +27,17 @@ class VenueSummary {
   final double? avgRating;
   final double? latitude;
   final double? longitude;
+  final bool? hasQuietZone;
+  final bool? hasGigabitWifi;
+  final bool? hasPowerOutlets;
+  final List<String> amenities;
+
+  bool hasAmenityLabel(String amenity) {
+    String normalize(String value) =>
+        value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    return amenities.any((value) => normalize(value) == normalize(amenity));
+  }
 
   factory VenueSummary.fromJson(Map<String, dynamic> json) {
     double? toDouble(dynamic value) {
@@ -36,6 +51,34 @@ class VenueSummary {
         location is Map<String, dynamic> ? location : const <String, dynamic>{};
     final coordinates = json['coordinates'] ?? locationMap['coordinates'];
     final coordinateList = coordinates is List ? coordinates : const [];
+    final rawAmenities = json['amenities'];
+    final amenities = <String>[];
+    if (rawAmenities is List) {
+      amenities.addAll(rawAmenities.map((value) => value.toString()));
+    } else if (rawAmenities is Map) {
+      for (final entry in rawAmenities.entries) {
+        if (entry.value == true) {
+          amenities.add(entry.key.toString());
+        }
+      }
+    }
+    bool? toBool(dynamic value) {
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      if (value is String) {
+        switch (value.trim().toLowerCase()) {
+          case 'true':
+          case '1':
+          case 'yes':
+            return true;
+          case 'false':
+          case '0':
+          case 'no':
+            return false;
+        }
+      }
+      return null;
+    }
 
     return VenueSummary(
       id: (json['id'] ?? '').toString(),
@@ -60,6 +103,12 @@ class VenueSummary {
           toDouble(locationMap['lng']) ??
           toDouble(locationMap['lon']) ??
           (coordinateList.isNotEmpty ? toDouble(coordinateList[0]) : null),
+      hasQuietZone: toBool(json['hasQuietZone'] ?? json['quietZone']),
+      hasGigabitWifi:
+          toBool(json['hasGigabitWifi'] ?? json['gigabitWifi']),
+      hasPowerOutlets:
+          toBool(json['hasPowerOutlets'] ?? json['powerOutlets']),
+      amenities: List<String>.unmodifiable(amenities),
     );
   }
 

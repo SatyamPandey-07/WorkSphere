@@ -141,3 +141,82 @@ async function queryContextStore(
 | **Model Tiering** | Agent Routing | Direct basic tasks to `llama-3.1-8b-instant` and reserve heavy reasoning for `llama-3.3-70b-versatile`. |
 | **Context Compression** | Memory System | Conversation turns exceeding 8,000 tokens are automatically summarized into persistent state vectors. |
 | **Strict JSON Output Framing** | Groq Inference | Forces short, unpadded JSON outputs to eliminate conversational filler tokens during routing decisions. |
+
+## 6. Bounded Tool Loops: Per-Step Latency Metrics
+
+`SubagentExecutionResult.toolMetrics` is an ordered array of `ToolMetric` records.
+The bounded tool-call loop appends one record for each registered tool handler
+that is actually invoked. Each record describes one invocation, not an entire
+LLM round or the full subagent execution.
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `toolName` | `string` | Name of the registered tool handler that was invoked. |
+| `durationMs` | `number` | Elapsed time from immediately before the handler/timeout race starts until it settles. **All latency duration values are in milliseconds (`ms`).** The value is the measured elapsed duration, can include fractional milliseconds, and is clamped to zero if negative or non-finite. |
+| `ok` | `boolean` | `true` when the handler resolves successfully before the timeout; `false` when it throws or the timeout race rejects. |
+
+The timer is started immediately before `registeredTool.execute` is raced
+against the configured `toolTimeoutMs`. The metric is appended in the `finally`
+path, so an invoked handler has a duration record whether it succeeds, throws,
+or times out. For a timeout, `durationMs` measures time until the timeout
+rejection is observed; it is not the eventual completion time of the handler
+(the timeout race does not cancel the underlying handler).
+
+`ToolMetric` has no dedicated error message, call ID, round number, or timeout
+flag. A timeout is represented by `ok: false`; its count is exposed separately
+as `toolExecutionStats.timedOut`. The tool result returned to the loop also
+contains an `error` message such as `Tool 'slow_lookup' timed out after 10000ms`.
+The implementation classifies a caught error as a timeout when its message
+contains `timed out`. Such calls increment `timedOut`, not `failed`; other
+handler errors increment `failed`. Successful calls increment `succeeded` and
+their names are added to `toolsInvoked`.
+
+The loop is bounded by `maxToolRounds` (default `5`), `maxToolCalls` (default
+`20`), `toolTimeoutMs` (default `10000` ms), and
+`maxTotalToolDurationMs` (default `Infinity` ms). `toolMetrics` accumulates
+across the rounds in invocation order. Time spent generating LLM completions,
+validating arguments, rejecting unapproved tools, or serving deduplicated calls
+is not recorded as a per-step latency metric because those paths do not invoke
+the tool handler. Calls rejected after the total tool-duration budget is
+exhausted also do not create a `ToolMetric`. Each recorded `durationMs`
+contributes to the loop's total tool-duration budget; that total is not itself
+included in `toolMetrics`.
+
+Example result excerpt:
+
+```json
+{
+  "toolsInvoked": ["venue_search"],
+  "toolExecutionStats": {
+    "requested": 3,
+    "validated": 3,
+    "invoked": 3,
+    "succeeded": 1,
+    "failed": 1,
+    "timedOut": 1,
+    "deduplicated": 0
+  },
+  "toolMetrics": [
+    {
+      "toolName": "venue_search",
+      "durationMs": 34.68,
+      "ok": true
+    },
+    {
+      "toolName": "venue_details",
+      "durationMs": 12.41,
+      "ok": false
+    },
+    {
+      "toolName": "slow_lookup",
+      "durationMs": 10004.73,
+      "ok": false
+    }
+  ]
+}
+```
+
+In this example, the last entry's elapsed duration is slightly above the
+10,000 ms timeout because it records observed elapsed time rather than copying
+the configured timeout value. The aggregate `timedOut` count distinguishes it
+from the ordinary failed invocation; it is not an extra per-step metric field.

@@ -1,4 +1,8 @@
 import * as Y from "yjs";
+import {
+  compressYjsUpdateAsync,
+  decompressYjsUpdateAsync,
+} from "./yjsCompression";
 
 export const COMPACTION_ENTRY_THRESHOLD = 50;
 export const COMPACTION_BYTE_THRESHOLD = 64 * 1024; // 64 KB
@@ -160,11 +164,19 @@ export class BinaryFrameReassembler {
     this.transfers.delete(transferId);
     return assembled;
   }
+
+  public async pushFrameAndDecompress(
+    wireBuffer: Uint8Array,
+  ): Promise<Uint8Array | null> {
+    const assembled = this.pushFrame(wireBuffer);
+    if (!assembled) return null;
+    return decompressYjsUpdateAsync(assembled);
+  }
 }
 
 /**
  * Offline-resilient CRDT IndexedDB change journal with automatic Y.mergeUpdates compaction
- * and chunked binary framing replay over PartyKit.
+ * and compressed chunked binary framing replay over PartyKit.
  */
 export class CompactingCrdtJournal {
   private readonly roomId: string;
@@ -215,10 +227,6 @@ export class CompactingCrdtJournal {
     });
   }
 
-  /**
-   * Appends an incremental Yjs update frame to the journal and triggers automatic
-   * Y.mergeUpdates compaction if entry count > 50 or buffered bytes > 64 KB.
-   */
   public async appendUpdate(update: Uint8Array): Promise<{
     compacted: boolean;
     entryCount: number;
@@ -303,10 +311,6 @@ export class CompactingCrdtJournal {
     });
   }
 
-  /**
-   * Compacts all queued incremental frames for `roomId` into a single merged
-   * state vector update via `Y.mergeUpdates(queuedFrames)`.
-   */
   public async compact(): Promise<Uint8Array | null> {
     if (this.isCompacting) {
       return null;
@@ -365,8 +369,9 @@ export class CompactingCrdtJournal {
   }
 
   /**
-   * Compacts all offline updates into a single merged state update, splits it into
-   * <= 32 KB binary framed chunks, streams them over PartyKit, and clears the journal.
+   * Compacts all offline updates into a single merged state update, compresses
+   * payloads > 512 bytes via streaming Brotli/deflate, splits into <= 32 KB
+   * binary framed chunks, streams them over PartyKit, and clears the journal.
    */
   public async flushToPartyKit(socket: PartyKitSocketLike): Promise<{
     sentFrames: number;
@@ -381,7 +386,11 @@ export class CompactingCrdtJournal {
       return { sentFrames: 0, mergedByteLength: 0 };
     }
 
-    const frames = encodeBinaryFrameChunks(mergedUpdate, this.maxChunkBytes);
+    const compressedUpdate = await compressYjsUpdateAsync(mergedUpdate);
+    const frames = encodeBinaryFrameChunks(
+      compressedUpdate,
+      this.maxChunkBytes,
+    );
     for (const frame of frames) {
       socket.send(frame.wireBuffer);
     }
@@ -437,15 +446,24 @@ export class OfflineCanvasProvider {
     }
 
     if (this.isOnline && this.socket && this.socket.readyState === 1) {
-      const frames = encodeBinaryFrameChunks(update);
-      for (const frame of frames) {
-        this.socket.send(frame.wireBuffer);
-      }
+      void this.sendCompressedUpdate(update);
       return;
     }
 
     void this.journal.appendUpdate(update);
   };
+
+  private async sendCompressedUpdate(update: Uint8Array): Promise<void> {
+    const compressed = await compressYjsUpdateAsync(update);
+    if (!this.isOnline || !this.socket || this.socket.readyState !== 1) {
+      await this.journal.appendUpdate(update);
+      return;
+    }
+    const frames = encodeBinaryFrameChunks(compressed);
+    for (const frame of frames) {
+      this.socket.send(frame.wireBuffer);
+    }
+  }
 
   public setOnlineStatus(online: boolean): void {
     this.isOnline = online;
@@ -463,5 +481,76 @@ export class OfflineCanvasProvider {
   public destroy(): void {
     this.doc.off("update", this.handleDocUpdate);
     this.socket = null;
+  }
+}
+
+// ─── State-Vector Delta Sync Session with Streaming Compression (#9440) ─────
+
+const DELTA_SYNC_FRAME_SV = 0x01;
+const DELTA_SYNC_FRAME_UPDATE = 0x02;
+
+export interface CrdtDeltaSyncSessionOptions {
+  doc: Y.Doc;
+  peerId: string;
+  sendFrame: (frame: Uint8Array) => void;
+}
+
+export class CrdtDeltaSyncSession {
+  public readonly doc: Y.Doc;
+  public readonly peerId: string;
+  private readonly sendFrame: (frame: Uint8Array) => void;
+
+  constructor(options: CrdtDeltaSyncSessionOptions) {
+    this.doc = options.doc;
+    this.peerId = options.peerId;
+    this.sendFrame = options.sendFrame;
+  }
+
+  private wrapFrame(kind: number, payload: Uint8Array): Uint8Array {
+    const frame = new Uint8Array(1 + payload.byteLength);
+    frame[0] = kind;
+    frame.set(payload, 1);
+    return frame;
+  }
+
+  public initiateStateVectorHandshake(): void {
+    const stateVector = Y.encodeStateVector(this.doc);
+    this.sendFrame(this.wrapFrame(DELTA_SYNC_FRAME_SV, stateVector));
+  }
+
+  public async encodeCompressedDelta(
+    remoteStateVector?: Uint8Array,
+  ): Promise<Uint8Array> {
+    const rawDelta = remoteStateVector
+      ? Y.encodeStateAsUpdate(this.doc, remoteStateVector)
+      : Y.encodeStateAsUpdate(this.doc);
+    return compressYjsUpdateAsync(rawDelta);
+  }
+
+  public async applyCompressedDelta(
+    compressedDelta: Uint8Array,
+    origin: unknown = "delta-sync",
+  ): Promise<Uint8Array> {
+    const decompressed = await decompressYjsUpdateAsync(compressedDelta);
+    if (decompressed.byteLength > 0) {
+      Y.applyUpdate(this.doc, decompressed, origin);
+    }
+    return decompressed;
+  }
+
+  public async receiveFrame(frame: Uint8Array): Promise<void> {
+    if (!frame || frame.byteLength < 2) return;
+    const kind = frame[0];
+    const body = frame.subarray(1);
+
+    if (kind === DELTA_SYNC_FRAME_SV) {
+      const compressedDelta = await this.encodeCompressedDelta(body);
+      this.sendFrame(this.wrapFrame(DELTA_SYNC_FRAME_UPDATE, compressedDelta));
+      return;
+    }
+
+    if (kind === DELTA_SYNC_FRAME_UPDATE) {
+      await this.applyCompressedDelta(body, `peer:${this.peerId}`);
+    }
   }
 }

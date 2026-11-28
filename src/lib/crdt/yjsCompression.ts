@@ -2,14 +2,11 @@
  * Yjs Document Update Compression & Decompression Utility.
  *
  * - v1 (sync LZ77): compressYjsUpdate / decompressYjsUpdate — used by the
- *   WebRTC mesh whiteboard.
- * - v2 wire codec (#1728): encodeYjsWirePayload / decodeYjsWirePayload use the
- *   browser's native, asynchronous CompressionStream("deflate-raw"), so large
- *   sync payloads are (de)compressed without blocking the render thread.
- * - createYjsUpdateBatcher (#1728): coalesces high-frequency keystroke updates
- *   with Y.mergeUpdates. Per-message envelope overhead (AES-GCM tag + IV,
- *   base64, JSON) dwarfs a ~20-byte keystroke update, so batching is what cuts
- *   bandwidth for active typing sessions; compression wins on large syncs.
+ *   WebRTC mesh whiteboard and fallback environments without Web Streams.
+ * - v2 wire codec (#1728 / #9440): compressYjsUpdateAsync / decompressYjsUpdateAsync
+ *   and encodeYjsWirePayload / decodeYjsWirePayload use native browser
+ *   CompressionStream('br' | 'deflate-raw') when available for payloads > 512 bytes,
+ *   with a lightweight LZ77/raw fallback when streams are unsupported.
  */
 
 import * as Y from "yjs";
@@ -19,26 +16,35 @@ export const COMPRESSION_MAGIC_HEADER = new Uint8Array([
   0x59, 0x5a, 0x43, 0x01,
 ]);
 
+/** Payloads <= 512 bytes bypass stream compression where framing overhead outweighs gains. */
+export const MIN_COMPRESSIBLE_BYTES = 512;
+
 /**
- * Compresses a Yjs document update Uint8Array payload.
- * Encodes repeated byte sequences and window matches, prepending the magic header.
+ * Synchronously compresses a Yjs document update Uint8Array payload using LZ77.
+ * Encodes repeated byte sequences and window matches, prepending the v1 magic header.
  */
-export function compressYjsUpdate(input: Uint8Array): Uint8Array {
-  if (!input || input.length === 0) {
+export function compressYjsUpdate(rawInput: Uint8Array): Uint8Array {
+  if (!rawInput) {
+    return new Uint8Array(0);
+  }
+  const input =
+    rawInput instanceof Uint8Array
+      ? rawInput
+      : new Uint8Array(rawInput as ArrayLike<number>);
+
+  if (input.byteLength === 0) {
     return new Uint8Array(0);
   }
 
-  // Small payloads (< 16 bytes) don't benefit from compression
-  if (input.length < 16) {
+  // Small payloads (< 16 bytes) don't benefit from LZ77 compression
+  if (input.byteLength < 16) {
     return input;
   }
 
   const headerLen = COMPRESSION_MAGIC_HEADER.length;
-  // Allocate buffer for header + 4-byte uncompressed size + encoded data
-  const output = new Uint8Array(headerLen + 4 + input.length * 2);
+  const output = new Uint8Array(headerLen + 4 + input.byteLength * 2);
   output.set(COMPRESSION_MAGIC_HEADER, 0);
-
-  // Store uncompressed size in BigEndian format
+  
   const view = new DataView(
     output.buffer,
     output.byteOffset,
@@ -54,7 +60,6 @@ export function compressYjsUpdate(input: Uint8Array): Uint8Array {
     let matchOffset = 0;
     let matchLength = 0;
 
-    // Search window for LZ77 byte sequence match
     const windowStart = Math.max(0, inIdx - WINDOW_SIZE);
     for (let j = inIdx - 1; j >= windowStart; j--) {
       let len = 0;
@@ -73,7 +78,6 @@ export function compressYjsUpdate(input: Uint8Array): Uint8Array {
     }
 
     if (matchLength >= 3) {
-      // Token 0x80: Match tag -> [0x80, matchLength, offsetHigh, offsetLow]
       output[outIdx++] = 0x80;
       output[outIdx++] = matchLength;
       output[outIdx++] = (matchOffset >> 8) & 0xff;
@@ -82,7 +86,6 @@ export function compressYjsUpdate(input: Uint8Array): Uint8Array {
     } else {
       const byteVal = input[inIdx++];
       if (byteVal === 0x80) {
-        // Escape literal 0x80 as [0x80, 0x00]
         output[outIdx++] = 0x80;
         output[outIdx++] = 0x00;
       } else {
@@ -92,7 +95,6 @@ export function compressYjsUpdate(input: Uint8Array): Uint8Array {
   }
 
   const compressedData = output.subarray(0, outIdx);
-  // Return compressed payload if smaller than original
   if (compressedData.length < input.length) {
     return compressedData;
   }
@@ -100,7 +102,7 @@ export function compressYjsUpdate(input: Uint8Array): Uint8Array {
 }
 
 /**
- * Decompresses a binary Yjs update packet.
+ * Synchronously decompresses a v1 LZ77 binary Yjs update packet.
  * If header does not match, transparently returns original uncompressed payload.
  */
 export function decompressYjsUpdate(input: Uint8Array): Uint8Array {
@@ -108,10 +110,9 @@ export function decompressYjsUpdate(input: Uint8Array): Uint8Array {
     return input ?? new Uint8Array(0);
   }
 
-  // Check 4-byte magic header
   for (let i = 0; i < COMPRESSION_MAGIC_HEADER.length; i++) {
     if (input[i] !== COMPRESSION_MAGIC_HEADER[i]) {
-      return input; // Uncompressed legacy packet
+      return input;
     }
   }
 
@@ -119,9 +120,6 @@ export function decompressYjsUpdate(input: Uint8Array): Uint8Array {
   const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
   const uncompressedSize = view.getUint32(headerLen, false);
 
-  // Guard against maliciously large or corrupt size fields that would cause
-  // an out-of-memory crash when allocating the output buffer.
-  // 10 MB is well above any real Yjs document update; PartyKit caps messages at ~1 MB.
   const MAX_UNCOMPRESSED_BYTES = 10 * 1024 * 1024; // 10 MB
   if (uncompressedSize === 0 || uncompressedSize > MAX_UNCOMPRESSED_BYTES) {
     console.warn(
@@ -139,7 +137,6 @@ export function decompressYjsUpdate(input: Uint8Array): Uint8Array {
     if (token === 0x80) {
       const len = input[inIdx++];
       if (len === 0x00) {
-        // Literal 0x80 byte
         output[outIdx++] = 0x80;
       } else {
         const offsetHigh = input[inIdx++];
@@ -169,7 +166,7 @@ export function getCompressionRatio(
   return Math.max(0, ((originalLen - compressedLen) / originalLen) * 100);
 }
 
-// ─── v2 wire codec (#1728) ──────────────────────────────────────────────────
+// ─── v2 streaming wire codec (#1728 / #9440) ────────────────────────────────
 
 /** 'Y' 'Z' 'C' version 2, followed by a one-byte codec id. */
 export const WIRE_MAGIC_V2 = new Uint8Array([0x59, 0x5a, 0x43, 0x02]);
@@ -177,22 +174,37 @@ export const WIRE_MAGIC_V2 = new Uint8Array([0x59, 0x5a, 0x43, 0x02]);
 export const WireCodec = {
   RAW: 0x00,
   DEFLATE_RAW: 0x01,
+  BROTLI: 0x02,
+  LZ77: 0x03,
 } as const;
 
-/** Below this, deflate's own overhead means it can't win. */
-export const MIN_COMPRESSIBLE_BYTES = 64;
-
-/** Same ceiling as the v1 decoder: far above any real Yjs update. */
 export const MAX_DECODED_BYTES = 10 * 1024 * 1024;
 
 export class YjsWireError extends Error {}
 
-/** True when the platform provides native CompressionStream / DecompressionStream. */
 export function isNativeCompressionAvailable(): boolean {
   return (
     typeof CompressionStream === "function" &&
     typeof DecompressionStream === "function"
   );
+}
+
+function getPreferredStreamFormat(): "br" | "deflate-raw" | null {
+  if (!isNativeCompressionAvailable()) return null;
+  try {
+    // Prefer streaming Brotli when runtime supports 'br', otherwise 'deflate-raw'
+    new CompressionStream("br" as CompressionFormat);
+    new DecompressionStream("br" as CompressionFormat);
+    return "br";
+  } catch {
+    try {
+      new CompressionStream("deflate-raw");
+      new DecompressionStream("deflate-raw");
+      return "deflate-raw";
+    } catch {
+      return null;
+    }
+  }
 }
 
 function hasPrefix(bytes: Uint8Array, prefix: Uint8Array): boolean {
@@ -211,20 +223,18 @@ function frame(codec: number, body: Uint8Array): Uint8Array {
   return out;
 }
 
-/**
- * Pipe bytes through a native (de)compression stream. The work happens in
- * the browser's stream machinery; this function only awaits chunks, so the
- * main thread stays free to render. Aborts once output exceeds `limit`.
- */
 async function pipeThrough(
   bytes: Uint8Array,
-  transform: { readable: ReadableStream<Uint8Array>; writable: WritableStream<BufferSource> },
+  transform: {
+    readable: ReadableStream<Uint8Array>;
+    writable: WritableStream<BufferSource>;
+  },
   limit: number,
 ): Promise<Uint8Array> {
   const writer = transform.writable.getWriter();
-  // Write and close without awaiting: the reader below drives the stream,
-  // and awaiting first would deadlock once the internal queue fills up.
-  const writing = writer.write(bytes as BufferSource).then(() => writer.close());
+  const writing = writer
+    .write(bytes as BufferSource)
+    .then(() => writer.close());
   writing.catch(() => {});
 
   const reader = transform.readable.getReader();
@@ -252,35 +262,104 @@ async function pipeThrough(
 }
 
 /**
- * Encode a Yjs update (or state-as-update diff) for the wire. Always framed
- * with the v2 header so receivers never have to guess; deflated only when
- * that is actually smaller. Compress BEFORE encrypting — ciphertext is
- * incompressible.
+ * Asynchronously compresses a Yjs update using native streaming Brotli or
+ * CompressionStream('deflate-raw') for payloads larger than 512 bytes,
+ * with an LZ77 fallback when Web Streams are unsupported.
  */
-export async function encodeYjsWirePayload(update: Uint8Array): Promise<Uint8Array> {
-  if (update.length >= MIN_COMPRESSIBLE_BYTES && isNativeCompressionAvailable()) {
+export async function compressYjsUpdateAsync(
+  bytes: Uint8Array,
+): Promise<Uint8Array> {
+  if (!bytes || bytes.length === 0) {
+    return new Uint8Array(0);
+  }
+
+  // Only compress payloads larger than 512 bytes where compression yields net benefit
+  if (bytes.length <= MIN_COMPRESSIBLE_BYTES) {
+    return bytes;
+  }
+
+  const format = getPreferredStreamFormat();
+  if (format !== null) {
     try {
-      const deflated = await pipeThrough(
-        update,
-        new CompressionStream("deflate-raw"),
+      const compressed = await pipeThrough(
+        bytes,
+        new CompressionStream(format as CompressionFormat),
         Number.MAX_SAFE_INTEGER,
       );
-      if (deflated.length < update.length) {
-        return frame(WireCodec.DEFLATE_RAW, deflated);
+      const codec =
+        format === "br" ? WireCodec.BROTLI : WireCodec.DEFLATE_RAW;
+      const framed = frame(codec, compressed);
+      if (framed.length < bytes.length) {
+        return framed;
       }
     } catch {
-      // fall through to an uncompressed frame
+      // Fall through to lightweight fallback
+    }
+  }
+
+  // Fallback for environments without CompressionStream support
+  const lz77 = compressYjsUpdate(bytes);
+  if (lz77.length < bytes.length) {
+    return frame(WireCodec.LZ77, lz77);
+  }
+
+  return bytes;
+}
+
+/**
+ * Asynchronously decompresses a Yjs update produced by compressYjsUpdateAsync,
+ * encodeYjsWirePayload, or legacy v1/raw payloads.
+ */
+export async function decompressYjsUpdateAsync(
+  bytes: Uint8Array,
+): Promise<Uint8Array> {
+  if (!bytes || bytes.length === 0) {
+    return new Uint8Array(0);
+  }
+  return decodeYjsWirePayload(bytes);
+}
+
+/**
+ * Encodes a Yjs update for the wire with a v2 header frame.
+ * Compresses payloads > 512 bytes via streaming Brotli or deflate-raw (or LZ77 fallback).
+ */
+export async function encodeYjsWirePayload(
+  update: Uint8Array,
+): Promise<Uint8Array> {
+  if (update.length > MIN_COMPRESSIBLE_BYTES) {
+    const format = getPreferredStreamFormat();
+    if (format !== null) {
+      try {
+        const compressed = await pipeThrough(
+          update,
+          new CompressionStream(format as CompressionFormat),
+          Number.MAX_SAFE_INTEGER,
+        );
+        const codec =
+          format === "br" ? WireCodec.BROTLI : WireCodec.DEFLATE_RAW;
+        if (compressed.length < update.length) {
+          return frame(codec, compressed);
+        }
+      } catch {
+        // Fall through to LZ77 / RAW
+      }
+    } else {
+      const lz77 = compressYjsUpdate(update);
+      if (lz77.length < update.length) {
+        return frame(WireCodec.LZ77, lz77);
+      }
     }
   }
   return frame(WireCodec.RAW, update);
 }
 
 /**
- * Decode a payload produced by encodeYjsWirePayload. Also accepts legacy v1
- * LZ77 packets and bare Yjs updates from clients that predate the codec.
- * Throws YjsWireError on corrupt, oversized or unsupported payloads.
+ * Decodes a payload produced by encodeYjsWirePayload or compressYjsUpdateAsync.
+ * Also accepts legacy v1 LZ77 packets and bare Yjs updates.
  */
-export async function decodeYjsWirePayload(payload: Uint8Array): Promise<Uint8Array> {
+export async function decodeYjsWirePayload(
+  payload: Uint8Array,
+): Promise<Uint8Array> {
   if (hasPrefix(payload, WIRE_MAGIC_V2)) {
     if (payload.length < WIRE_MAGIC_V2.length + 1) {
       throw new YjsWireError("Truncated wire frame");
@@ -289,52 +368,52 @@ export async function decodeYjsWirePayload(payload: Uint8Array): Promise<Uint8Ar
     const body = payload.subarray(WIRE_MAGIC_V2.length + 1);
 
     if (codec === WireCodec.RAW) return body;
-    if (codec === WireCodec.DEFLATE_RAW) {
+    if (codec === WireCodec.LZ77) {
+      return decompressYjsUpdate(body);
+    }
+    if (codec === WireCodec.BROTLI || codec === WireCodec.DEFLATE_RAW) {
+      const format = codec === WireCodec.BROTLI ? "br" : "deflate-raw";
       if (!isNativeCompressionAvailable()) {
-        throw new YjsWireError("deflate-raw is not supported on this platform");
+        throw new YjsWireError(`${format} is not supported on this platform`);
       }
       try {
-        return await pipeThrough(body, new DecompressionStream("deflate-raw"), MAX_DECODED_BYTES);
+        return await pipeThrough(
+          body,
+          new DecompressionStream(format as CompressionFormat),
+          MAX_DECODED_BYTES,
+        );
       } catch (err) {
         if (err instanceof YjsWireError) throw err;
-        throw new YjsWireError("Corrupt deflate-raw payload");
+        throw new YjsWireError(`Corrupt ${format} payload`);
       }
     }
     throw new YjsWireError(`Unknown wire codec 0x${codec.toString(16)}`);
   }
 
   if (hasPrefix(payload, COMPRESSION_MAGIC_HEADER)) {
-    return decompressYjsUpdate(payload); // legacy v1 sender
+    return decompressYjsUpdate(payload);
   }
-  return payload; // bare update from a pre-codec client
+  return payload;
 }
 
 // ─── Keystroke batching (#1728) ─────────────────────────────────────────────
 
 export interface YjsUpdateBatcherOptions {
-  /** Called with one merged update per batch. */
   onFlush: (mergedUpdate: Uint8Array) => void;
-  /**
-   * Minimum gap between flushes. The first update after an idle period is
-   * sent immediately (leading edge); bursts within the window are merged.
-   * This is also the maximum added latency. Default 400 ms: the smallest
-   * window that cuts wire bytes by 60%+ at 10 chars/s (65%; 82% at 20 chars/s).
-   */
   windowMs?: number;
-  /** Flush early once this many bytes are pending (e.g. a paste). Default 64 KB. */
   maxPendingBytes?: number;
 }
 
 export interface YjsUpdateBatcher {
   push(update: Uint8Array): void;
-  /** Send anything pending right now (e.g. before unload). */
   flush(): void;
-  /** Flush pending updates and stop. */
   dispose(): void;
   readonly pendingCount: number;
 }
 
-export function createYjsUpdateBatcher(options: YjsUpdateBatcherOptions): YjsUpdateBatcher {
+export function createYjsUpdateBatcher(
+  options: YjsUpdateBatcherOptions,
+): YjsUpdateBatcher {
   const windowMs = options.windowMs ?? 400;
   const maxPendingBytes = options.maxPendingBytes ?? 64 * 1024;
 
@@ -371,7 +450,7 @@ export function createYjsUpdateBatcher(options: YjsUpdateBatcherOptions): YjsUpd
 
       const wait = lastFlushAt + windowMs - Date.now();
       if (wait <= 0) {
-        flush(); // idle: send immediately, no added latency
+        flush();
       } else {
         timer = setTimeout(flush, wait);
       }

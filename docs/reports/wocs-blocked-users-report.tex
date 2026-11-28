@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage[margin=0.8in]{geometry}
+\usepackage[margin=0.74in, top=0.76in, bottom=0.76in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{xcolor}
@@ -83,7 +83,6 @@ All metrics in this document were extracted directly from the GitHub REST Search
   \item \textbf{State-Transition Thrashing:} Repeatedly closing and reopening issues as \texttt{completed} or \texttt{duplicate} after maintainer intervention constitutes active triage sabotage.
 \end{itemize}
 
-\newpage
 \section{3. Deep-Dive Forensic Profiles}
 
 \subsection{3.1 \texttt{riteshbonthalakoti} — Automated Self-Issue \& ZKP PR Point Farming}
@@ -133,7 +132,6 @@ All metrics in this document were extracted directly from the GitHub REST Search
   \item \textbf{Unauthorized Issue Closure:} Repeatedly closed active issues (e.g., \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{\#10374}) as \texttt{completed} immediately after maintainer intervention, forcing permanent access revocation.
 \end{enumerate}
 
-\newpage
 \noindent\textbf{Verified Junk Issue \& Burst Log — \texttt{KartikeyG-world} (November 25, 2026):}
 \begin{center}
 \small
@@ -190,7 +188,6 @@ All metrics in this document were extracted directly from the GitHub REST Search
 \subsection{3.5 \texttt{Senthil455} — Automated 1:1 Issue-to-PR Loop (194 PRs, 180 Issues)}
 \textbf{Technical Diagnosis:} Account executed a scripted 1:1 issue-creation and PR-submission loop, generating \textbf{180 self-authored issues} and \textbf{194 PRs}. On October 6, 2026 between \texttt{15:13:00Z} and \texttt{15:44:29Z}, consecutive issue/PR pairs \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4687}{\#4687}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4688}{\#4688} through \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4715}{\#4715}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4716}{\#4716} were opened in automated 1--2 minute cycles.
 
-\newpage
 \section{4. Governance Hardening \& WOCS Remediation Architecture}
 In direct response to Code Social's audit (Nov 28, 2026), WorkSphere has deployed a zero-trust, low-maintainer-overhead review and labeling pipeline that guarantees every WOCS PR receives meaningful review and accurate difficulty classification:
 

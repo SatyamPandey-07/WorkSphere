@@ -2,7 +2,10 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+ fix/next-16-upgrade-and-api-exports
+
 import { sanitizeExternalHttpUrl } from "@/lib/utils";
+ main
 
 export interface PhotoAttribution {
   photographer?: string;
@@ -35,7 +38,10 @@ export function VenueGallery({
 
   // Fallback to "Verified Contributor" if photographer is undefined or empty
   const photographerName = attribution?.photographer?.trim() || "Verified Contributor";
+ fix/next-16-upgrade-and-api-exports
+
   const safePhotographerUrl = sanitizeExternalHttpUrl(attribution?.photographerUrl);
+ main
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
@@ -71,9 +77,15 @@ export function VenueGallery({
       {attribution && (
         <div className="text-xs text-slate-400 mt-1">
           Photo by{" "}
+ fix/next-16-upgrade-and-api-exports
+          {attribution.photographerUrl ? (
+            <a
+              href={attribution.photographerUrl}
+
           {safePhotographerUrl ? (
             <a
               href={safePhotographerUrl}
+ main
               target="_blank"
               rel="noopener noreferrer"
               className="underline hover:text-slate-200 transition-colors"

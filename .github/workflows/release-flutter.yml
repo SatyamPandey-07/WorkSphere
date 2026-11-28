@@ -1,0 +1,167 @@
+name: Flutter Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Build signed Android release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install locked dependencies
+        working-directory: apps/flutter
+        run: flutter pub get --enforce-lockfile
+
+      - name: Configure Android signing
+        working-directory: apps/flutter
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.KEY_PROPERTIES }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$KEY_PROPERTIES" ]; then
+            echo "::error::Android release signing is required. Configure ANDROID_KEYSTORE_BASE64 and KEY_PROPERTIES repository or environment secrets."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          chmod 600 android/app/upload-keystore.jks
+          printf '%s' "$KEY_PROPERTIES" > android/key.properties
+          chmod 600 android/key.properties
+
+      - name: Build release APK and AAB
+        working-directory: apps/flutter
+        run: |
+          flutter build apk --release --no-pub
+          flutter build appbundle --release --no-pub
+
+      - name: Prepare Android release artifacts
+        working-directory: apps/flutter
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-artifacts
+          cp build/app/outputs/flutter-apk/app-release.apk "release-artifacts/worksphere-${RELEASE_TAG}-android.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "release-artifacts/worksphere-${RELEASE_TAG}-android.aab"
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ github.ref_name }}
+          path: apps/flutter/release-artifacts/*
+          if-no-files-found: error
+
+  desktop:
+    name: Build ${{ matrix.platform }} release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+          - platform: linux
+            os: ubuntu-latest
+          - platform: macos
+            os: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install locked dependencies
+        working-directory: apps/flutter
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build desktop release
+        working-directory: apps/flutter
+        run: flutter build ${{ matrix.platform }} --release --no-pub
+
+      - name: Package Windows release
+        if: matrix.platform == 'windows'
+        working-directory: apps/flutter
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "release-artifacts/worksphere-$env:RELEASE_TAG-windows-x64.zip"
+
+      - name: Package Linux release
+        if: matrix.platform == 'linux'
+        working-directory: apps/flutter
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-artifacts
+          tar -czf "release-artifacts/worksphere-${RELEASE_TAG}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
+
+      - name: Package macOS release
+        if: matrix.platform == 'macos'
+        working-directory: apps/flutter
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-artifacts
+          tar -czf "release-artifacts/worksphere-${RELEASE_TAG}-macos.tar.gz" -C build/macos/Build/Products/Release .
+
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}-${{ github.ref_name }}
+          path: apps/flutter/release-artifacts/*
+          if-no-files-found: error
+
+  publish:
+    name: Attach artifacts to GitHub Release
+    needs:
+      - android
+      - desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Report unavailable iOS signing configuration
+        run: echo "::notice title=iOS IPA not built::This workflow has no configured Apple signing secret names or provisioning profile, so it does not produce or label an unsigned build as an IPA."
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
+          files: |
+            release-assets/*

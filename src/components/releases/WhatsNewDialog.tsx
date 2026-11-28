@@ -130,7 +130,18 @@ function parseReleaseInfo(payload: unknown): ReleaseInfo | null {
 
 function readLastSeenVersion(): string | null {
   try {
-    return window.localStorage.getItem(LAST_SEEN_VERSION_KEY);
+    const storedVersion = window.localStorage.getItem(LAST_SEEN_VERSION_KEY);
+    if (storedVersion === null) {
+      return null;
+    }
+
+    try {
+      const parsedVersion: unknown = JSON.parse(storedVersion);
+      return typeof parsedVersion === "string" ? parsedVersion : storedVersion;
+    } catch {
+      // Older entries store the version as a plain string, not JSON.
+      return storedVersion;
+    }
   } catch {
     return null;
   }

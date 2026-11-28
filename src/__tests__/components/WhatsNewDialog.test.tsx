@@ -72,6 +72,37 @@ describe("WhatsNewDialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("shows the release when the last-seen storage value contains malformed JSON", async () => {
+    window.localStorage.setItem(
+      "worksphere:last-seen-release-version",
+      "{malformed-json",
+    );
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => releasePayload,
+    } as Response);
+
+    render(<WhatsNewDialog />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("WorkSphere 2.5.0")).toBeInTheDocument();
+  });
+
+  it("continues to show the release when localStorage reads throw", async () => {
+    jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("Storage is unavailable");
+    });
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => releasePayload,
+    } as Response);
+
+    render(<WhatsNewDialog />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("WorkSphere 2.5.0")).toBeInTheDocument();
+  });
+
   it("persists the current release version when dismissed", async () => {
     jest.spyOn(global, "fetch").mockResolvedValue({
       ok: true,

@@ -1231,3 +1231,60 @@ export class SnapshotManager {
     console.error("[SnapshotManager] Background compaction failed:", error);
   }
 }
+
+
+export interface DeltaCompactionOptions {
+  maxDeltaCount?: number;
+  maxTotalBytes?: number;
+  maxUndoHistory?: number;
+}
+
+export interface DeltaCompactionResult {
+  compacted: boolean;
+  mergedUpdate: Uint8Array;
+  retainedHistory: Uint8Array[];
+  beforeBytes: number;
+  afterBytes: number;
+}
+
+/**
+ * Compacts accumulated Yjs incremental delta frames into a single canonical
+ * state update once count or byte thresholds are exceeded, while retaining a
+ * bounded undo/redo history window.
+ */
+export function compactDeltaUpdatesWithThreshold(
+  deltas: readonly Uint8Array[],
+  options: DeltaCompactionOptions = {},
+): DeltaCompactionResult {
+  const maxDeltaCount = options.maxDeltaCount ?? 25;
+  const maxTotalBytes = options.maxTotalBytes ?? 64 * 1024;
+  const maxUndoHistory = Math.max(0, options.maxUndoHistory ?? 10);
+
+  const beforeBytes = deltas.reduce((sum, u) => sum + u.byteLength, 0);
+  if (deltas.length === 0) {
+    return {
+      compacted: false,
+      mergedUpdate: new Uint8Array(0),
+      retainedHistory: [],
+      beforeBytes: 0,
+      afterBytes: 0,
+    };
+  }
+
+  const shouldCompact =
+    deltas.length > maxDeltaCount || beforeBytes > maxTotalBytes;
+
+  const mergedUpdate = Y.mergeUpdates(deltas as Uint8Array[]);
+  const retainedHistory =
+    maxUndoHistory === 0
+      ? []
+      : deltas.slice(Math.max(0, deltas.length - maxUndoHistory));
+
+  return {
+    compacted: shouldCompact,
+    mergedUpdate,
+    retainedHistory,
+    beforeBytes,
+    afterBytes: mergedUpdate.byteLength,
+  };
+}

@@ -150,15 +150,22 @@ class _NomadDeskPassScreenState extends State<NomadDeskPassScreen> {
                                             ),
                                       ),
                                       const SizedBox(height: 8),
-                                      Text(
-                                        pass.venueName.trim().isEmpty
-                                            ? 'Venue details unavailable'
-                                            : pass.venueName,
-                                        key: const ValueKey('venue-name'),
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium,
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              pass.venueName.trim().isEmpty
+                                                  ? 'Venue details unavailable'
+                                                  : pass.venueName,
+                                              key: const ValueKey('venue-name'),
+                                              textAlign: TextAlign.center,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 28),
                                       QrImageView(

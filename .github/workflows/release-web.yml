@@ -1,0 +1,96 @@
+name: Web Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish web release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Package release artifacts
+        id: package
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release
+          archive="worksphere-web-${RELEASE_TAG}.tar.gz"
+          release_paths=(.next public package.json)
+          for optional_path in package-lock.json next.config.js next.config.mjs next.config.ts; do
+            if [ -e "$optional_path" ]; then
+              release_paths+=("$optional_path")
+            fi
+          done
+          tar -czf "release/${archive}" "${release_paths[@]}"
+
+          build_timestamp="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          archive_sha256="$(sha256sum "release/${archive}" | cut -d ' ' -f 1)"
+          archive_size="$(stat -c '%s' "release/${archive}")"
+          export RELEASE_TAG COMMIT_SHA build_timestamp archive archive_sha256 archive_size
+
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const manifest = {
+            version: process.env.RELEASE_TAG.replace(/^v/, ''),
+            tag: process.env.RELEASE_TAG,
+            commit: process.env.COMMIT_SHA,
+            builtAt: process.env.build_timestamp,
+            artifacts: [{
+              name: process.env.archive,
+              path: `release/${process.env.archive}`,
+              sizeBytes: Number(process.env.archive_size),
+              sha256: process.env.archive_sha256,
+            }],
+          };
+
+          fs.writeFileSync(
+            'release/build-manifest.json',
+            `${JSON.stringify(manifest, null, 2)}\n`,
+          );
+          NODE
+
+          (
+            cd release
+            sha256sum "$archive" build-manifest.json > SHA256SUMS.txt
+          )
+
+          echo "archive=release/${archive}" >> "$GITHUB_OUTPUT"
+          if [[ "$RELEASE_TAG" != *-* ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.package.outputs.prerelease }}
+          files: |
+            release/worksphere-web-${{ github.ref_name }}.tar.gz
+            release/SHA256SUMS.txt
+            release/build-manifest.json

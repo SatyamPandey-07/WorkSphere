@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import * as Y from "yjs";
+
+export const yjsDocConstructor = Y.Doc;
 import { Plus, Trash2, RotateCcw, Palette } from "lucide-react";
 import {
   NomadCanvasProvider,

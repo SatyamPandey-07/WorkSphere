@@ -17,7 +17,56 @@ type ReleaseInfo = {
   }>;
 };
 
+type CopyTarget = "tag" | "checksum";
+
 const LAST_SEEN_VERSION_KEY = "worksphere:last-seen-release-version";
+const VERIFY_CHECKSUM_COMMAND = "sha256sum -c SHA256SUMS.txt";
+const COPY_FEEDBACK_DURATION_MS = 2000;
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (
+    typeof navigator !== "undefined" &&
+    typeof navigator.clipboard?.writeText === "function"
+  ) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall back to execCommand when Clipboard API rejects.
+    }
+  }
+
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.top = "0";
+  textArea.style.left = "0";
+  textArea.style.opacity = "0";
+
+  let previouslyFocused: HTMLElement | null = null;
+  try {
+    document.body.appendChild(textArea);
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    textArea.focus();
+    textArea.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textArea.parentNode?.removeChild(textArea);
+    if (previouslyFocused && previouslyFocused.isConnected) {
+      previouslyFocused.focus();
+    }
+  }
+}
 
 function safeExternalUrl(value: unknown): string | null {
   if (typeof value !== "string") {
@@ -98,7 +147,18 @@ function persistLastSeenVersion(version: string): void {
 export function WhatsNewDialog() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [copiedTarget, setCopiedTarget] = useState<CopyTarget | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -147,8 +207,28 @@ export function WhatsNewDialog() {
   }
 
   function dismiss() {
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+    setCopiedTarget(null);
     persistLastSeenVersion(release.version);
     setIsOpen(false);
+  }
+
+  async function handleCopy(target: CopyTarget, value: string) {
+    const copied = await copyTextToClipboard(value);
+    if (!copied) {
+      return;
+    }
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current);
+    }
+    setCopiedTarget(target);
+    copyTimerRef.current = setTimeout(() => {
+      setCopiedTarget(null);
+      copyTimerRef.current = null;
+    }, COPY_FEEDBACK_DURATION_MS);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -241,6 +321,43 @@ export function WhatsNewDialog() {
             Release tag: {release.tag}
             {formattedPublishedDate && ` · Published ${formattedPublishedDate}`}
           </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCopy("tag", release.tag)}
+              aria-label={
+                copiedTarget === "tag"
+                  ? `Copied release tag ${release.tag}`
+                  : `Copy release tag ${release.tag}`
+              }
+              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {copiedTarget === "tag" ? "Copied tag" : "Copy tag"}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void handleCopy("checksum", VERIFY_CHECKSUM_COMMAND)
+              }
+              aria-label={
+                copiedTarget === "checksum"
+                  ? "Copied SHA-256 verification command"
+                  : "Copy SHA-256 verification command"
+              }
+              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {copiedTarget === "checksum"
+                ? "Copied command"
+                : "Copy SHA-256 command"}
+            </button>
+            <span role="status" aria-live="polite" className="sr-only">
+              {copiedTarget === "tag"
+                ? `Copied release tag ${release.tag}`
+                : copiedTarget === "checksum"
+                  ? "Copied SHA-256 verification command"
+                  : ""}
+            </span>
+          </div>
           <div className="flex flex-wrap gap-3 pt-1">
             {release.url && (
               <a

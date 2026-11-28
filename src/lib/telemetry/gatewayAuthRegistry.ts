@@ -56,7 +56,7 @@ export class GatewayAuthRegistry {
   }
 
   private compositeKey(gatewayId: string, keyId: string): string {
-    return `::`;
+    return `${gatewayId}::${keyId}`;
   }
 
   private refreshLifecycle(record: InternalGatewayRecord, nowMs: number): void {
@@ -138,15 +138,15 @@ export class GatewayAuthRegistry {
     const gwId = request.gatewayId.trim();
     const kId = request.keyId.trim();
     if (this.revokedGateways.has(gwId)) {
-      return { valid: false, gatewayId: gwId, keyId: kId, status: 'revoked', reason: `Gateway "" is revoked` };
+      return { valid: false, gatewayId: gwId, keyId: kId, status: 'revoked', reason: `Gateway "${gwId}" is revoked` };
     }
     const record = this.records.get(this.compositeKey(gwId, kId));
     if (!record) {
-      return { valid: false, gatewayId: gwId, keyId: kId, reason: `Unknown credential "" for gateway ""` };
+      return { valid: false, gatewayId: gwId, keyId: kId, reason: `Unknown credential "${kId}" for gateway "${gwId}"` };
     }
     this.refreshLifecycle(record, now);
     if (record.status === 'revoked' || record.status === 'retired') {
-      return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: `Credential "" is ` };
+      return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: `Credential "${kId}" is ${record.status}` };
     }
     if (record.secretOrVerifier !== request.tokenSecret) {
       return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: 'Invalid credential secret' };
@@ -154,7 +154,7 @@ export class GatewayAuthRegistry {
     for (const scope of request.requiredScopes ?? []) {
       const trimmed = scope.trim();
       if (trimmed && !record.scopesSet.has(trimmed)) {
-        return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: `Missing required scope ""` };
+        return { valid: false, gatewayId: gwId, keyId: kId, status: record.status, lastUsedAtMs: record.lastUsedAtMs, reason: `Missing required scope "${trimmed}"` };
       }
     }
     this.scheduleLastUsedAudit(record, now);
@@ -182,27 +182,60 @@ export class GatewayAuthRegistry {
 }
 
 export class ExtendedGatewayAuthRegistry extends GatewayAuthRegistry {
-  public authenticateToken(token: string): { authenticated: boolean; gatewayId?: string; keyId?: string; scopes?: string[] } {
+  private readonly gatewayVenues = new Map<string, Set<string>>();
+
+  public bindGatewayVenues(gatewayId: string, venueIds: readonly string[]): void {
+    const normalizedGatewayId = gatewayId.trim();
+    const existing = this.gatewayVenues.get(normalizedGatewayId) ?? new Set<string>();
+    for (const venueId of venueIds) {
+      const trimmed = venueId.trim();
+      if (trimmed) existing.add(trimmed);
+    }
+    this.gatewayVenues.set(normalizedGatewayId, existing);
+  }
+
+  public authenticateToken(
+    token: string,
+    requiredScopes: readonly string[] = ["telemetry:write"]
+  ): { authenticated: boolean; gatewayId?: string; keyId?: string; scopes?: string[]; reason?: string } {
     if (!token || typeof token !== "string" || token.trim().length === 0) {
-      return { authenticated: false };
+      return { authenticated: false, reason: "Missing gateway token" };
     }
     const parts = token.trim().split(":");
-    if (parts.length >= 2) {
-      const [gatewayId, keyId] = parts;
-      const rec = this.getCredentialRecord(gatewayId, keyId);
-      if (rec && rec.status !== "revoked" && rec.status !== "retired") {
-        return { authenticated: true, gatewayId, keyId, scopes: rec.scopes };
-      }
+    if (parts.length < 3) {
+      return { authenticated: false, reason: "Malformed gateway token" };
     }
-    return { authenticated: false };
+    const [gatewayId, keyId, ...secretParts] = parts;
+    const tokenSecret = secretParts.join(":");
+    const verified = this.verifyCredential({
+      gatewayId,
+      keyId,
+      tokenSecret,
+      requiredScopes,
+    });
+    if (!verified.valid) {
+      return { authenticated: false, gatewayId, keyId, reason: verified.reason };
+    }
+    const rec = this.getCredentialRecord(gatewayId, keyId);
+    return {
+      authenticated: true,
+      gatewayId: verified.gatewayId,
+      keyId: verified.keyId,
+      scopes: rec?.scopes ?? [],
+    };
   }
 
   public hasEnrolledGateways(): boolean {
-    return false;
+    return this.listStaleCredentials(-1).length > 0 || (this as unknown as { records: Map<string, unknown> }).records.size > 0;
   }
 
-  public isVenueAuthorized(_venueId: string, _gatewayIdOrToken?: string): boolean {
-    return true;
+  public isVenueAuthorized(gatewayId: string, venueId: string): boolean {
+    const normalizedGatewayId = gatewayId.trim();
+    const allowedVenues = this.gatewayVenues.get(normalizedGatewayId);
+    if (!allowedVenues || allowedVenues.size === 0) {
+      return false;
+    }
+    return allowedVenues.has("*") || allowedVenues.has(venueId.trim());
   }
 }
 

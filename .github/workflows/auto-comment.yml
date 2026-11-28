@@ -94,21 +94,28 @@ jobs:
               // Check if PR already has a level label; if not, dynamically classify based on changes
               const currentPrLabels = (pr.labels || []).map(l => (typeof l === 'string' ? l : l.name));
               if (!currentPrLabels.some(l => /^level\s*[123]$/i.test(l))) {
+                const isDocsOnly = files.length > 0 && files.every(f => f.filename.endsWith('.md') || f.filename.startsWith('docs/'));
+                const isDocsTitle = /^docs(\([^)]*\))?:/i.test(pr.title || '');
                 let dynamicLevel = 'level 1';
-                const hasLevel3 = files.some(f => {
-                  const fn = f.filename;
-                  return fn.startsWith('src/wasm/') || fn.endsWith('.c') || fn.endsWith('.h') ||
-                    fn.startsWith('src/core/ai/') || fn.startsWith('src/lib/agents/') ||
-                    fn.startsWith('src/lib/realtime/') || fn.startsWith('party/') ||
-                    fn.startsWith('src/core/ledger/') || fn.startsWith('src/lib/solana/') ||
-                    fn.startsWith('prisma/');
-                });
-                const totalChanges = (pr.additions || 0) + (pr.deletions || 0);
+                if (isDocsOnly || (isDocsTitle && !hasBackend && !hasUI && !hasTests)) {
+                  // Documentation-only PRs are strictly capped at level 1 per WOCS guidelines
+                  dynamicLevel = 'level 1';
+                } else {
+                  const hasLevel3 = files.some(f => {
+                    const fn = f.filename;
+                    return fn.startsWith('src/wasm/') || fn.endsWith('.c') || fn.endsWith('.h') ||
+                      fn.startsWith('src/core/ai/') || fn.startsWith('src/lib/agents/') ||
+                      fn.startsWith('src/lib/realtime/') || fn.startsWith('party/') ||
+                      fn.startsWith('src/core/ledger/') || fn.startsWith('src/lib/solana/') ||
+                      fn.startsWith('prisma/');
+                  });
+                  const totalChanges = (pr.additions || 0) + (pr.deletions || 0);
 
-                if (hasLevel3 || totalChanges >= 350) {
-                  dynamicLevel = 'level 3';
-                } else if (hasBackend || hasUI || hasTests || totalChanges >= 50) {
-                  dynamicLevel = 'level 2';
+                  if (hasLevel3 || totalChanges >= 350) {
+                    dynamicLevel = 'level 3';
+                  } else if (hasBackend || hasUI || hasTests || totalChanges >= 50) {
+                    dynamicLevel = 'level 2';
+                  }
                 }
                 labelsToAdd.push(dynamicLevel);
               }

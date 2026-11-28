@@ -1,16 +1,7 @@
-name: Auto-Merge Linked PR
+name: Auto-Merge Linked PR (Paused - Manual Dispatch Only)
 
 on:
-  pull_request_target:
-    branches: [main, master, dev, development]
-    types: [opened, synchronize, reopened, edited, ready_for_review]
-  issue_comment:
-    types: [created]
-  workflow_run:
-    workflows: ["Continuous Integration"]
-    types: [completed]
-  schedule:
-    - cron: '*/5 * * * *'
+  # Paused automatic triggers per WOCS review policy; manual dispatch only
   workflow_dispatch:
 
 permissions:
@@ -236,7 +227,7 @@ jobs:
                   });
                 } catch (e) {}
 
-                // Auto-approve PR if not already approved
+                // Require an explicit human/reviewer approval before manual dispatch merge
                 try {
                   const existingReviews = await github.rest.pulls.listReviews({
                     owner,
@@ -247,19 +238,12 @@ jobs:
                     r => r.state === 'APPROVED'
                   );
                   if (!isAlreadyApproved) {
-                    await github.rest.pulls.createReview({
-                      owner,
-                      repo,
-                      pull_number: prNumber,
-                      event: 'APPROVE',
-                      body: `✅ Auto-approved! This PR properly references assigned issue(s): ${linkedIssues.join(', ')}.`
-                    });
-                    console.log(`Auto-approved PR #${prNumber}`);
-                  } else {
-                    console.log(`PR #${prNumber} is already approved.`);
+                    console.log(`PR #${prNumber} has no APPROVED review yet. Skipping merge per WOCS review policy.`);
+                    continue;
                   }
                 } catch (approveErr) {
-                  console.warn('Auto-approve note:', approveErr.message);
+                  console.warn('Review check note:', approveErr.message);
+                  continue;
                 }
 
                 // Ensure PR author is assigned to the PR

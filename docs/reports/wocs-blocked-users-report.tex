@@ -1,0 +1,117 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{primary}{HTML}{0F172A}
+\definecolor{accent}{HTML}{1D4ED8}
+\definecolor{danger}{HTML}{B91C1C}
+\definecolor{muted}{HTML}{475569}
+\definecolor{border}{HTML}{CBD5E1}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accent,
+  urlcolor=accent,
+  pdftitle={WorkSphere Repository Moderation and Abuse Evidence Report},
+  pdfauthor={Satyam Pandey, Project Admin - WorkSphere}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\textcolor{muted}{WorkSphere — WOCS Moderation \& Abuse Evidence Report}}
+\rhead{\small\textcolor{muted}{Nov 28, 2026}}
+\cfoot{\small\thepage}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{}[\vspace{2pt}\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{danger}}{}{0em}{}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries\color{primary} WorkSphere Repository Security \& Moderation Report}\\[6pt]
+{\large\color{muted} Technical Evidence for Contributor Blocklist Enforcement (Commit \texttt{ff1c870b} \& Subsequent Additions)}\\[4pt]
+{\small Prepared for: \textbf{Arushi, Founder — Code Social (Winter of Code Social 2026)} \quad|\quad Prepared by: \textbf{Satyam Pandey} (\texttt{@SatyamPandey-07})}
+\end{center}
+
+\vspace{6pt}
+\hrule
+\vspace{10pt}
+
+\section{Executive Summary}
+This report documents the empirical, repository-verified evidence behind the contributor blocklist enforced in \texttt{SatyamPandey-07/WorkSphere} (introduced in commit \href{https://github.com/SatyamPandey-07/WorkSphere/commit/ff1c870b86fd0c1886e3c7a66f1096ae4397f4dd}{\texttt{ff1c870b}} and updated in subsequent moderation commits).
+
+No contributor was blocked arbitrarily. Every account on the blocklist engaged in one or more severe, measurable integrity violations that directly subvert Winter of Code Social (WOCS) guidelines and open-source engineering standards:
+\begin{enumerate}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{High-Frequency Automated PR \& Self-Issue Farming} (opening 150--1,017+ PRs at 40--90 second intervals by self-creating and self-assigning issues to game leaderboard points).
+  \item \textbf{Placeholder / Junk Issue Pollution} (flooding the issue tracker with meaningless \texttt{".."} and \texttt{"//"} titles to trigger automated workflows and inflate issue counts).
+  \item \textbf{Collusive Cross-Assignment \& Issue State-Thrashing} (two accounts creating issues, cross-assigning them, and repeatedly toggling \texttt{closed}/\texttt{reopened} states against maintainer triage).
+\end{enumerate}
+
+\vspace{4pt}
+\begin{center}
+\begin{tabular}{@{}lrrp{6.6cm}@{}}
+\toprule
+\textbf{GitHub Account} & \textbf{PRs} & \textbf{Issues} & \textbf{Primary Technical Violation} \\
+\midrule
+\href{https://github.com/riteshbonthalakoti}{\texttt{riteshbonthalakoti}} & 429 & 427 & Automated 1:1 self-issue + ZKP PR spam ($\sim$1 PR/min) \\
+\href{https://github.com/KartikeyG-world}{\texttt{KartikeyG-world}} & 149 & 131 & Junk \texttt{".."}/\texttt{"//"} issues, collusion, unauthorized close/reopen \\
+\href{https://github.com/RitikaDevi-12}{\texttt{RitikaDevi-12}} & 18 & 14 & Collusion with KartikeyG-world, state-thrashing, junk issues \\
+\href{https://github.com/jasonjose007}{\texttt{jasonjose007}} & 1,017 & 1 & Mass automated boilerplate test PR flooding ($\sim$4 PRs/min) \\
+\href{https://github.com/Senthil455}{\texttt{Senthil455}} & 194 & 180 & Automated 1:1 self-issue/self-PR point farming loop \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Detailed Technical Evidence by Blocked Account}
+
+\subsection{1. \texttt{riteshbonthalakoti} — Automated Self-Issue \& High-Velocity PR Farming (429 PRs, 427 Issues)}
+\textbf{Classification:} Severe Automated Point-Farming / CI \& Review Queue Flooding.\\
+\textbf{Observed Pattern:} Rather than claiming curated maintainer issues, \texttt{riteshbonthalakoti} operated an automated loop that mass-generated synthetic \texttt{[ZKP]} architectural issues, self-assigned them, and opened corresponding pull requests within \textbf{30--90 seconds} of each other—producing \textbf{429 PRs} and \textbf{427 issues} on a single repository.
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{Burst Velocity (Nov 19, 2026, 18:43--19:06 UTC):} Created 15+ issues (\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9078}{\#9078}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/9094}{\#9094}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9101}{\#9101}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/9110}{\#9110}--\href{https://github.com/SatyamPandey-07/WorkSphere/issues/9112}{\#9112}) in sub-second batches (e.g., 8 issues created at \texttt{18:53:39Z--18:53:40Z}) and opened matching PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9090}{\#9090}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/9116}{\#9116}) roughly every 60 seconds.
+  \item \textbf{Impact:} Completely bypassed maintainer issue curation, inflated WOCS \texttt{Level 3} ZKP point totals via synthetic self-authored issues, and saturated GitHub Actions CI runners. This directly triggered commit \href{https://github.com/SatyamPandey-07/WorkSphere/commit/ff1c870b86fd0c1886e3c7a66f1096ae4397f4dd}{\texttt{ff1c870b}}.
+\end{itemize}
+
+\subsection{2. \texttt{KartikeyG-world} — Junk Issue Pollution, Collusion \& Unauthorized State-Thrashing (149 PRs, 131 Issues)}
+\textbf{Classification:} Issue Tracker Vandalism, Collusive Assignment Abuse \& Triage Sabotage.\\
+\textbf{Observed Pattern:} In addition to high-velocity self-authored PR bursts (e.g., PRs \href{https://github.com/SatyamPandey-07/WorkSphere/pull/10347}{\#10347}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10359}{\#10359} opened between \texttt{10:01:41Z} and \texttt{10:08:09Z} on Nov 25, 2026), \texttt{KartikeyG-world} abused repository triage permissions to pollute the tracker and sabotage issue states:
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{Placeholder/Junk Issue Spam (Nov 25, 2026):} Created empty/meaningless issues titled \texttt{".."} and \texttt{"//"} at 1-minute intervals and assigned them to others: \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10332}{\#10332}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10364}{\#10364}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10365}{\#10365}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10367}{\#10367}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10368}{\#10368}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10369}{\#10369}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10370}{\#10370}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10373}{\#10373}, and \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{\#10374}.
+  \item \textbf{Unauthorized Issue Closure / Open-Close Abuse:} Repeatedly closed active issues as \texttt{completed} (e.g., \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10374}{\#10374}) immediately after the maintainer reopened them, disrupting project governance.
+\end{itemize}
+
+\subsection{3. \texttt{RitikaDevi-12} — Collusive Self-Claiming, Junk Issues \& Open/Close State-Thrashing (18 PRs, 14 Issues)}
+\textbf{Classification:} Coordinated Collusion with \texttt{KartikeyG-world} \& Malicious Issue State-Thrashing.\\
+\textbf{Observed Pattern:} \texttt{RitikaDevi-12} operated in coordination with \texttt{KartikeyG-world} to abuse issue creation, cross-assignment, and state transitions:
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{Rapid Self-Issue Farming:} Created and self-assigned 8 issues in 11 minutes on Nov 25, 2026 (\texttt{08:46:33Z}--\texttt{08:57:20Z}): \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10313}{\#10313}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10315}{\#10315}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10316}{\#10316}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10318}{\#10318}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10320}{\#10320}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10321}{\#10321}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10323}{\#10323}, \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10324}{\#10324}, followed by 8 PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10387}{\#10387}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/10400}{\#10400}) in 34 minutes.
+  \item \textbf{Junk Issue Creation:} Opened placeholder issue \href{https://github.com/SatyamPandey-07/WorkSphere/issues/10376}{\#10376} titled \texttt{".."} on Nov 25, 2026 at \texttt{10:26:09Z}.
+  \item \textbf{Open/Close Issue-Thrashing:} Repeatedly toggled issues between \texttt{closed (completed)}, \texttt{closed (duplicate)}, and \texttt{reopened} within minutes of maintainer \texttt{@SatyamPandey-07} reopening them—turning the issue tracker into an adversarial state-flipping loop and forcing immediate revocation/banning.
+\end{itemize}
+
+\subsection{4. \texttt{jasonjose007} — Mass Automated PR Flooding (1,017 PRs, 1 Issue)}
+\textbf{Classification:} Extreme Automated Pull Request Spam.\\
+\textbf{Evidence:} Opened \textbf{1,017 PRs} consisting of repetitive, unrequested boilerplate unit-test PRs generated seconds apart without claimed issues—for example, 15 consecutive PRs (\href{https://github.com/SatyamPandey-07/WorkSphere/pull/3829}{\#3829}--\href{https://github.com/SatyamPandey-07/WorkSphere/pull/3843}{\#3843}) opened in 4 minutes on Oct 4, 2026 (\texttt{07:34:57Z}--\texttt{07:38:59Z}).
+
+\subsection{5. \texttt{Senthil455} — Automated 1:1 Self-Issue \& Self-PR Farming (194 PRs, 180 Issues)}
+\textbf{Classification:} Automated Self-Issue/Self-PR Point Farming.\\
+\textbf{Evidence:} Systematically opened an issue, self-assigned it, and opened a PR every 1--2 minutes in tight bursts—for example, pairs \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4687}{\#4687}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4688}{\#4688} through \href{https://github.com/SatyamPandey-07/WorkSphere/issues/4715}{\#4715}/\href{https://github.com/SatyamPandey-07/WorkSphere/pull/4716}{\#4716} between \texttt{15:13:00Z} and \texttt{15:44:29Z} on Oct 6, 2026.
+
+\section{Corrective Governance Actions Implemented (Nov 28, 2026)}
+In full alignment with Code Social / WOCS guidelines, the following workflow changes have been deployed on \texttt{main}:
+\begin{enumerate}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{Auto-Merge Paused:} Disabled automatic triggers (\texttt{pull\_request\_target}, \texttt{issue\_comment}, \texttt{workflow\_run}, and 5-minute \texttt{schedule}) in \texttt{.github/workflows/auto-merge.yml} and removed automated bot self-approvals so PRs cannot be merged without meaningful review.
+  \item \textbf{Documentation Label Inflation Fixed:} Updated \texttt{.github/workflows/auto-comment.yml} and \texttt{.github/workflows/auto-label-new-issue.yml} so documentation-only PRs and \texttt{documentation} issues are \textbf{strictly capped at \texttt{level 1}}, preventing line-count or keyword heuristics from assigning \texttt{level 2} or \texttt{level 3}.
+  \item \textbf{Transparent Moderation:} Documented all 5 blocked accounts in this report with verifiable GitHub permalinks.
+\end{enumerate}
+
+\end{document}

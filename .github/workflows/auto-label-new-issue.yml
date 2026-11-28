@@ -28,31 +28,34 @@ jobs:
                 labelsToAdd.push('wocs');
               }
 
-              // 2. Ensure difficulty level is present (intelligently classify if none provided)
+              // 2. Ensure difficulty level is present (documentation issues strictly default to level 1)
               const hasLevel = existingLabels.some(l => /^level\s*[123]$/i.test(l));
               if (!hasLevel) {
-                const text = `${issue.title || ''}\n${issue.body || ''}`.toLowerCase();
-                
-                const level3Keywords = [
-                  'wasm', 'webassembly', 'dsp', 'audioworklet', 'audio worklet', 'fft',
-                  'decibel engine', 'solana', 'escrow', 'smart contract', 'multi-agent',
-                  'agent orchestration', 'vector embedding', 'pgvector', 'partykit',
-                  'webrtc', 'p2p mesh', 'zkp', 'proof of work', 'difficulty: hard',
-                  'difficulty: high', 'level 3', 'level3', 'architectural'
-                ];
-
-                const level2Keywords = [
-                  'api route', 'endpoint', 'component', 'modal', 'hook', 'state management',
-                  'unit test', 'integration test', 'jest', 'playwright', 'form validation',
-                  'zod schema', 'filter bar', 'dashboard', 'responsive layout', 'refactor',
-                  'difficulty: medium', 'level 2', 'level2'
-                ];
-
+                const isDocIssue = existingLabels.includes('documentation') || existingLabels.includes('docs') || /^docs(\([^)]*\))?:/i.test(issue.title || '');
                 let assignedLevel = 'level 1';
-                if (level3Keywords.some(kw => text.includes(kw))) {
-                  assignedLevel = 'level 3';
-                } else if (level2Keywords.some(kw => text.includes(kw))) {
-                  assignedLevel = 'level 2';
+                if (!isDocIssue) {
+                  const text = `${issue.title || ''}\n${issue.body || ''}`.toLowerCase();
+
+                  const level3Keywords = [
+                    'wasm', 'webassembly', 'dsp', 'audioworklet', 'audio worklet', 'fft',
+                    'decibel engine', 'solana', 'escrow', 'smart contract', 'multi-agent',
+                    'agent orchestration', 'vector embedding', 'pgvector', 'partykit',
+                    'webrtc', 'p2p mesh', 'zkp', 'proof of work', 'difficulty: hard',
+                    'difficulty: high', 'level 3', 'level3', 'architectural'
+                  ];
+
+                  const level2Keywords = [
+                    'api route', 'endpoint', 'component', 'modal', 'hook', 'state management',
+                    'unit test', 'integration test', 'jest', 'playwright', 'form validation',
+                    'zod schema', 'filter bar', 'dashboard', 'responsive layout', 'refactor',
+                    'difficulty: medium', 'level 2', 'level2'
+                  ];
+
+                  if (level3Keywords.some(kw => text.includes(kw))) {
+                    assignedLevel = 'level 3';
+                  } else if (level2Keywords.some(kw => text.includes(kw))) {
+                    assignedLevel = 'level 2';
+                  }
                 }
 
                 labelsToAdd.push(assignedLevel);

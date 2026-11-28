@@ -35,10 +35,15 @@ String? buildRedirectLocation(
       return null;
     }
 
-    // Preserve both path and query parameters when forwarding to sign-in.
+    // Preserve path, full query string (including multi-value params), and
+    // fragment when forwarding to sign-in.
+    final normalizedPath = uri.path.isEmpty ? '/' : uri.path;
+    final safePath =
+        normalizedPath.startsWith('/') ? normalizedPath : '/$normalizedPath';
     final fullTarget = Uri(
-      path: uri.path.isEmpty ? '/' : uri.path,
-      queryParameters: uri.queryParameters.isEmpty ? null : uri.queryParameters,
+      path: safePath,
+      query: uri.hasQuery ? uri.query : null,
+      fragment: uri.hasFragment ? uri.fragment : null,
     ).toString();
 
     return Uri(

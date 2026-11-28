@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WhatsNewDialog } from "@/components/releases/WhatsNewDialog";
 
 const releasePayload = {
@@ -26,6 +26,7 @@ describe("WhatsNewDialog", () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -131,5 +132,75 @@ describe("WhatsNewDialog", () => {
     expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("copies the release tag and shows accessible confirmation state", async () => {
+    jest.useFakeTimers();
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => releasePayload,
+    } as Response);
+
+    render(<WhatsNewDialog />);
+    const copyTagButton = await screen.findByRole("button", {
+      name: "Copy release tag v2.5.0",
+    });
+
+    fireEvent.click(copyTagButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("v2.5.0");
+      expect(
+        screen.getByRole("button", { name: "Copied release tag v2.5.0" }),
+      ).toHaveTextContent("Copied tag");
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Copied release tag v2.5.0",
+    );
+  });
+
+  it("copies the SHA-256 verification command and resets confirmation state after timeout", async () => {
+    jest.useFakeTimers();
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => releasePayload,
+    } as Response);
+
+    render(<WhatsNewDialog />);
+    const copyCommandButton = await screen.findByRole("button", {
+      name: "Copy SHA-256 verification command",
+    });
+
+    fireEvent.click(copyCommandButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("sha256sum -c SHA256SUMS.txt");
+      expect(
+        screen.getByRole("button", {
+          name: "Copied SHA-256 verification command",
+        }),
+      ).toHaveTextContent("Copied command");
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Copied SHA-256 verification command",
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Copy SHA-256 verification command" }),
+    ).toHaveTextContent("Copy SHA-256 command");
   });
 });

@@ -97,9 +97,11 @@ export class AdaptiveNoiseFilter {
     this.lastContextState = audioContext.state;
     this.lastSampleRate = audioContext.sampleRate;
     this.speechThresholdDb = options.speechThresholdDb ?? -42;
-    this.notchQ =
-      options.notchQ ??
-      NOTCH_Q_PRESETS[options.notchQPreset ?? "balanced"];
+    const requestedNotchQ =
+      options.notchQ ?? NOTCH_Q_PRESETS[options.notchQPreset ?? "balanced"];
+    this.notchQ = Number.isFinite(requestedNotchQ)
+      ? Math.min(Math.max(requestedNotchQ, 0.0001), 100)
+      : NOTCH_Q_PRESETS.balanced;
 
     const highPassFreq = options.highPassCutoff ?? 150;
     this.highPassCutoff = highPassFreq;

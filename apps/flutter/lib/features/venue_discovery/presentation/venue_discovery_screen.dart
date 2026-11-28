@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:worksphere_app/features/venue_discovery/data/venue_discovery_repository.dart';
 import 'package:worksphere_app/features/venue_discovery/domain/venue_summary.dart';
+import 'package:worksphere_app/features/venue_discovery/presentation/venue_map_view.dart';
 
 class VenueDiscoveryScreen extends StatefulWidget {
   const VenueDiscoveryScreen({
@@ -22,6 +23,7 @@ class _VenueDiscoveryScreenState extends State<VenueDiscoveryScreen> {
   List<VenueSummary> _venues = const [];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _showMap = false;
 
   @override
   void initState() {
@@ -60,8 +62,20 @@ class _VenueDiscoveryScreenState extends State<VenueDiscoveryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Discover Venues'),
+        actions: [
+          IconButton(
+            tooltip: _showMap ? 'Show venue list' : 'Show venue map',
+            onPressed: () => setState(() => _showMap = !_showMap),
+            icon: Icon(_showMap ? Icons.list : Icons.map_outlined),
+          ),
+        ],
       ),
-      body: _buildBody(context),
+      body: _showMap
+          ? VenueMapView(
+              repository: widget.repository,
+              category: widget.category,
+            )
+          : _buildBody(context),
     );
   }
 

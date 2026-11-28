@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:worksphere_app/features/venue_discovery/data/venue_discovery_repository.dart';
+import 'package:worksphere_app/features/venue_discovery/presentation/venue_discovery_screen.dart';
 
 /// Validates that [target] is a safe relative in-app route (starts with `/`
 /// and not `//`) to prevent open-redirect vulnerabilities.
@@ -197,6 +199,15 @@ GoRouter createAppRouter({
   VenuesScreenBuilder? venuesBuilder,
   WidgetBuilder? signInBuilder,
 }) {
+  final venueRepository = VenueDiscoveryRepository(
+    baseUri: Uri.parse(
+      const String.fromEnvironment(
+        'WORKSPHERE_API_BASE_URL',
+        defaultValue: 'https://worksphere.app',
+      ),
+    ),
+  );
+
   return GoRouter(
     initialLocation: initialLocation,
     refreshListenable: isAuthenticated,
@@ -223,7 +234,10 @@ GoRouter createAppRouter({
           if (venuesBuilder != null) {
             return venuesBuilder(context, params);
           }
-          return Text('venues:${params['category'] ?? ''}');
+          return VenueDiscoveryScreen(
+            repository: venueRepository,
+            category: params['category'],
+          );
         },
       ),
       GoRoute(

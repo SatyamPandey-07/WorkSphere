@@ -1,13 +1,193 @@
-export interface TelemetryDeviceEvent { deviceId: string; timestamp: number | string; eventType?: string; sequence?: number | string; eventId?: string; payload?: unknown; }
-export interface CanonicalEventDescriptor { canonicalKey: string; deviceId: string; timestampMs: number; tieBreaker: string; event: TelemetryDeviceEvent; }
-function normalizeTimestampMs(timestamp: number | string): number { if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return Math.floor(timestamp); if (typeof timestamp === 'string') { const trimmed = timestamp.trim(); if (/^-?\d+$/.test(trimmed)) return Number.parseInt(trimmed, 10); const parsed = Date.parse(trimmed); if (!Number.isNaN(parsed)) return parsed; } return 0; }
-function stableSerialize(value: unknown): string { if (value === null) return 'null'; if (value === undefined) return 'undefined'; if (typeof value === 'number' || typeof value === 'boolean') return String(value); if (typeof value === 'string') return JSON.stringify(value); if (Array.isArray(value)) return '[' + value.map((item) => stableSerialize(item)).join(',') + ']'; if (typeof value === 'object') { const record = value as Record<string, unknown>; const keys = Object.keys(record).sort(); return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableSerialize(record[k])).join(',') + '}'; } return String(value); }
-function expandIntegerExponent(value: string): string { const match = /^(-?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i.exec(value); if (!match) return value; const sign = match[1]; const digits = match[2] + (match[3] ?? ''); const decimalPosition = match[2].length + Number(match[4]); return sign + (decimalPosition >= digits.length ? digits + '0'.repeat(decimalPosition - digits.length) : digits.slice(0, decimalPosition)); }
-function normalizeSequence(sequence: TelemetryDeviceEvent['sequence']): string | null { if (typeof sequence === 'number') { if (!Number.isFinite(sequence)) return null; return expandIntegerExponent(String(Math.floor(sequence))); } if (typeof sequence !== 'string' || !/^[+-]?\d+$/.test(sequence)) return null; const negative = sequence[0] === '-'; const digits = sequence.replace(/^[+-]?0*/, '') || '0'; return (negative && digits !== '0' ? '-' : '') + digits; }
-function compareIntegerStrings(a: string, b: string): number { const negativeA = a[0] === '-'; const negativeB = b[0] === '-'; if (negativeA !== negativeB) return negativeA ? -1 : 1; const digitsA = negativeA ? a.slice(1) : a; const digitsB = negativeB ? b.slice(1) : b; const magnitudeOrder = digitsA.length !== digitsB.length ? (digitsA.length < digitsB.length ? -1 : 1) : digitsA === digitsB ? 0 : digitsA < digitsB ? -1 : 1; return negativeA ? -magnitudeOrder : magnitudeOrder; }
-function compareSequences(a: TelemetryDeviceEvent['sequence'], b: TelemetryDeviceEvent['sequence']): number { const sequenceA = normalizeSequence(a); const sequenceB = normalizeSequence(b); if (sequenceA === null || sequenceB === null) return sequenceA === sequenceB ? 0 : sequenceA === null ? -1 : 1; return compareIntegerStrings(sequenceA, sequenceB); }
-export function computeEventTieBreaker(event: TelemetryDeviceEvent): string { const sequence = normalizeSequence(event.sequence); const seqPart = sequence === null ? '' : sequence.padStart(16, '0'); const typePart = (event.eventType ?? '').trim(); const idPart = (event.eventId ?? '').trim(); const payloadPart = stableSerialize(event.payload ?? null); return seqPart + '|' + typePart + '|' + idPart + '|' + payloadPart; }
-export function buildCanonicalEventDescriptor(event: TelemetryDeviceEvent): CanonicalEventDescriptor { const deviceId = event.deviceId.trim(); const timestampMs = normalizeTimestampMs(event.timestamp); const tieBreaker = computeEventTieBreaker(event); return { canonicalKey: deviceId + '::' + timestampMs + '::' + tieBreaker, deviceId, timestampMs, tieBreaker, event }; }
-export function compareCanonicalEvents(a: TelemetryDeviceEvent, b: TelemetryDeviceEvent): number { const descA = buildCanonicalEventDescriptor(a); const descB = buildCanonicalEventDescriptor(b); if (descA.deviceId !== descB.deviceId) return descA.deviceId < descB.deviceId ? -1 : 1; if (descA.timestampMs !== descB.timestampMs) return descA.timestampMs - descB.timestampMs; const sequenceOrder = compareSequences(a.sequence, b.sequence); if (sequenceOrder !== 0) return sequenceOrder; const suffixA = descA.tieBreaker.slice(descA.tieBreaker.indexOf('|') + 1); const suffixB = descB.tieBreaker.slice(descB.tieBreaker.indexOf('|') + 1); if (suffixA !== suffixB) return suffixA < suffixB ? -1 : 1; return 0; }
-export function reconcileDuplicateDeviceEvents(events: readonly TelemetryDeviceEvent[]): CanonicalEventDescriptor[] { const byCanonicalKey = new Map<string, CanonicalEventDescriptor>(); for (const event of events) { const descriptor = buildCanonicalEventDescriptor(event); if (!byCanonicalKey.has(descriptor.canonicalKey)) byCanonicalKey.set(descriptor.canonicalKey, descriptor); } return Array.from(byCanonicalKey.values()).sort((a, b) => compareCanonicalEvents(a.event, b.event)); }
+export interface TelemetryDeviceEvent {
+  deviceId: string;
+  timestamp: number | string;
+  eventType?: string;
+  sequence?: number | string;
+  eventId?: string;
+  payload?: unknown;
+}
+export interface CanonicalEventDescriptor {
+  canonicalKey: string;
+  deviceId: string;
+  timestampMs: number;
+  tieBreaker: string;
+  event: TelemetryDeviceEvent;
+}
+function normalizeTimestampMs(timestamp: number | string): number {
+  if (typeof timestamp === "number" && Number.isFinite(timestamp))
+    return Math.floor(timestamp);
+  if (typeof timestamp === "string") {
+    const trimmed = timestamp.trim();
+    if (/^-?\d+$/.test(trimmed)) return Number.parseInt(trimmed, 10);
+    const parsed = Date.parse(trimmed);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+}
+function stableSerialize(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value))
+    return "[" + value.map((item) => stableSerialize(item)).join(",") + "]";
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return (
+      "{" +
+      keys
+        .map((k) => JSON.stringify(k) + ":" + stableSerialize(record[k]))
+        .join(",") +
+      "}"
+    );
+  }
+  return String(value);
+}
+function expandIntegerExponent(value: string): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i.exec(value);
+  if (!match) return value;
+  const sign = match[1];
+  const digits = match[2] + (match[3] ?? "");
+  const decimalPosition = match[2].length + Number(match[4]);
+  return (
+    sign +
+    (decimalPosition >= digits.length
+      ? digits + "0".repeat(decimalPosition - digits.length)
+      : digits.slice(0, decimalPosition))
+  );
+}
+function normalizeSequence(
+  sequence: TelemetryDeviceEvent["sequence"],
+): string | null {
+  if (typeof sequence === "number") {
+    if (!Number.isFinite(sequence)) return null;
+    return expandIntegerExponent(String(Math.floor(sequence)));
+  }
+  if (typeof sequence !== "string" || !/^[+-]?\d+$/.test(sequence)) return null;
+  const negative = sequence[0] === "-";
+  const digits = sequence.replace(/^[+-]?0*/, "") || "0";
+  return (negative && digits !== "0" ? "-" : "") + digits;
+}
+function compareIntegerStrings(a: string, b: string): number {
+  const negativeA = a[0] === "-";
+  const negativeB = b[0] === "-";
+  if (negativeA !== negativeB) return negativeA ? -1 : 1;
+  const digitsA = negativeA ? a.slice(1) : a;
+  const digitsB = negativeB ? b.slice(1) : b;
+  const magnitudeOrder =
+    digitsA.length !== digitsB.length
+      ? digitsA.length < digitsB.length
+        ? -1
+        : 1
+      : digitsA === digitsB
+        ? 0
+        : digitsA < digitsB
+          ? -1
+          : 1;
+  return negativeA ? -magnitudeOrder : magnitudeOrder;
+}
+function compareSequences(
+  a: TelemetryDeviceEvent["sequence"],
+  b: TelemetryDeviceEvent["sequence"],
+): number {
+  const sequenceA = normalizeSequence(a);
+  const sequenceB = normalizeSequence(b);
+  if (sequenceA === null || sequenceB === null)
+    return sequenceA === sequenceB ? 0 : sequenceA === null ? -1 : 1;
+  return compareIntegerStrings(sequenceA, sequenceB);
+}
+export function computeEventTieBreaker(event: TelemetryDeviceEvent): string {
+  const sequence = normalizeSequence(event.sequence);
+  const seqPart = sequence === null ? "" : sequence.padStart(16, "0");
+  const typePart = (event.eventType ?? "").trim();
+  const idPart = (event.eventId ?? "").trim();
+  const payloadPart = stableSerialize(event.payload ?? null);
+  return seqPart + "|" + typePart + "|" + idPart + "|" + payloadPart;
+}
+export function buildCanonicalEventDescriptor(
+  event: TelemetryDeviceEvent,
+): CanonicalEventDescriptor {
+  const deviceId = event.deviceId.trim();
+  const timestampMs = normalizeTimestampMs(event.timestamp);
+  const tieBreaker = computeEventTieBreaker(event);
+  return {
+    canonicalKey: deviceId + "::" + timestampMs + "::" + tieBreaker,
+    deviceId,
+    timestampMs,
+    tieBreaker,
+    event,
+  };
+}
+export function compareCanonicalEvents(
+  a: TelemetryDeviceEvent,
+  b: TelemetryDeviceEvent,
+): number {
+  const descA = buildCanonicalEventDescriptor(a);
+  const descB = buildCanonicalEventDescriptor(b);
+  if (descA.deviceId !== descB.deviceId)
+    return descA.deviceId < descB.deviceId ? -1 : 1;
+  if (descA.timestampMs !== descB.timestampMs)
+    return descA.timestampMs - descB.timestampMs;
+  const sequenceOrder = compareSequences(a.sequence, b.sequence);
+  if (sequenceOrder !== 0) return sequenceOrder;
+  const suffixA = descA.tieBreaker.slice(descA.tieBreaker.indexOf("|") + 1);
+  const suffixB = descB.tieBreaker.slice(descB.tieBreaker.indexOf("|") + 1);
+  if (suffixA !== suffixB) return suffixA < suffixB ? -1 : 1;
+  return 0;
+}
+export function reconcileDuplicateDeviceEvents(
+  events: readonly TelemetryDeviceEvent[],
+): CanonicalEventDescriptor[] {
+  const byCanonicalKey = new Map<string, CanonicalEventDescriptor>();
+  for (const event of events) {
+    const descriptor = buildCanonicalEventDescriptor(event);
+    if (!byCanonicalKey.has(descriptor.canonicalKey))
+      byCanonicalKey.set(descriptor.canonicalKey, descriptor);
+  }
+  return Array.from(byCanonicalKey.values()).sort((a, b) =>
+    compareCanonicalEvents(a.event, b.event),
+  );
+}
+
+export interface CanonicalEventBatchStats {
+  accepted: number;
+  deduplicated: number;
+  outOfOrder: number;
+}
+
+export function reconcileDuplicateDeviceEventsWithStats(
+  events: readonly TelemetryDeviceEvent[],
+): CanonicalEventBatchStats {
+  const seenKeys = new Set<string>();
+  const latestByDevice = new Map<string, TelemetryDeviceEvent>();
+
+  let accepted = 0;
+  let deduplicated = 0;
+  let outOfOrder = 0;
+
+  for (const event of events) {
+    const descriptor = buildCanonicalEventDescriptor(event);
+
+    if (seenKeys.has(descriptor.canonicalKey)) {
+      deduplicated += 1;
+      continue;
+    }
+
+    seenKeys.add(descriptor.canonicalKey);
+    accepted += 1;
+
+    const latest = latestByDevice.get(descriptor.deviceId);
+
+    if (latest && compareCanonicalEvents(event, latest) < 0) {
+      outOfOrder += 1;
+    } else {
+      latestByDevice.set(descriptor.deviceId, event);
+    }
+  }
+
+  return { accepted, deduplicated, outOfOrder };
+}
+
 export default reconcileDuplicateDeviceEvents;

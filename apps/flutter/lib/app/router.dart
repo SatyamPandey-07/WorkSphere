@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:worksphere_app/features/bookings/data/booking_sync_worker.dart';
+import 'package:worksphere_app/features/bookings/presentation/booking_reservation_screen.dart';
 import 'package:worksphere_app/features/venue_discovery/data/venue_discovery_repository.dart';
 import 'package:worksphere_app/features/venue_discovery/presentation/venue_discovery_screen.dart';
 
@@ -116,12 +118,24 @@ class VenueDetailsScreen extends StatelessWidget {
 }
 
 class ReservationScreen extends StatelessWidget {
-  const ReservationScreen({required this.venueId, super.key});
+  const ReservationScreen({
+    required this.venueId,
+    this.syncWorker,
+    super.key,
+  });
 
   final VenueId venueId;
+  final BookingSyncWorker? syncWorker;
 
   @override
   Widget build(BuildContext context) {
+    final worker = syncWorker;
+    if (worker != null) {
+      return BookingReservationScreen(
+        venueId: venueId.value,
+        syncWorker: worker,
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Reserve a venue')),
       body: Center(
@@ -198,6 +212,7 @@ GoRouter createAppRouter({
   String initialLocation = '/',
   VenuesScreenBuilder? venuesBuilder,
   WidgetBuilder? signInBuilder,
+  BookingSyncWorker? bookingSyncWorker,
 }) {
   final venueRepository = VenueDiscoveryRepository(
     baseUri: Uri.parse(
@@ -259,7 +274,10 @@ GoRouter createAppRouter({
           if (venueId == null) {
             return const InvalidRouteScreen();
           }
-          return ReservationScreen(venueId: venueId);
+          return ReservationScreen(
+            venueId: venueId,
+            syncWorker: bookingSyncWorker,
+          );
         },
       ),
     ],
